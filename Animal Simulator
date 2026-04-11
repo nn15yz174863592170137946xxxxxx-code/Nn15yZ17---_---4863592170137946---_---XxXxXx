@@ -1,0 +1,169 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+-- ===== services =====
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== remotes =====
+local CoinRemote = RS:WaitForChild("Events"):WaitForChild("CoinEvent")
+local HitRemote = RS:WaitForChild("jdskhfsIIIllliiIIIdchgdIiIIIlIlIli")
+
+-- ===== helpers =====
+local function getHRP()
+	local c = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+	return c:WaitForChild("HumanoidRootPart")
+end
+
+local function getAnyDummy(folder)
+	for _, d in ipairs(folder:GetChildren()) do
+		if d:FindFirstChild("HumanoidRootPart") then
+			return d
+		end
+	end
+end
+
+local function tpBelowLie(dummy)
+	local hrp = getHRP()
+	local dhrp = dummy:FindFirstChild("HumanoidRootPart")
+	if hrp and dhrp then
+		hrp.Anchored = true
+		hrp.CFrame =
+			dhrp.CFrame
+			* CFrame.new(0, -10, 0)
+			* CFrame.Angles(math.rad(90), 0, 0)
+	end
+end
+
+local function tpReleaseForward()
+	local hrp = getHRP()
+	hrp.CFrame = hrp.CFrame + (hrp.CFrame.LookVector * 25)
+	hrp.Anchored = false
+end
+
+-- ===== window =====
+local Window = Library:CreateWindow({
+	Title = "DON's Script",
+	NotifySide = "Right",
+	ShowCustomCursor = true,
+})
+
+local Tabs = {
+	Info = Window:AddTab("Info","info"),
+	Main = Window:AddTab("Main","user"),
+	UI = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO =====
+Tabs.Info:AddLeftGroupbox("Info","help")
+	:AddButton("Join Discord", function()
+		setclipboard("https://discord.gg/3NjyJjjXxF")
+		Library:Notify("Discord link copied!", 3)
+	end)
+
+-- ===== MAIN =====
+local FarmGroup = Tabs.Main:AddLeftGroupbox("Autofarm","boxes")
+
+local AutoCoin = false
+local AutoDummy = false
+local AutoDummy5k = false
+local tpDone = false
+
+FarmGroup:AddToggle("AutoCoin",{Text="Auto Collect Coins",Callback=function(v)
+	AutoCoin = v
+end})
+
+FarmGroup:AddToggle("AutoDummy",{Text="Auto Hit Dummy",Callback=function(v)
+	if v then
+		AutoDummy5k = false
+	end
+	AutoDummy = v
+	tpDone = false
+	if not v then
+		tpReleaseForward()
+	end
+end})
+
+FarmGroup:AddToggle("AutoDummy5k",{Text="Auto Hit 5k Dummy",Callback=function(v)
+	if v then
+		AutoDummy = false
+	end
+	AutoDummy5k = v
+	tpDone = false
+	if not v then
+		tpReleaseForward()
+	end
+end})
+
+-- ===== LOOPS =====
+task.spawn(function()
+	while task.wait(0.5) do
+		if AutoCoin then
+			CoinRemote:FireServer()
+		end
+	end
+end)
+
+task.spawn(function()
+	while task.wait(0.3) do
+		if AutoDummy then
+			local d = getAnyDummy(workspace.MAP.dummies)
+			if d then
+				if not tpDone then
+					tpBelowLie(d)
+					tpDone = true
+				end
+				local hum = d:FindFirstChild("Humanoid")
+				if hum then
+					HitRemote:FireServer(hum, 1)
+				end
+			end
+		elseif AutoDummy5k then
+			local d = getAnyDummy(workspace.MAP["5k_dummies"])
+			if d then
+				if not tpDone then
+					tpBelowLie(d)
+					tpDone = true
+				end
+				local hum = d:FindFirstChild("Humanoid")
+				if hum then
+					HitRemote:FireServer(hum, 1)
+				end
+			end
+		end
+	end
+end)
+
+-- ===== UI SETTINGS =====
+local MenuGroup = Tabs.UI:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,
+	Callback=function(v) Library.KeybindFrame.Visible=v end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,
+	Callback=function(v) Library.ShowCustomCursor=v end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",
+	Callback=function(v) Library:SetNotifySide(v) end})
+
+MenuGroup:AddDropdown("DPIScale",{Text="DPI Scale",
+	Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",
+	Callback=function(v) Library:SetDPIScale(tonumber(v:gsub("%%",""))) end})
+
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Animal-Simulator")
+SaveManager:BuildConfigSection(Tabs.UI)
+ThemeManager:ApplyToTab(Tabs.UI)
+SaveManager:LoadAutoloadConfig()
