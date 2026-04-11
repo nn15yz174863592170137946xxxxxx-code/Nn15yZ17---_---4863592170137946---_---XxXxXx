@@ -220,7 +220,7 @@ for _, plr in pairs(Players:GetPlayers()) do
     end
 end
 
--- ===== OPTIMIZED AIMLOCK LOOP ===== --
+-- ===== AIMLOCK LOOP ===== --
 task.spawn(function()
     while task.wait(0.03) do
         if not aimEnabled then continue end
