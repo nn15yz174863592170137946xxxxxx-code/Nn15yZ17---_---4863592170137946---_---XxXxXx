@@ -1,0 +1,347 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+	Title = "DON's Script",
+	Icon = 95816097006870,
+	NotifySide = "Right",
+	ShowCustomCursor = true,
+})
+
+local Tabs = {
+	Info = Window:AddTab("Info","info"),
+	Automation = Window:AddTab("Automation","cpu"),
+	Main = Window:AddTab("Main","user"),
+	["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== info ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","info")
+InfoGroup:AddButton("Discord", function()
+	setclipboard("https://discord.gg/3NjyJjjXxF")
+end)
+
+-- ===== refs ===== --
+local World = workspace:WaitForChild("World")
+local PlatformContent = World:WaitForChild("Platform"):WaitForChild("Content")
+local Plots = World:WaitForChild("Plots")
+local GlobalEvents = RS:WaitForChild("shared/network/GlobalEvents@GlobalEvents")
+
+-- ===== helpers ===== --
+local function getPlatforms()
+	local list = {}
+	for _,m in ipairs(PlatformContent:GetChildren()) do
+		if m:IsA("Model") then
+			local y = m:GetPivot().Position.Y
+			table.insert(list,{Name=m.Name,Model=m,Y=y})
+		end
+	end
+	table.sort(list,function(a,b) return a.Y < b.Y end)
+	return list
+end
+
+local function tpTo(cf)
+	local char = LocalPlayer.Character
+	if not char then return end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	hrp.CFrame = cf
+end
+
+local function fireAllClickDetectors(root)
+	for _,d in ipairs(root:GetDescendants()) do
+		if d:IsA("ClickDetector") then
+			fireclickdetector(d)
+		end
+	end
+end
+
+local function fireAllTouchInterests(root)
+	for _,t in ipairs(root:GetDescendants()) do
+		if t:IsA("TouchTransmitter") and t.Parent then
+			firetouchinterest(LocalPlayer.Character.HumanoidRootPart, t.Parent, 0)
+			firetouchinterest(LocalPlayer.Character.HumanoidRootPart, t.Parent, 1)
+		end
+	end
+end
+
+local function getOwnedPlot()
+	local uid = LocalPlayer.UserId
+	local data = LocalPlayer:FindFirstChild("Data")
+	if data and data:FindFirstChild("UserId") then
+		uid = data.UserId.Value
+	end
+	for _,p in ipairs(Plots:GetChildren()) do
+		if p:GetAttribute("OwnerId") == uid then
+			return p
+		end
+	end
+end
+
+-- ===== automation ===== --
+local AutoBuyGroup = Tabs.Automation:AddLeftGroupbox("Auto Buy","shopping-cart")
+local AutoCollectGroup = Tabs.Automation:AddRightGroupbox("Auto Collect","package")
+
+local autoSpeed1, autoSpeed2, autoSpeed5 = false,false,false
+local autoCarry, autoStamina, autoRebirth = false,false,false
+local autoCollect = false
+
+AutoBuyGroup:AddToggle("BuySpeed1",{Text="Buy Speed 1",Default=false,Callback=function(v) autoSpeed1=v end})
+AutoBuyGroup:AddToggle("BuySpeed2",{Text="Buy Speed 2",Default=false,Callback=function(v) autoSpeed2=v end})
+AutoBuyGroup:AddToggle("BuySpeed5",{Text="Buy Speed 5",Default=false,Callback=function(v) autoSpeed5=v end})
+AutoBuyGroup:AddToggle("BuyCarry",{Text="Buy Carry",Default=false,Callback=function(v) autoCarry=v end})
+AutoBuyGroup:AddToggle("BuyStamina",{Text="Buy Stamina",Default=false,Callback=function(v) autoStamina=v end})
+AutoBuyGroup:AddToggle("BuyRebirth",{Text="Buy Rebirth",Default=false,Callback=function(v) autoRebirth=v end})
+
+AutoCollectGroup:AddToggle("AutoCollect",{Text="Auto Collect",Default=false,Callback=function(v) autoCollect=v end})
+
+RunService.Heartbeat:Connect(function()
+	if autoSpeed1 then GlobalEvents:WaitForChild("SpeedPurchaseRequest"):FireServer(1) end
+	if autoSpeed2 then GlobalEvents:WaitForChild("SpeedPurchaseRequest"):FireServer(2) end
+	if autoSpeed5 then GlobalEvents:WaitForChild("SpeedPurchaseRequest"):FireServer(5) end
+	if autoCarry then GlobalEvents:WaitForChild("CarryPurchaseRequest"):FireServer() end
+	if autoStamina then GlobalEvents:WaitForChild("StaminaPurchaseRequest"):FireServer() end
+	if autoRebirth then GlobalEvents:WaitForChild("RebirthRequest"):FireServer() end
+
+	if autoCollect then
+		local plot = getOwnedPlot()
+		if plot and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+			fireAllTouchInterests(plot)
+		end
+	end
+end)
+
+-- ===== teleport ===== --
+local TeleportGroup = Tabs.Main:AddLeftGroupbox("Teleport","map")
+
+local platformList = getPlatforms()
+local platformNames = {}
+for _,p in ipairs(platformList) do
+	table.insert(platformNames,p.Name)
+end
+
+local selectedPlatform
+TeleportGroup:AddDropdown("Platform",{
+	Text = "Platform",
+	Values = platformNames,
+	Callback = function(v) selectedPlatform = v end
+})
+
+TeleportGroup:AddButton("Tp", function()
+	if not selectedPlatform then return end
+	for _,p in ipairs(platformList) do
+		if p.Name == selectedPlatform then
+			tpTo(p.Model:GetPivot())
+			break
+		end
+	end
+end)
+
+-- ===== brainrots ===== --
+local BrainrotsGroup = Tabs.Main:AddLeftGroupbox("Brainrots","brain")
+BrainrotsGroup:AddLabel("STAND ON YOUR PLOT")
+
+local cashMode = "Highest"
+local brainTP = false
+local originCF
+local running = false
+local COOLDOWN = 1
+
+BrainrotsGroup:AddDropdown("CashPerSec",{
+	Text = "Cash per Sec",
+	Values = {"Lowest","Highest"},
+	Default = "Highest",
+	Callback = function(v) cashMode = v end
+})
+
+BrainrotsGroup:AddToggle("EnableTP",{
+	Text = "Enable TP",
+	Default = false,
+	Callback = function(v)
+		brainTP = v
+		running = false
+		if v then
+			local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+			if hrp then originCF = hrp.CFrame end
+		end
+	end
+})
+
+local function parseCash(txt)
+	local n,s = txt:lower():match("([%d%.]+)%s*([km]?)")
+	n = tonumber(n)
+	if not n then return end
+	if s == "k" then n *= 1000 end
+	if s == "m" then n *= 1000000 end
+	return n
+end
+
+local function getBestEntity()
+	local best,bestValue
+	for _,e in ipairs(workspace.SpawnedEntities:GetChildren()) do
+		local gui = e:FindFirstChild("SpawnedEntityBillboard",true)
+		local cps = gui and gui:FindFirstChild("CashPerSecond",true)
+		if cps then
+			local val = parseCash(cps.Text)
+			if val and (not bestValue or val > bestValue) then
+				bestValue = val
+				best = e
+			end
+		end
+	end
+	return best
+end
+
+local function fireNearestPrompt(root)
+	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	local nearest,dist
+	for _,p in ipairs(root:GetDescendants()) do
+		if p:IsA("ProximityPrompt") and p.Parent:IsA("BasePart") then
+			p.HoldDuration = 0
+			p.RequiresLineOfSight = false
+			local d = (p.Parent.Position - hrp.Position).Magnitude
+			if d <= 30 and (not dist or d < dist) then
+				dist = d
+				nearest = p
+			end
+		end
+	end
+	if nearest then
+		fireproximityprompt(nearest)
+	end
+end
+
+RunService.Heartbeat:Connect(function()
+	if not brainTP or running then return end
+	running = true
+
+	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	local target = getBestEntity()
+	if not hrp or not target then
+		running = false
+		return
+	end
+
+	hrp.CFrame = target:GetPivot()
+
+	local t0 = tick()
+	while tick() - t0 < 0.5 do
+		fireNearestPrompt(target)
+		task.wait(0.1)
+	end
+
+	if originCF then
+		hrp.CFrame = originCF
+	end
+
+	task.delay(COOLDOWN, function()
+		running = false
+	end)
+end)
+
+-- ===== lucky blocks ===== --
+local LuckyRootGroup = Tabs.Main:AddRightGroupbox("Lucky Blocks","gift")
+
+LuckyRootGroup:AddButton("Collect All", function()
+	for _,d in ipairs(workspace:GetDescendants()) do
+		if d:IsA("ClickDetector") then
+			fireclickdetector(d)
+		end
+	end
+end)
+
+for _,plat in ipairs(platformList) do
+	local luckyFolder = plat.Model:FindFirstChild("LuckyBlocks")
+	if luckyFolder then
+		local blockNames, blocks = {}, {}
+
+		for _,b in ipairs(luckyFolder:GetChildren()) do
+			if b:IsA("Model") then
+				table.insert(blocks,b)
+				table.insert(blockNames,b.Name)
+			end
+		end
+
+		table.sort(blockNames,function(a,b)
+			return tonumber(a) and tonumber(b) and tonumber(a) < tonumber(b)
+		end)
+
+		local g = Tabs.Main:AddRightGroupbox(plat.Name,"box")
+		g:AddLabel(plat.Name)
+
+		local selectedBlock
+		g:AddDropdown("Block_"..plat.Name,{
+			Text = "Block",
+			Values = blockNames,
+			Callback = function(v) selectedBlock = v end
+		})
+
+		g:AddButton("Tp", function()
+			if not selectedBlock then return end
+			for _,b in ipairs(blocks) do
+				if b.Name == selectedBlock then
+					tpTo(b:GetPivot())
+					break
+				end
+			end
+		end)
+
+		g:AddButton("Collect", function()
+			if not selectedBlock then return end
+			for _,b in ipairs(blocks) do
+				if b.Name == selectedBlock then
+					fireAllClickDetectors(b)
+					break
+				end
+			end
+		end)
+
+		g:AddButton("Collect All", function()
+			fireAllClickDetectors(luckyFolder)
+		end)
+	end
+end
+
+-- ===== ui settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Climb-For-Brainrots")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
