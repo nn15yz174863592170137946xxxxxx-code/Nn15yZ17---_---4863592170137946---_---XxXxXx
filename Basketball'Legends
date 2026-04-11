@@ -1,0 +1,228 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== Info ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== Auto Shoot Logic ===== --
+local Bar = LocalPlayer.PlayerGui.Visual.Shooting.Bar
+local sizeConn
+local currentToggle = nil
+
+local function forceSize(size)
+    if sizeConn then sizeConn:Disconnect() end
+    sizeConn = Bar:GetPropertyChangedSignal("Size"):Connect(function()
+        if Bar.Size ~= size then
+            Bar.Size = size
+        end
+    end)
+    Bar.Size = size
+end
+
+local function disableForce()
+    if sizeConn then
+        sizeConn:Disconnect()
+        sizeConn = nil
+    end
+end
+
+-- ===== Auto Shoot Toggles ===== --
+local AutoShootGroup = Tabs.Main:AddLeftGroupbox("Auto Shoot","boxes")
+
+local AutoShootList = {
+    {Name="Perfect",   Size=UDim2.new(1,0,1,0)},
+    {Name="Great",     Size=UDim2.new(1,0,0.975,0)},
+    {Name="Good",      Size=UDim2.new(1,0,0.9,0)},
+    {Name="Mediocre",  Size=UDim2.new(1,0,0.75,0)},
+    {Name="Early",     Size=UDim2.new(1,0,0.5,0)},
+    {Name="VeryEarly", Size=UDim2.new(1,0,0.25,0)},
+}
+
+local ShootToggles = {}
+
+for _, item in ipairs(AutoShootList) do
+    ShootToggles[item.Name] = AutoShootGroup:AddToggle("AutoShoot_"..item.Name,{
+        Text = item.Name,
+        Default = false,
+        Callback = function(v)
+            if v then
+                if currentToggle and currentToggle ~= item.Name then
+                    ShootToggles[currentToggle]:SetValue(false)
+                end
+                currentToggle = item.Name
+                forceSize(item.Size)
+                Library:Notify(item.Name.." enabled!", 3)
+            else
+                if currentToggle == item.Name then
+                    currentToggle = nil
+                    disableForce()
+                end
+            end
+        end
+    })
+end
+
+-- ===== Ball Hitbox ===== --
+local BallGroup = Tabs.Main:AddLeftGroupbox("Ball","basketball")
+
+local BallHitboxEnabled = false
+local BIG = Vector3.new(20,20,20)
+local heldSince = {}
+
+task.spawn(function()
+	while task.wait(0.3) do
+		if not BallHitboxEnabled then continue end
+
+		for _, ball in ipairs(workspace:GetDescendants()) do
+			if ball.Name ~= "Basketball" then continue end
+
+			local attach = ball:FindFirstChild("Attach", true)
+			if not attach then continue end
+
+			local held = false
+			for _, plr in ipairs(Players:GetPlayers()) do
+				local char = plr.Character
+				if char and ball:IsDescendantOf(char) then
+					held = true
+					break
+				end
+			end
+
+			if held then
+				heldSince[ball] = heldSince[ball] or os.clock()
+				if os.clock() - heldSince[ball] >= 1 then
+					attach.Size = BIG
+					attach.CanCollide = false
+					attach.Massless = true
+				end
+			else
+				heldSince[ball] = nil
+			end
+		end
+	end
+end)
+
+BallGroup:AddToggle("BallHitboxToggle",{
+	Text = "Ball Hitbox",
+	Default = false,
+	Callback = function(v)
+		BallHitboxEnabled = v
+	end
+})
+
+-- ===== Auto Shoot Random ===== --
+local RandomGroup = Tabs.Main:AddRightGroupbox("Auto Shoot Random","shuffle")
+
+local Weights = {
+    Perfect = 0,
+    Great = 0,
+    Good = 0,
+    Mediocre = 0,
+    Early = 0,
+    VeryEarly = 0,
+}
+
+local Sizes = {
+    Perfect = UDim2.new(1,0,1,0),
+    Great = UDim2.new(1,0,0.975,0),
+    Good = UDim2.new(1,0,0.9,0),
+    Mediocre = UDim2.new(1,0,0.75,0),
+    Early = UDim2.new(1,0,0.5,0),
+    VeryEarly = UDim2.new(1,0,0.25,0),
+}
+
+local randomEnabled = false
+
+local function pickRandom()
+    local pool = {}
+    for k,v in pairs(Weights) do
+        for _ = 1, v do
+            table.insert(pool, k)
+        end
+    end
+    if #pool > 0 then
+        forceSize(Sizes[pool[math.random(#pool)]])
+    end
+end
+
+RandomGroup:AddToggle("AutoRandom",{
+    Text = "Auto Random",
+    Default = false,
+    Callback = function(v)
+        randomEnabled = v
+    end
+})
+
+RandomGroup:AddSlider("PerfectSlider",{Text="Perfect",Min=0,Max=100,Default=0,Callback=function(v) Weights.Perfect=v end})
+RandomGroup:AddSlider("GreatSlider",{Text="Great",Min=0,Max=100,Default=0,Callback=function(v) Weights.Great=v end})
+RandomGroup:AddSlider("GoodSlider",{Text="Good",Min=0,Max=100,Default=0,Callback=function(v) Weights.Good=v end})
+RandomGroup:AddSlider("MediocreSlider",{Text="Mediocre",Min=0,Max=100,Default=0,Callback=function(v) Weights.Mediocre=v end})
+RandomGroup:AddSlider("EarlySlider",{Text="Early",Min=0,Max=100,Default=0,Callback=function(v) Weights.Early=v end})
+RandomGroup:AddSlider("VeryEarlySlider",{Text="Very Early",Min=0,Max=100,Default=0,Callback=function(v) Weights.VeryEarly=v end})
+
+task.spawn(function()
+    while true do
+        if randomEnabled then
+            pickRandom()
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- ===== UI Settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Basketball-Legends")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
