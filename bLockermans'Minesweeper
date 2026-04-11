@@ -1,0 +1,193 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+-- ===== services ===== --
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    UI = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO ===== --
+Tabs.Info:AddLeftGroupbox("Info"):AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+end)
+
+-- ===== MAIN ===== --
+local CalcGroup = Tabs.Main:AddLeftGroupbox("Calculator","boxes")
+local calcEnabled = false
+local autoFlag = false
+local flagDistance = 25
+local flagDelay = 0.0
+
+CalcGroup:AddToggle("Calc",{Text="Calculate",Default=false,Callback=function(v)
+    calcEnabled = v
+end})
+CalcGroup:AddToggle("AutoFlag",{Text="Auto Flag",Default=false,Callback=function(v)
+    autoFlag = v
+end})
+CalcGroup:AddSlider("FlagDistance",{Text="Distance",Default=25,Min=0,Max=250,Callback=function(v)
+    flagDistance = v
+end})
+CalcGroup:AddInput("FlagDelayInput",{Text="Delay",Placeholder="0.0",Callback=function(v)
+    local n = tonumber(v)
+    if n then flagDelay = n end
+end})
+flagDelay = 0.0 -- default
+
+-- ===== UI ===== --
+Tabs.UI:AddLeftGroupbox("Menu"):AddButton("Unload", function()
+    Library:Unload()
+end)
+
+-- ===== MINESWEEPER LOGIC ===== --
+local PartsFolder = workspace:WaitForChild("Flag"):WaitForChild("Parts")
+local OFFSETS = {
+    Vector3.new( 1,0, 0), Vector3.new(-1,0, 0),
+    Vector3.new( 0,0, 1), Vector3.new( 0,0,-1),
+    Vector3.new( 1,0, 1), Vector3.new(-1,0, 1),
+    Vector3.new( 1,0,-1), Vector3.new(-1,0,-1),
+}
+
+-- ===== OPTIMIZATION CACHE ===== --
+local neighborCache = {}
+local solved = {}
+
+local function getNeighbors(part, parts)
+    if neighborCache[part] then return neighborCache[part] end
+    local size = part.Size.X
+    local list = {}
+    for _,off in ipairs(OFFSETS) do
+        local pos = part.Position + off * size
+        for _,p in ipairs(parts) do
+            if (p.Position - pos).Magnitude < 0.1 then
+                table.insert(list, p)
+                break
+            end
+        end
+    end
+    neighborCache[part] = list
+    return list
+end
+
+local function hasModel(part)
+    for _,c in ipairs(part:GetChildren()) do
+        if c:IsA("Model") then return true end
+    end
+    return false
+end
+
+-- ===== LOOP ===== --
+task.spawn(function()
+    while task.wait(flagDelay) do
+        local parts = PartsFolder:GetChildren()
+
+        -- ===== CALCULATOR ===== --
+        if calcEnabled then
+            local changed = true
+            while changed do
+                changed = false
+                for _,clear in ipairs(parts) do
+                    local gui = clear:FindFirstChild("NumberGui")
+                    local label = gui and gui:FindFirstChild("TextLabel")
+                    local number = label and tonumber(label.Text)
+                    if not number then continue end
+
+                    local neighbors = getNeighbors(clear, parts)
+                    local hidden, flagged = {}, 0
+
+                    for _,n in ipairs(neighbors) do
+                        local c = n.BrickColor.Name
+                        if c == "Really red" then
+                            flagged += 1
+                        elseif c ~= "Ghost grey" and c ~= "Quill grey" then
+                            table.insert(hidden, n)
+                        end
+                    end
+
+                    if flagged == number and #hidden > 0 then
+                        for _,h in ipairs(hidden) do
+                            if h.BrickColor.Name ~= "Toothpaste" then
+                                h.BrickColor = BrickColor.new("Toothpaste")
+                                changed = true
+                            end
+                        end
+                        solved[clear] = true
+
+                    elseif flagged + #hidden == number and #hidden > 0 then
+                        for _,h in ipairs(hidden) do
+                            if h.BrickColor.Name ~= "Really red" then
+                                h.BrickColor = BrickColor.new("Really red")
+                                changed = true
+                            end
+                        end
+                        solved[clear] = true
+                    end
+                end
+            end
+        end
+
+        -- ===== AUTO FLAG ===== --
+        if autoFlag and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character.HumanoidRootPart
+            local closest, dist
+            for _,p in ipairs(parts) do
+                if p.BrickColor.Name ~= "Really red" or hasModel(p) then continue end
+                local d = (p.Position - hrp.Position).Magnitude
+                if d <= flagDistance and (not dist or d < dist) then
+                    local cd = p:FindFirstChild("ClickDetector")
+                    if cd then closest, dist = cd, d end
+                end
+            end
+            if closest then fireclickdetector(closest) end
+        end
+    end
+end)
+
+-- ===== UI SETTINGS ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("bLockerman's-Minesweeper")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
