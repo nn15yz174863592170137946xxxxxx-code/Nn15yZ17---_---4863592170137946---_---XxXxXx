@@ -1,0 +1,155 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager  = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+-- ===== services ===== --
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== helpers ===== --
+local function getChar()
+	return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+end
+
+local function getHumanoid()
+	return getChar():WaitForChild("Humanoid")
+end
+
+local function getHRP()
+	return getChar():WaitForChild("HumanoidRootPart")
+end
+
+local function freezePlayer(v)
+	getHRP().Anchored = v
+end
+
+local function freezeCamera(v)
+	workspace.CurrentCamera.CameraType =
+		v and Enum.CameraType.Scriptable or Enum.CameraType.Custom
+end
+
+local function getAllLoot()
+	local f = workspace:FindFirstChild("LootAnchor")
+	return f and f:GetChildren() or {}
+end
+
+local function getLootPos(obj)
+	return obj:IsA("Attachment") and obj.WorldPosition
+		or obj:IsA("BasePart") and obj.Position
+end
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+	Title = "DON's Script",
+	NotifySide = "Right",
+	ShowCustomCursor = true,
+})
+
+local Tabs = {
+	Info = Window:AddTab("Info","info"),
+	Main = Window:AddTab("Main","user"),
+	UI   = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO ===== --
+Tabs.Info:AddLeftGroupbox("Info","help")
+	:AddButton("Join Discord", function()
+		setclipboard("https://discord.gg/3NjyJjjXxF")
+		Library:Notify("Discord link copied!", 3)
+	end)
+
+-- ===== MAIN ===== --
+local FarmGroup = Tabs.Main:AddLeftGroupbox("Autofarm","boxes")
+
+local autoLoot, delayMin, delaySec = false, 1, 0
+local defaultHip
+
+FarmGroup:AddToggle("GodMode",{
+	Text="God Mode",
+	Callback=function(v)
+		local hum = getHumanoid()
+		defaultHip = defaultHip or hum.HipHeight
+		hum.HipHeight = v and 30 or defaultHip
+	end
+})
+
+FarmGroup:AddSlider("DelayMin",{Text="Delay (min)",Min=0,Max=10,Default=1,Callback=function(v) delayMin=v end})
+FarmGroup:AddSlider("DelaySec",{Text="Delay (sec)",Min=0,Max=60,Default=0,Callback=function(v) delaySec=v end})
+
+FarmGroup:AddToggle("AutoLoot",{Text="Auto Loot",Callback=function(v) autoLoot=v end})
+
+FarmGroup:AddButton("Loot All", function()
+	local hrp = getHRP()
+	local orig = hrp.Position
+	freezeCamera(true); freezePlayer(true)
+
+	for _,loot in ipairs(getAllLoot()) do
+		local pos = getLootPos(loot)
+		if pos then
+			RunService.Heartbeat:Wait()
+			hrp.Position = pos
+			RunService.Heartbeat:Wait()
+			hrp.Position = orig
+		end
+	end
+
+	freezePlayer(false); freezeCamera(false)
+end)
+
+task.spawn(function()
+	while true do
+		if not autoLoot then task.wait(.2) continue end
+		task.wait(delayMin*60 + delaySec)
+		if not autoLoot then continue end
+
+		local hrp = getHRP()
+		local orig = hrp.Position
+		freezeCamera(true); freezePlayer(true)
+
+		for _,loot in ipairs(getAllLoot()) do
+			if not autoLoot then break end
+			local pos = getLootPos(loot)
+			if pos then
+				RunService.Heartbeat:Wait()
+				hrp.Position = pos
+				RunService.Heartbeat:Wait()
+				hrp.Position = orig
+			end
+		end
+
+		freezePlayer(false); freezeCamera(false)
+	end
+end)
+
+-- ===== UI SETTINGS ===== --
+local MenuGroup = Tabs.UI:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,
+	Callback=function(v) Library.KeybindFrame.Visible=v end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,
+	Callback=function(v) Library.ShowCustomCursor=v end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",
+	Callback=function(v) Library:SetNotifySide(v) end})
+
+MenuGroup:AddDropdown("DPIScale",{Text="DPI Scale",
+	Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",
+	Callback=function(v) Library:SetDPIScale(tonumber(v:gsub("%%",""))) end})
+
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("OP-Blade")
+SaveManager:BuildConfigSection(Tabs.UI)
+ThemeManager:ApplyToTab(Tabs.UI)
+SaveManager:LoadAutoloadConfig()
