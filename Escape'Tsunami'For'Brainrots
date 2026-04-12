@@ -1,0 +1,765 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+-- ===== services ===== --
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+task.spawn(function()
+    while task.wait(1) do
+        if workspace:FindFirstChild("___") then
+            workspace.___:Destroy()
+        end
+    end
+end)
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","help"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== info tab ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== main tab ===== --
+local MainGroup = Tabs.Main:AddLeftGroupbox("AutoFarm","boxes")
+
+-- ===== TOWER ===== --
+local TowerGroup = Tabs.Main:AddLeftGroupbox("Tower","building")
+
+TowerGroup:AddLabel("Not working", true)
+local autoTowerEnabled = false
+local autoTowerThread = nil
+
+local function getTowerPosition()
+    local success, result = pcall(function()
+        local promptPart = workspace:FindFirstChild("GameObjects")
+            and workspace.GameObjects:FindFirstChild("PlaceSpecific")
+            and workspace.GameObjects.PlaceSpecific:FindFirstChild("root")
+            and workspace.GameObjects.PlaceSpecific.root:FindFirstChild("Tower")
+            and workspace.GameObjects.PlaceSpecific.root.Tower:FindFirstChild("Main")
+            and workspace.GameObjects.PlaceSpecific.root.Tower.Main:FindFirstChild("Prompt")
+        if not promptPart then return nil end
+        local worldCFrame = promptPart:GetAttribute("WorldCFrame")
+        if not worldCFrame then return nil end
+        return worldCFrame.Position
+    end)
+    if success then
+        return result
+    end
+    return nil
+end
+
+TowerGroup:AddToggle("AutoTower", {
+    Text = "Auto Tower",
+    Default = false,
+    Callback = function(v)
+        autoTowerEnabled = v
+        if v then
+            if farmRunning then stopFarm() end
+            if autoTowerThread then task.cancel(autoTowerThread) end
+            autoTowerThread = task.spawn(function()
+                while autoTowerEnabled do
+                    local char = LocalPlayer.Character
+                    if not char then task.wait(1) continue end
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then task.wait(1) continue end
+                    local targetPos = getTowerPosition()
+                    if not targetPos then task.wait(2) continue end
+                    local gap = findClosestGap(targetPos)
+                    if not gap then task.wait(1) continue end
+                    snapToHeight(hrp, gap.Y)
+                    local currentY = gap.Y
+                    tweenToPosXZ(hrp, targetPos, currentY)
+                    local promptPart = workspace:FindFirstChild("GameObjects")
+                        and workspace.GameObjects:FindFirstChild("PlaceSpecific")
+                        and workspace.GameObjects.PlaceSpecific:FindFirstChild("root")
+                        and workspace.GameObjects.PlaceSpecific.root:FindFirstChild("Tower")
+                        and workspace.GameObjects.PlaceSpecific.root.Tower:FindFirstChild("Main")
+                        and workspace.GameObjects.PlaceSpecific.root.Tower.Main:FindFirstChild("Prompt")
+                    if promptPart then
+                        local prompt = promptPart:FindFirstChildOfClass("ProximityPrompt")
+                        if prompt then
+                            prompt.HoldDuration = 0
+                            fireproximityprompt(prompt)
+                        end
+                    end
+                    task.wait(2)
+                end
+            end)
+        else
+            if autoTowerThread then task.cancel(autoTowerThread) end
+        end
+    end
+})
+
+-- ===== shared variables and helpers ===== --
+local defaultGravity = Workspace.Gravity
+local zeroGravity = 0
+local noclipConnection = nil
+
+local function enableNoclip()
+    if noclipConnection then return end
+    noclipConnection = RunService.Stepped:Connect(function()
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end)
+end
+
+local function disableNoclip()
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
+    end
+    local char = LocalPlayer.Character
+    if char then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+    end
+end
+
+local function findFolder(name)
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Folder") and obj.Name == name then
+            return obj
+        end
+    end
+    return nil
+end
+
+local gapsFolder = findFolder("Gaps")
+local gaps = {}
+if gapsFolder then
+    for _, child in pairs(gapsFolder:GetChildren()) do
+        if child:IsA("Model") then
+            local pos = child:GetPivot().Position
+            table.insert(gaps, {Position = pos, Y = pos.Y})
+        end
+    end
+end
+
+if #gaps == 0 then
+    MainGroup:AddLabel("No gaps found!")
+end
+
+table.sort(gaps, function(a, b)
+    return a.Position.X < b.Position.X
+end)
+
+local function getTweenSpeed()
+    return (LocalPlayer:GetAttribute("CurrentSpeed") or 16) * 3
+end
+
+local function findClosestGap(pos)
+    local closestGap = gaps[1]
+    local closestDist = (pos - gaps[1].Position).Magnitude
+    for i = 2, #gaps do
+        local dist = (pos - gaps[i].Position).Magnitude
+        if dist < closestDist then
+            closestDist = dist
+            closestGap = gaps[i]
+        end
+    end
+    return closestGap
+end
+
+-- ===== main farm state ===== --
+local farmRunning = false
+local farmThread = nil
+local yConnection = nil
+
+local brainrotEnabled = false
+local luckyEnabled = false
+local farmStartPos = nil
+
+-- ===== TOUCH TRANSMITTER CONTROL ===== --
+local touchMaintainConnection = nil
+
+local function disableAllTouch()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj:FindFirstChildOfClass("TouchTransmitter") then
+            obj.CanTouch = false
+        end
+    end
+end
+
+local function enableAllTouch()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj:FindFirstChildOfClass("TouchTransmitter") then
+            obj.CanTouch = true
+        end
+    end
+end
+
+local function startTouchMaintain()
+    if touchMaintainConnection then return end
+    touchMaintainConnection = RunService.Heartbeat:Connect(function()
+        if not (brainrotEnabled or luckyEnabled) then return end
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and obj:FindFirstChildOfClass("TouchTransmitter") and obj.CanTouch then
+                obj.CanTouch = false
+            end
+        end
+    end)
+end
+
+local function stopTouchMaintain()
+    if touchMaintainConnection then
+        touchMaintainConnection:Disconnect()
+        touchMaintainConnection = nil
+    end
+end
+
+-- ===== farm loop ===== --
+local function onCharacterAdded()
+    if farmThread then task.cancel(farmThread); farmThread = nil end
+    if yConnection then yConnection:Disconnect(); yConnection = nil end
+    disableNoclip()
+    Workspace.Gravity = defaultGravity
+    if brainrotEnabled or luckyEnabled then
+        task.wait(1)
+        startFarm()
+    end
+end
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+
+local function farmLoop()
+    while farmRunning do
+        local character = LocalPlayer.Character
+        if not character then character = LocalPlayer.CharacterAdded:Wait() end
+        local hrp = character:WaitForChild("HumanoidRootPart")
+        farmStartPos = hrp.Position  -- store start position for this cycle
+        local startPos = hrp.Position
+        local collected = 0
+        local collectedObjects = {}
+        local maxCarry = LocalPlayer:GetAttribute("MaxCarry") or 1
+        if maxCarry < 1 then maxCarry = 1 end
+        local currentY = nil
+        local died = false
+
+        yConnection = RunService.Heartbeat:Connect(function()
+            if currentY and farmRunning then
+                hrp.CFrame = CFrame.new(hrp.Position.X, currentY, hrp.Position.Z)
+            end
+        end)
+
+        local function checkDeath()
+            if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("Humanoid") or LocalPlayer.Character.Humanoid.Health <= 0 then
+                return true
+            end
+            return false
+        end
+
+        local function snapToHeight(targetGapY)
+            currentY = targetGapY
+            hrp.CFrame = CFrame.new(hrp.Position.X, targetGapY, hrp.Position.Z)
+        end
+
+        local function tweenToPos(targetPos)
+            local dist = (hrp.Position - targetPos).Magnitude
+            if dist < 1 then return end
+            local targetWithGapY = Vector3.new(targetPos.X, currentY, targetPos.Z)
+            local tween = TweenService:Create(hrp, TweenInfo.new(dist / getTweenSpeed(), Enum.EasingStyle.Linear), {
+                CFrame = CFrame.new(targetWithGapY)
+            })
+            tween:Play()
+            tween.Completed:Wait()
+            hrp.CFrame = CFrame.new(targetWithGapY)
+        end
+
+        local function firePromptsAt(pos)
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") then
+                    local parent = obj.Parent
+                    if parent and parent:IsA("BasePart") and (parent.Position - pos).Magnitude <= 10 then
+                        obj.HoldDuration = 0
+                        task.wait(0.05)
+                        fireproximityprompt(obj)
+                    end
+                end
+            end
+        end
+
+        local function getAllBrainrotPositions()
+            local positions = {}
+            local activeBrainrots = workspace:FindFirstChild("ActiveBrainrots")
+            if not activeBrainrots then return positions end
+            for _, section in pairs(activeBrainrots:GetChildren()) do
+                for _, brainrot in pairs(section:GetChildren()) do
+                    if brainrot:IsA("Model") and brainrot.Parent then
+                        local pos = brainrot:GetPivot().Position
+                        local level = brainrot:GetAttribute("Level") or 0
+                        table.insert(positions, {Position = pos, Object = brainrot, Level = level, Type = "brainrot"})
+                    end
+                end
+            end
+            return positions
+        end
+
+        local function getAllLuckyBlockPositions()
+            local positions = {}
+            local activeLuckyBlocks = workspace:FindFirstChild("ActiveLuckyBlocks")
+            if not activeLuckyBlocks then return positions end
+            for _, luckyBlock in pairs(activeLuckyBlocks:GetChildren()) do
+                if luckyBlock:IsA("Model") and luckyBlock.Parent then
+                    local pos = luckyBlock:GetPivot().Position
+                    local level = luckyBlock:GetAttribute("Level") or 0
+                    table.insert(positions, {Position = pos, Object = luckyBlock, Level = level, Type = "lucky"})
+                end
+            end
+            return positions
+        end
+
+        local function findBestTarget()
+            local candidates = {}
+            if brainrotEnabled then
+                local br = getAllBrainrotPositions()
+                for _, v in ipairs(br) do table.insert(candidates, v) end
+            end
+            if luckyEnabled then
+                local lb = getAllLuckyBlockPositions()
+                for _, v in ipairs(lb) do table.insert(candidates, v) end
+            end
+            local available = {}
+            for _, cand in ipairs(candidates) do
+                local excluded = false
+                for _, obj in ipairs(collectedObjects) do
+                    if obj == cand.Object then
+                        excluded = true
+                        break
+                    end
+                end
+                if not excluded then
+                    table.insert(available, cand)
+                end
+            end
+            if #available == 0 then return nil, nil end
+
+            local maxLevel = -math.huge
+            for _, cand in ipairs(available) do
+                if cand.Level > maxLevel then
+                    maxLevel = cand.Level
+                end
+            end
+            local bestLevel = {}
+            for _, cand in ipairs(available) do
+                if cand.Level == maxLevel then
+                    table.insert(bestLevel, cand)
+                end
+            end
+            if #bestLevel == 1 then
+                return bestLevel[1].Object, bestLevel[1].Position
+            end
+            local farthest, farthestPos = nil, nil
+            local maxDist = -math.huge
+            for _, cand in ipairs(bestLevel) do
+                local dist = (startPos - cand.Position).Magnitude
+                if dist > maxDist then
+                    maxDist = dist
+                    farthest = cand.Object
+                    farthestPos = cand.Position
+                end
+            end
+            return farthest, farthestPos
+        end
+
+        enableNoclip()
+        Workspace.Gravity = zeroGravity
+
+        local startGap = findClosestGap(hrp.Position)
+        snapToHeight(startGap.Y)
+
+        while farmRunning and collected < maxCarry do
+            if checkDeath() then
+                died = true
+                break
+            end
+
+            local targetObj, targetPos = findBestTarget()
+            if not targetObj then
+                task.wait(1)
+                break
+            end
+
+            local targetGap = findClosestGap(targetPos)
+            snapToHeight(targetGap.Y)
+
+            tweenToPos(targetPos)
+
+            if checkDeath() then
+                died = true
+                break
+            end
+
+            local pauseStart = tick()
+            while tick() - pauseStart < 1 and farmRunning do
+                if checkDeath() then
+                    died = true
+                    break
+                end
+                task.wait(0.05)
+            end
+
+            if died then break end
+
+            firePromptsAt(targetPos)
+
+            table.insert(collectedObjects, targetObj)
+            collected = collected + 1
+        end
+
+        if not died and farmRunning then
+            tweenToPos(startPos)
+            snapToHeight(startPos.Y)
+        end
+
+        if yConnection then
+            yConnection:Disconnect()
+            yConnection = nil
+        end
+
+        if died then
+            while not LocalPlayer.Character do
+                task.wait(1)
+            end
+        end
+
+        task.wait(0.5)
+    end
+
+    if yConnection then
+        yConnection:Disconnect()
+        yConnection = nil
+    end
+    disableNoclip()
+    Workspace.Gravity = defaultGravity
+    farmThread = nil
+end
+
+local function startFarm()
+    if farmThread then return end
+    startTouchMaintain()
+    farmRunning = true
+    farmThread = task.spawn(farmLoop)
+end
+
+local function stopFarm()
+    farmRunning = false
+    if farmThread then
+        task.cancel(farmThread)
+        farmThread = nil
+    end
+    if yConnection then
+        yConnection:Disconnect()
+        yConnection = nil
+    end
+    disableNoclip()
+    Workspace.Gravity = defaultGravity
+
+    -- Wait for player to return to start position before re-enabling touch
+    task.spawn(function()
+        if farmStartPos then
+            local char = LocalPlayer.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    while hrp and (hrp.Position - farmStartPos).Magnitude > 5 do
+                        task.wait(0.1)
+                    end
+                end
+            end
+        end
+        stopTouchMaintain()
+        enableAllTouch()
+    end)
+end
+
+-- ===== toggles ===== --
+local instantInteractEnabled = false
+local instantInteractConnection = nil
+local originalHoldDurations = {}
+
+MainGroup:AddToggle("InstantInteract", {
+    Text = "Instant Interact",
+    Default = false,
+    Callback = function(v)
+        instantInteractEnabled = v
+        if v then
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") then
+                    originalHoldDurations[obj] = obj.HoldDuration
+                    obj.HoldDuration = 0
+                end
+            end
+            instantInteractConnection = workspace.DescendantAdded:Connect(function(obj)
+                if instantInteractEnabled and obj:IsA("ProximityPrompt") then
+                    originalHoldDurations[obj] = obj.HoldDuration
+                    obj.HoldDuration = 0
+                end
+            end)
+            Library:Notify("Instant Interact Enabled", 3)
+        else
+            for obj, originalValue in pairs(originalHoldDurations) do
+                if obj and obj.Parent then
+                    obj.HoldDuration = originalValue
+                end
+            end
+            originalHoldDurations = {}
+            if instantInteractConnection then
+                instantInteractConnection:Disconnect()
+                instantInteractConnection = nil
+            end
+            Library:Notify("Instant Interact Disabled", 3)
+        end
+    end
+})
+
+MainGroup:AddToggle("BestBrainrot", {
+    Text = "Best Brainrot",
+    Default = false,
+    Callback = function(value)
+        brainrotEnabled = value
+        if brainrotEnabled or luckyEnabled then
+            startFarm()
+        else
+            stopFarm()
+        end
+    end
+})
+
+MainGroup:AddToggle("BestLuckyBlock", {
+    Text = "Best Lucky Block",
+    Default = false,
+    Callback = function(value)
+        luckyEnabled = value
+        if brainrotEnabled or luckyEnabled then
+            startFarm()
+        else
+            stopFarm()
+        end
+    end
+})
+
+-- ===== AUTOMATIONS ===== --
+local AutomationsGroup = Tabs.Main:AddRightGroupbox("Automations","zap")
+AutomationsGroup:AddLabel("Can't collect if too far")
+
+local autoCollectEnabled = false
+local autoCollectThread = nil
+AutomationsGroup:AddToggle("AutoCollect", {
+    Text = "Auto Collect",
+    Default = false,
+    Callback = function(v)
+        autoCollectEnabled = v
+        if v then
+            autoCollectThread = task.spawn(function()
+                while autoCollectEnabled do
+                    local replicatedStorage = game:GetService("ReplicatedStorage")
+                    local networking = replicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"):WaitForChild("Networking")
+                    local plotAction = networking:WaitForChild("RF/PlotAction")
+                    local bases = workspace:FindFirstChild("Bases")
+                    if bases then
+                        for _, base in pairs(bases:GetChildren()) do
+                            local slots = base:FindFirstChild("Slots")
+                            if slots then
+                                for _, slot in pairs(slots:GetChildren()) do
+                                    local slotNumber = slot.Name:match("%d+")
+                                    if slotNumber then
+                                        task.spawn(function()
+                                            local args = {"Collect Money", base.Name, slotNumber}
+                                            pcall(function() plotAction:InvokeServer(unpack(args)) end)
+                                        end)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    task.wait(1)
+                end
+            end)
+        else
+            if autoCollectThread then task.cancel(autoCollectThread); autoCollectThread = nil end
+        end
+    end
+})
+
+local upgradeSpeed1Enabled = false
+AutomationsGroup:AddToggle("UpgradeSpeed1", {
+    Text = "Upgrade Speed 1",
+    Default = false,
+    Callback = function(v)
+        upgradeSpeed1Enabled = v
+        while upgradeSpeed1Enabled do
+            pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("RemoteFunctions"):WaitForChild("UpgradeSpeed"):InvokeServer(1) end)
+            task.wait(0.1)
+        end
+    end
+})
+
+local upgradeSpeed10Enabled = false
+AutomationsGroup:AddToggle("UpgradeSpeed10", {
+    Text = "Upgrade Speed 10",
+    Default = false,
+    Callback = function(v)
+        upgradeSpeed10Enabled = v
+        while upgradeSpeed10Enabled do
+            pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("RemoteFunctions"):WaitForChild("UpgradeSpeed"):InvokeServer(10) end)
+            task.wait(0.1)
+        end
+    end
+})
+
+local upgradeCarryEnabled = false
+AutomationsGroup:AddToggle("UpgradeCarry", {
+    Text = "Upgrade Carry",
+    Default = false,
+    Callback = function(v)
+        upgradeCarryEnabled = v
+        while upgradeCarryEnabled do
+            pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("RemoteFunctions"):WaitForChild("UpgradeCarry"):InvokeServer() end)
+            task.wait(0.1)
+        end
+    end
+})
+
+local upgradeJumpEnabled = false
+AutomationsGroup:AddToggle("UpgradeJump", {
+    Text = "Upgrade Jump",
+    Default = false,
+    Callback = function(v)
+        upgradeJumpEnabled = v
+        while upgradeJumpEnabled do
+            pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RF/UpgradeJump"):InvokeServer() end)
+            task.wait(0.1)
+        end
+    end
+})
+
+local rebirthEnabled = false
+AutomationsGroup:AddToggle("Rebirth", {
+    Text = "Rebirth",
+    Default = false,
+    Callback = function(v)
+        rebirthEnabled = v
+        while rebirthEnabled do
+            pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("RemoteFunctions"):WaitForChild("Rebirth"):InvokeServer() end)
+            task.wait(0.1)
+        end
+    end
+})
+
+local upgradeBaseEnabled = false
+AutomationsGroup:AddToggle("UpgradeBase", {
+    Text = "Upgrade Base",
+    Default = false,
+    Callback = function(v)
+        upgradeBaseEnabled = v
+        while upgradeBaseEnabled do
+            pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RE/Plot.UpgradeBase"):FireServer() end)
+            task.wait(0.1)
+        end
+    end
+})
+
+local sellThreshold = AutomationsGroup:AddInput("SellThreshold", {
+    Text = "Sell Level Threshold",
+    Default = "0",
+    Placeholder = "Level",
+    Numeric = true,
+    Finished = true,
+})
+
+local autoSellEnabled = false
+local autoSellConnection = nil
+AutomationsGroup:AddToggle("AutoSell", {
+    Text = "Auto Sell (below threshold)",
+    Default = false,
+    Callback = function(v)
+        autoSellEnabled = v
+        if autoSellConnection then autoSellConnection:Disconnect(); autoSellConnection = nil end
+        if v then
+            autoSellConnection = RunService.Heartbeat:Connect(function()
+                if not autoSellEnabled then return end
+                local threshold = tonumber(sellThreshold.Value) or 0
+                local character = LocalPlayer.Character
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                if not character or not backpack then return end
+                for _, tool in ipairs(character:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        local level = tool:GetAttribute("Level")
+                        if level and level < threshold then
+                            pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("RemoteFunctions"):WaitForChild("SellTool"):InvokeServer() end)
+                            return
+                        end
+                    end
+                end
+                for _, tool in ipairs(backpack:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        local level = tool:GetAttribute("Level")
+                        if level and level < threshold then
+                            tool.Parent = character
+                            return
+                        end
+                    end
+                end
+            end)
+        end
+    end
+})
+
+-- ===== ui settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+MenuGroup:AddToggle("KeybindMenuOpen", {Text = "Open Keybind Menu", Default = Library.KeybindFrame.Visible, Callback = function(v) Library.KeybindFrame.Visible = v end})
+MenuGroup:AddToggle("ShowCustomCursor", {Text = "Custom Cursor", Default = true, Callback = function(v) Library.ShowCustomCursor = v end})
+MenuGroup:AddDropdown("NotificationSide", {Text = "Notification Side", Values = {"Left","Right"}, Default = "Right", Callback = function(v) Library:SetNotifySide(v) end})
+MenuGroup:AddDropdown("DPIDropdown", {Text = "DPI Scale", Values = {"50%","75%","100%","125%","150%","175%","200%"}, Default = "100%", Callback = function(v) Library:SetDPIScale(tonumber(v:gsub("%%",""))) end})
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", {Default = "RightShift", NoUI = true})
+MenuGroup:AddButton("Unload", function()
+    stopFarm()
+    disableNoclip()
+    Workspace.Gravity = defaultGravity
+    Library:Unload()
+end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Escape-Tsunami-For-Brainrots")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
