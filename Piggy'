@@ -1,0 +1,728 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+-- ===== services ===== --
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO TAB ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== Helper functions ===== --
+local function findItemFolder()
+    for _, child in pairs(workspace:GetChildren()) do
+        if child.Name == "ItemFolder" or child.Name:match("^-?%d+$") then
+            return child
+        end
+    end
+    return nil
+end
+
+local function getItemColor(part)
+    local emitter = part:FindFirstChildOfClass("ParticleEmitter")
+    if emitter and emitter.Color then
+        local colorSeq = emitter.Color
+        if #colorSeq.Keypoints > 0 then
+            return colorSeq.Keypoints[1].Value
+        end
+    end
+    if part.BrickColor then
+        return part.BrickColor.Color
+    elseif part.Color then
+        return part.Color
+    end
+    return Color3.new(1,1,1)
+end
+
+local function colorToRGBString(color)
+    return math.floor(color.R * 255) .. "," .. math.floor(color.G * 255) .. "," .. math.floor(color.B * 255)
+end
+
+local function teleportToPart(part)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not hrp then return end
+
+    local startPos = hrp.CFrame
+    local collisionStates = {}
+
+    for _, v in pairs(char:GetDescendants()) do
+        if v:IsA("BasePart") then
+            collisionStates[v] = v.CanCollide
+            v.CanCollide = false
+        end
+    end
+
+    task.wait(0.05)
+    hrp.CFrame = part.CFrame + Vector3.new(0, 5, 0)
+    task.wait(0.25)
+
+    local cd = part:FindFirstChildOfClass("ClickDetector")
+    if cd then
+        fireclickdetector(cd)
+        Library:Notify("Grabbed " .. part.Name, 1)
+    end
+
+    task.wait(0.25)
+    hrp.CFrame = startPos + Vector3.new(0, 2, 0)
+    task.wait(0.05)
+
+    for v, state in pairs(collisionStates) do
+        v.CanCollide = state
+    end
+
+    humanoid:ChangeState(Enum.HumanoidStateType.Running)
+    task.wait(0.1)
+    humanoid:ChangeState(Enum.HumanoidStateType.Running)
+end
+
+-- ===== MAIN GROUPBOX ===== --
+local MainGroup = Tabs.Main:AddLeftGroupbox("Main","boxes")
+
+MainGroup:AddLabel("GodMode doesn't work on Mr.p", true)
+
+local godMode = false
+local disabledParts = {}
+
+MainGroup:AddToggle("GodMode", {
+    Text = "GodMode (bot)",
+    Default = false,
+    Callback = function(v)
+        godMode = v
+        if v then
+            Library:Notify("GodMode enabled", 1)
+        else
+            for _, part in pairs(disabledParts) do
+                if part and part.Parent then
+                    part.CanTouch = true
+                end
+            end
+            disabledParts = {}
+            Library:Notify("GodMode disabled", 1)
+        end
+    end
+})
+
+RunService.Heartbeat:Connect(function()
+    if godMode then
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") and not Players:GetPlayerFromCharacter(obj) then
+                local hasToolRequired = false
+                for _, descendant in pairs(obj:GetDescendants()) do
+                    if descendant.Name == "ToolRequired" then
+                        hasToolRequired = true
+                        break
+                    end
+                end
+                if not hasToolRequired then
+                    for _, descendant in pairs(obj:GetDescendants()) do
+                        if descendant:IsA("TouchTransmitter") and descendant.Parent:IsA("BasePart") then
+                            local part = descendant.Parent
+                            if part.CanTouch == true then
+                                part.CanTouch = false
+                                table.insert(disabledParts, part)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+MainGroup:AddLabel("You have to jump for some traps", true)
+
+local antiTrap = false
+local disabledTrapObjects = {}
+
+MainGroup:AddToggle("AntiTrap", {
+    Text = "Anti Trap",
+    Default = false,
+    Callback = function(v)
+        antiTrap = v
+        if v then
+            Library:Notify("Anti Trap enabled", 1)
+        else
+            for _, obj in pairs(disabledTrapObjects) do
+                pcall(function()
+                    if obj:IsA("BasePart") then
+                        obj.CanTouch = true
+                    elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+                        obj.Disabled = false
+                    end
+                end)
+            end
+            disabledTrapObjects = {}
+            Library:Notify("Anti Trap disabled", 1)
+        end
+    end
+})
+
+task.spawn(function()
+    while task.wait(0.3) do
+        if antiTrap then
+            local trapFolder = findItemFolder()
+            if trapFolder then
+                for _, obj in pairs(trapFolder:GetDescendants()) do
+                    if obj:IsA("BasePart") then
+                        if obj:FindFirstChildOfClass("TouchTransmitter") or obj:FindFirstChildOfClass("TouchInterest") then
+                            if obj.CanTouch == true then
+                                obj.CanTouch = false
+                                table.insert(disabledTrapObjects, obj)
+                            end
+                        end
+                    elseif obj:IsA("Script") or obj:IsA("LocalScript") then
+                        if obj.Disabled == false then
+                            obj.Disabled = true
+                            table.insert(disabledTrapObjects, obj)
+                        end
+                    end
+                end
+            end
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    if hum.WalkSpeed < 5 then
+                        hum.WalkSpeed = 15
+                    end
+                    if hum.JumpPower < 10 then
+                        hum.JumpPower = 35
+                    end
+                end
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    if hrp.Anchored == true then
+                        hrp.Anchored = false
+                    end
+                end
+                for _, v in pairs(char:GetDescendants()) do
+                    if v:IsA("BasePart") and v.Anchored == true then
+                        v.Anchored = false
+                    end
+                end
+            end
+        end
+    end
+end)
+
+local itemPartsTable = {}
+local function updateItemDropdown()
+    local folder = findItemFolder()
+    if not folder then
+        Options.ItemDropdown:SetValues({ "No folder found" })
+        return
+    end
+    local itemNames = {}
+    itemPartsTable = {}
+    for _, part in pairs(folder:GetChildren()) do
+        if part:IsA("BasePart") and part.Name ~= "" then
+            local displayName
+            if part.Name:match("^-?%d+$") then
+                if part.BrickColor then
+                    displayName = part.BrickColor.Name
+                else
+                    local color = getItemColor(part)
+                    displayName = colorToRGBString(color)
+                end
+            else
+                displayName = part.Name
+            end
+            local baseDisplay = displayName
+            local count = 1
+            while itemPartsTable[displayName] do
+                displayName = baseDisplay .. " (" .. count .. ")"
+                count = count + 1
+            end
+            table.insert(itemNames, displayName)
+            itemPartsTable[displayName] = part
+        end
+    end
+    table.sort(itemNames)
+    if #itemNames == 0 then
+        Options.ItemDropdown:SetValues({ "No items" })
+    else
+        Options.ItemDropdown:SetValues(itemNames)
+    end
+end
+
+MainGroup:AddLabel("Will show as color for the first round", true)
+
+MainGroup:AddDropdown("ItemDropdown", {
+    Text = "Items",
+    Values = { "Loading..." },
+    Default = 1,
+    Multi = false,
+    Callback = function(selected)
+        if selected == "No folder found" or selected == "No items" or selected == "Loading..." then
+            return
+        end
+        local part = itemPartsTable[selected]
+        if part then
+            teleportToPart(part)
+        end
+    end
+})
+
+task.spawn(function()
+    while task.wait(2) do
+        updateItemDropdown()
+    end
+end)
+
+-- ===== ESP GROUP ===== --
+local ESPGroup = Tabs.Main:AddRightGroupbox("ESP","boxes")
+
+local playerESP = false
+local playerESPObjects = {}
+local playerHighlights = {}
+local piggyESP = false
+local piggyESPObjects = {}
+local piggyHighlights = {}
+local itemESP = false
+local itemHighlights = {}
+
+local function getPlayerStatus(plr)
+    local char = plr.Character
+    if not char then return "Normal", Color3.new(1,1,1) end
+    if char:FindFirstChild("Ghost") then
+        return "Ghost", Color3.new(0,1,1)
+    end
+    for _, obj in pairs(char:GetDescendants()) do
+        if obj:IsA("TouchTransmitter") then
+            return "Piggy", Color3.new(1,0,0)
+        end
+    end
+    local backpack = plr:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in pairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name == "Knife" then
+                return "Traitor", Color3.new(1,0,0)
+            end
+        end
+    end
+    return "Normal", Color3.new(1,1,1)
+end
+
+local function updatePlayerESP()
+    for plr, data in pairs(playerESPObjects) do
+        local char = plr.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChildOfClass("Humanoid") then
+            if data.gui then pcall(function() data.gui:Destroy() end) end
+            if playerHighlights[plr] then pcall(function() playerHighlights[plr]:Destroy() end) end
+            playerESPObjects[plr] = nil
+            playerHighlights[plr] = nil
+        end
+    end
+    if not playerESP then return end
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local char = plr.Character
+        if not char then continue end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then continue end
+        local dist = math.floor((cam.CFrame.Position - hrp.Position).Magnitude)
+        local status, color = getPlayerStatus(plr)
+        if not playerESPObjects[plr] then
+            local gui = Instance.new("BillboardGui")
+            gui.Size = UDim2.fromOffset(300, 50)
+            gui.AlwaysOnTop = true
+            gui.StudsOffset = Vector3.new(0,3,0)
+            gui.Parent = game:GetService("CoreGui")
+            local txt = Instance.new("TextLabel", gui)
+            txt.Size = UDim2.fromScale(1,1)
+            txt.BackgroundTransparency = 1
+            txt.TextColor3 = color
+            txt.TextStrokeColor3 = Color3.new(0,0,0)
+            txt.TextStrokeTransparency = 0.3
+            txt.Font = Enum.Font.SourceSansBold
+            txt.TextSize = 20
+            txt.RichText = true
+            txt.Text = ""
+            playerESPObjects[plr] = {gui = gui, text = txt}
+        end
+        local data = playerESPObjects[plr]
+        data.gui.Adornee = hrp
+        data.gui.Enabled = true
+        data.text.Text = "<b>Name: " .. plr.Name .. " | " .. status .. " | Studs: " .. dist .. "</b>"
+        data.text.TextColor3 = color
+        if not playerHighlights[plr] then
+            local hl = Instance.new("Highlight")
+            hl.Name = "PlayerHighlight"
+            hl.Adornee = char
+            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            hl.FillTransparency = 0.5
+            hl.OutlineTransparency = 1
+            hl.FillColor = color
+            hl.Parent = char
+            playerHighlights[plr] = hl
+        else
+            playerHighlights[plr].Adornee = char
+            playerHighlights[plr].Enabled = true
+            playerHighlights[plr].FillColor = color
+        end
+    end
+end
+
+local function updatePiggyESP()
+    for obj, data in pairs(piggyESPObjects) do
+        if not obj or not obj.Parent then
+            if data.gui then pcall(function() data.gui:Destroy() end) end
+            if piggyHighlights[obj] then pcall(function() piggyHighlights[obj]:Destroy() end) end
+            piggyESPObjects[obj] = nil
+            piggyHighlights[obj] = nil
+        end
+    end
+    if not piggyESP then return end
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") and not Players:GetPlayerFromCharacter(obj) then
+            local hasTool = false
+            for _, descendant in pairs(obj:GetDescendants()) do
+                if descendant.Name == "ToolRequired" then
+                    hasTool = true
+                    break
+                end
+            end
+            local subModels = {}
+            for _, descendant in pairs(obj:GetDescendants()) do
+                if descendant:IsA("Model") and descendant ~= obj then
+                    table.insert(subModels, descendant)
+                end
+            end
+            local touchInModel = false
+            local touchOutside = false
+            for _, descendant in pairs(obj:GetDescendants()) do
+                if descendant:IsA("TouchTransmitter") then
+                    local inModel = false
+                    for _, model in ipairs(subModels) do
+                        if descendant:IsDescendantOf(model) then
+                            inModel = true
+                            break
+                        end
+                    end
+                    if inModel then
+                        touchInModel = true
+                    else
+                        touchOutside = true
+                    end
+                end
+            end
+            local hasAnyTouch = touchInModel or touchOutside
+            if hasTool or hasAnyTouch then
+                local hrp = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart")
+                if hrp then
+                    local displayName = obj.Name
+                    if obj.Name:match("^-?%d+$") then displayName = "" end
+                    local color = Color3.new(1,0,0)
+                    if hasTool or touchInModel then
+                        color = Color3.new(0,1,0)
+                    end
+                    if not piggyESPObjects[obj] then
+                        local gui = Instance.new("BillboardGui")
+                        gui.Size = UDim2.fromOffset(300, 50)
+                        gui.AlwaysOnTop = true
+                        gui.StudsOffset = Vector3.new(0,3,0)
+                        gui.Parent = game:GetService("CoreGui")
+                        local txt = Instance.new("TextLabel", gui)
+                        txt.Size = UDim2.fromScale(1,1)
+                        txt.BackgroundTransparency = 1
+                        txt.TextColor3 = color
+                        txt.TextStrokeColor3 = Color3.new(0,0,0)
+                        txt.TextStrokeTransparency = 0.3
+                        txt.Font = Enum.Font.SourceSansBold
+                        txt.TextSize = 20
+                        txt.RichText = true
+                        txt.Text = ""
+                        piggyESPObjects[obj] = {gui = gui, text = txt}
+                    end
+                    local data = piggyESPObjects[obj]
+                    local dist = math.floor((cam.CFrame.Position - hrp.Position).Magnitude)
+                    data.gui.Adornee = hrp
+                    data.gui.Enabled = true
+                    if displayName == "" then
+                        data.text.Text = "<b>" .. dist .. " studs</b>"
+                    else
+                        data.text.Text = "<b>" .. displayName .. " | " .. dist .. " studs</b>"
+                    end
+                    data.text.TextColor3 = color
+                    if not piggyHighlights[obj] then
+                        local hl = Instance.new("Highlight")
+                        hl.Name = "PiggyHighlight"
+                        hl.Adornee = obj
+                        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        hl.FillTransparency = 0.5
+                        hl.OutlineTransparency = 1
+                        hl.FillColor = color
+                        hl.Parent = obj
+                        piggyHighlights[obj] = hl
+                    else
+                        piggyHighlights[obj].Adornee = obj
+                        piggyHighlights[obj].Enabled = true
+                        piggyHighlights[obj].FillColor = color
+                    end
+                end
+            else
+                if piggyESPObjects[obj] then
+                    piggyESPObjects[obj].gui.Enabled = false
+                end
+                if piggyHighlights[obj] then
+                    piggyHighlights[obj].Enabled = false
+                end
+            end
+        end
+    end
+end
+
+local function updateItemESP()
+    for part, data in pairs(itemHighlights) do
+        if not part or not part.Parent then
+            if data.gui then pcall(function() data.gui:Destroy() end) end
+            if data.highlight then pcall(function() data.highlight:Destroy() end) end
+            itemHighlights[part] = nil
+        end
+    end
+    if not itemESP then
+        for _, data in pairs(itemHighlights) do
+            if data.gui then pcall(function() data.gui:Destroy() end) end
+            if data.highlight then pcall(function() data.highlight:Destroy() end) end
+        end
+        itemHighlights = {}
+        return
+    end
+    local folder = findItemFolder()
+    if not folder then return end
+    for _, part in pairs(folder:GetChildren()) do
+        if part:IsA("BasePart") and part.Name ~= "" then
+            if not itemHighlights[part] then
+                local gui = Instance.new("BillboardGui")
+                gui.Size = UDim2.fromOffset(200, 40)
+                gui.AlwaysOnTop = true
+                gui.StudsOffset = Vector3.new(0,2,0)
+                gui.Parent = game:GetService("CoreGui")
+                local txt = Instance.new("TextLabel", gui)
+                txt.Size = UDim2.fromScale(1,1)
+                txt.BackgroundTransparency = 1
+                txt.TextColor3 = getItemColor(part)
+                txt.TextStrokeColor3 = Color3.new(0,0,0)
+                txt.TextStrokeTransparency = 0.3
+                txt.Font = Enum.Font.SourceSansBold
+                txt.TextSize = 18
+                txt.RichText = true
+                txt.Text = ""
+                
+                local hl = Instance.new("Highlight")
+                hl.Name = "ItemHighlight"
+                hl.Adornee = part
+                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                hl.FillTransparency = 0
+                hl.OutlineTransparency = 1
+                hl.FillColor = getItemColor(part)
+                hl.Parent = part
+                
+                itemHighlights[part] = {gui = gui, text = txt, highlight = hl}
+            else
+                local data = itemHighlights[part]
+                data.gui.Adornee = part
+                data.gui.Enabled = true
+                local dist = math.floor((cam.CFrame.Position - part.Position).Magnitude)
+                if part.Name:match("^-?%d+$") then
+                    data.text.Text = "<b>" .. dist .. " studs</b>"
+                else
+                    data.text.Text = "<b>" .. part.Name .. " | " .. dist .. " studs</b>"
+                end
+                data.text.TextColor3 = getItemColor(part)
+                data.highlight.Adornee = part
+                data.highlight.Enabled = true
+                data.highlight.FillColor = getItemColor(part)
+            end
+        end
+    end
+end
+
+ESPGroup:AddToggle("PlayerESP", {
+    Text = "Player ESP",
+    Default = false,
+    Callback = function(v)
+        playerESP = v
+        if not v then
+            for _, data in pairs(playerESPObjects) do
+                if data.gui then pcall(function() data.gui:Destroy() end) end
+            end
+            for _, hl in pairs(playerHighlights) do
+                pcall(function() hl:Destroy() end)
+            end
+            playerESPObjects = {}
+            playerHighlights = {}
+        end
+    end
+})
+
+ESPGroup:AddToggle("PiggyESP", {
+    Text = "Piggy ESP (bot)",
+    Default = false,
+    Callback = function(v)
+        piggyESP = v
+        if not v then
+            for _, data in pairs(piggyESPObjects) do
+                if data.gui then pcall(function() data.gui:Destroy() end) end
+            end
+            for _, hl in pairs(piggyHighlights) do
+                pcall(function() hl:Destroy() end)
+            end
+            piggyESPObjects = {}
+            piggyHighlights = {}
+        end
+    end
+})
+
+
+ESPGroup:AddToggle("ItemESP", {
+    Text = "Item ESP",
+    Default = false,
+    Callback = function(v)
+        itemESP = v
+        if not v then
+            for _, data in pairs(itemHighlights) do
+                if data.gui then pcall(function() data.gui:Destroy() end) end
+                if data.highlight then pcall(function() data.highlight:Destroy() end) end
+            end
+            itemHighlights = {}
+        end
+    end
+})
+
+for _, plr in pairs(Players:GetPlayers()) do
+    if plr ~= LocalPlayer then
+        local gui = Instance.new("BillboardGui")
+        gui.Size = UDim2.fromOffset(300, 50)
+        gui.AlwaysOnTop = true
+        gui.StudsOffset = Vector3.new(0,3,0)
+        gui.Parent = game:GetService("CoreGui")
+        local txt = Instance.new("TextLabel", gui)
+        txt.Size = UDim2.fromScale(1,1)
+        txt.BackgroundTransparency = 1
+        txt.TextColor3 = Color3.new(1,1,1)
+        txt.TextStrokeColor3 = Color3.new(0,0,0)
+        txt.TextStrokeTransparency = 0.3
+        txt.Font = Enum.Font.SourceSansBold
+        txt.TextSize = 20
+        txt.RichText = true
+        txt.Text = ""
+        playerESPObjects[plr] = {gui = gui, text = txt}
+    end
+end
+
+Players.PlayerAdded:Connect(function(plr)
+    if plr == LocalPlayer then return end
+    plr.CharacterAdded:Connect(function()
+        task.wait(1)
+        local gui = Instance.new("BillboardGui")
+        gui.Size = UDim2.fromOffset(300, 50)
+        gui.AlwaysOnTop = true
+        gui.StudsOffset = Vector3.new(0,3,0)
+        gui.Parent = game:GetService("CoreGui")
+        local txt = Instance.new("TextLabel", gui)
+        txt.Size = UDim2.fromScale(1,1)
+        txt.BackgroundTransparency = 1
+        txt.TextColor3 = Color3.new(1,1,1)
+        txt.TextStrokeColor3 = Color3.new(0,0,0)
+        txt.TextStrokeTransparency = 0.3
+        txt.Font = Enum.Font.SourceSansBold
+        txt.TextSize = 20
+        txt.RichText = true
+        txt.Text = ""
+        playerESPObjects[plr] = {gui = gui, text = txt}
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+    if playerESPObjects[plr] then
+        pcall(function() playerESPObjects[plr].gui:Destroy() end)
+        playerESPObjects[plr] = nil
+    end
+    if playerHighlights[plr] then
+        pcall(function() playerHighlights[plr]:Destroy() end)
+        playerHighlights[plr] = nil
+    end
+end)
+
+local lastESPUpdate = 0
+local ESP_UPDATE_RATE = 0.2
+RunService.RenderStepped:Connect(function()
+    local currentTime = tick()
+    if currentTime - lastESPUpdate < ESP_UPDATE_RATE then return end
+    lastESPUpdate = currentTime
+    if playerESP then
+        updatePlayerESP()
+    end
+    if piggyESP then
+        updatePiggyESP()
+    end
+    if itemESP then
+        updateItemESP()
+    end
+end)
+
+-- ===== UI SETTINGS ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Piggy")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
