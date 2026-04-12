@@ -1,0 +1,114 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO TAB ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== Lucky Block ===== --
+local LuckyGroup = Tabs.Main:AddLeftGroupbox("Lucky Block","boxes")
+
+local Spawn = 1
+
+LuckyGroup:AddSlider("SpawnAmount",{
+    Text = "Spawn Amount",
+    Default = 1,
+    Min = 0,
+    Max = 100,
+    Rounding = 0,
+    Callback = function(v)
+        Spawn = v
+    end
+})
+
+local function fire(remoteName)
+    local r = ReplicatedStorage:FindFirstChild(remoteName)
+    if not r then
+        Library:Notify(remoteName.." not found",3)
+        return
+    end
+    for i = 1, Spawn do
+        r:FireServer(Spawn)
+        task.wait()
+    end
+end
+
+LuckyGroup:AddButton("Lucky Block", function()
+    fire("SpawnLuckyBlock")
+end)
+
+LuckyGroup:AddButton("Super Block", function()
+    fire("SpawnSuperBlock")
+end)
+
+LuckyGroup:AddButton("Diamond Block", function()
+    fire("SpawnDiamondBlock")
+end)
+
+LuckyGroup:AddButton("Rainbow Block", function()
+    fire("SpawnRainbowBlock")
+end)
+
+LuckyGroup:AddButton("Galaxy Block", function()
+    fire("SpawnGalaxyBlock")
+end)
+
+-- ===== UI SETTINGS ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("LUCKYBLOCKSBattlegrounds")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
