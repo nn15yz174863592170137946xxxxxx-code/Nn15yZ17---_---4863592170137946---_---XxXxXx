@@ -1,0 +1,358 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local workspaceRef = workspace
+
+-- ===== helpers: locate folders ===== --
+local function findGameFolderChild(...)
+	local node = workspaceRef:FindFirstChild("GameFolder")
+	if not node then return nil end
+	for i = 1, select("#", ...) do
+		local name = select(i, ...)
+		if not node then return nil end
+		node = node:FindFirstChild(name)
+	end
+	return node
+end
+
+local raritiesRoot = findGameFolderChild("Rarities")
+local brainrotsRoot = findGameFolderChild("Brainrots")
+
+-- ===== parse cash string ===== --
+local function parseCashText(txt)
+	if not txt then return nil end
+	local s = tostring(txt):lower()
+	local num, unit = s:match("([%d%,%.]+)%s*([km]?)")
+	if not num then
+		num = s:match("%$?%s*([%d%,%.]+)")
+		unit = s:match("([km])")
+	end
+	if not num then return nil end
+	num = num:gsub(",", "")
+	local n = tonumber(num)
+	if not n then return nil end
+	if unit == "k" then n = n * 1000 end
+	if unit == "m" then n = n * 1000000 end
+	return n
+end
+
+local function extractCashFromEntry(entry)
+	local root = entry:FindFirstChild("RootPart")
+	if not root then return nil, nil end
+
+	local att = root:FindFirstChild("BrainrotAtt")
+	if not att then return nil, nil end
+
+	local gui = att:FindFirstChild("BillboardGui")
+	if not gui then return nil, nil end
+
+	local cash = gui:FindFirstChild("Cash")
+	if not cash or not cash:IsA("TextLabel") then return nil, nil end
+
+	local txt = cash.Text
+	if not txt then return nil, nil end
+
+	local val = parseCashText(txt)
+	if not val then return nil, nil end
+
+	return val, txt
+end
+
+local function getCFrameForEntry(entry)
+	if not entry then return nil end
+	if entry:IsA("BasePart") then return entry.CFrame end
+	if entry:IsA("Model") then
+		local ok, pivot = pcall(function() return entry:GetPivot() end)
+		if ok and pivot then return pivot end
+		if entry.PrimaryPart and entry.PrimaryPart:IsA("BasePart") then
+			return entry.PrimaryPart.CFrame
+		end
+		local bp = entry:FindFirstChildWhichIsA("BasePart", true)
+		if bp then return bp.CFrame end
+	end
+	local any = entry:FindFirstChildWhichIsA("BasePart", true)
+	if any then return any.CFrame end
+	return nil
+end
+
+local function findBestBrainrotForRarity(rarityName)
+	if not brainrotsRoot then return nil, "Missing workspace.GameFolder.Brainrots" end
+	local rarFolder = brainrotsRoot:FindFirstChild(rarityName)
+	if not rarFolder then return nil, ("No brainrots folder for rarity '%s'"):format(rarityName) end
+
+	local bestEntry, bestValue, bestText = nil, nil, nil
+	for _, child in ipairs(rarFolder:GetChildren()) do
+		local val, raw = extractCashFromEntry(child)
+		if val then
+			if not bestValue or val > bestValue then
+				bestValue = val
+				bestEntry = child
+				bestText = raw
+			end
+		end
+	end
+
+	if not bestEntry then
+		return nil, ("No brainrot found in '%s'"):format(rarityName)
+	end
+	return bestEntry, bestValue, bestText
+end
+
+local function tpToCFrameOnce(cf)
+	if not cf then return false end
+	local char = LocalPlayer.Character
+	if not char then return false end
+	local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+	if not hrp then return false end
+	hrp.CFrame = cf * CFrame.new(0, 3, 0)
+	return true
+end
+
+-- ===== build UI ===== --
+local Window = Library:CreateWindow({
+	Title = "DON's Script",
+	Icon = 95816097006870,
+	NotifySide = "Right",
+	ShowCustomCursor = true,
+})
+
+local Tabs = {
+	Info = Window:AddTab("Info", "info"),
+	Main = Window:AddTab("Main", "user"),
+	["UI Settings"] = Window:AddTab("UI Settings", "settings"),
+}
+
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info", "info")
+InfoGroup:AddButton("Discord", function()
+	setclipboard("https://discord.gg/3NjyJjjXxF")
+	Library:Notify("Discord link copied!", 3)
+end)
+
+local BrainrotsGroup = Tabs.Main:AddLeftGroupbox("Brainrots", "brain")
+BrainrotsGroup:AddLabel("Teleport")
+
+BrainrotsGroup:AddButton("Back", function()
+	local shop = workspace.GameFolder:FindFirstChild("Shops")
+	and workspace.GameFolder.Shops:FindFirstChild("Speed")
+
+	if not shop then
+		Library:Notify("Speed shop not found", 3)
+		return
+	end
+
+	local cf
+	if shop:IsA("Model") then
+		cf = shop:GetPivot()
+	elseif shop:IsA("BasePart") then
+		cf = shop.CFrame
+	end
+
+	if cf then
+		tpToCFrameOnce(cf)
+	else
+		Library:Notify("No valid CFrame for Speed shop", 3)
+	end
+end)
+
+BrainrotsGroup:AddButton("Lucky Block", function()
+	local gameFolder = workspace:FindFirstChild("GameFolder")
+	if not gameFolder then
+		Library:Notify("GameFolder not found", 3)
+		return
+	end
+
+	local luckyFolder = gameFolder:FindFirstChild("LuckyBlocks")
+	if not luckyFolder then
+		Library:Notify("LuckyBlocks folder not found", 3)
+		return
+	end
+
+	local luckyBlocks = luckyFolder:GetChildren()
+
+	if #luckyBlocks == 0 then
+		Library:Notify("No Lucky Blocks found", 3)
+		return
+	end
+
+	local randomBlock = luckyBlocks[math.random(1, #luckyBlocks)]
+
+	local cf = getCFrameForEntry(randomBlock)
+	if not cf then
+		Library:Notify("Could not find Lucky Block position", 3)
+		return
+	end
+
+	if tpToCFrameOnce(cf) then
+		Library:Notify("Teleported to a Lucky Block!", 3)
+	else
+		Library:Notify("Teleport failed", 3)
+	end
+end)
+
+local NotifyGroup = Tabs.Main:AddRightGroupbox("Notifications", "bell")
+
+if not raritiesRoot then
+	Library:Notify("Could not find workspace.GameFolder.Rarities", 5)
+	return
+end
+if not brainrotsRoot then
+	Library:Notify("Could not find workspace.GameFolder.Brainrots", 5)
+	return
+end
+
+local function getRarityPosition(rarityFolder)
+	if not rarityFolder then return nil end
+	local ok, pivot = pcall(function() return rarityFolder:GetPivot() end)
+	if ok and pivot then return pivot.Position end
+	if rarityFolder.PrimaryPart and rarityFolder.PrimaryPart:IsA("BasePart") then
+		return rarityFolder.PrimaryPart.Position
+	end
+	local p = rarityFolder:FindFirstChildWhichIsA("BasePart", true)
+	if p then return p.Position end
+	return nil
+end
+
+local function orderRaritiesByDistance()
+	local names = {}
+	for _, child in ipairs(raritiesRoot:GetChildren()) do
+		table.insert(names, child.Name)
+	end
+	table.sort(names, function(a, b)
+		local fa = raritiesRoot:FindFirstChild(a)
+		local fb = raritiesRoot:FindFirstChild(b)
+		local pa = getRarityPosition(fa)
+		local pb = getRarityPosition(fb)
+		local char = LocalPlayer.Character
+		local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"))
+		if not hrp then return a < b end -- fallback alphabetical if no hrp
+		if pa and pb then
+			return (pa - hrp.Position).Magnitude < (pb - hrp.Position).Magnitude
+		elseif pa then
+			return true
+		elseif pb then
+			return false
+		end
+		return a < b
+	end)
+	return names
+end
+
+local rarityNames = orderRaritiesByDistance()
+
+if #rarityNames == 0 then
+	Library:Notify("No rarities found under workspace.GameFolder.Rarities", 4)
+end
+
+local notifyToggles = {}
+local lastBestValues = {}
+
+for _, rarity in ipairs(rarityNames) do
+	local rname = rarity
+	BrainrotsGroup:AddButton(rname, function()
+		local entry, val, raw = findBestBrainrotForRarity(rname)
+		if not entry then
+			Library:Notify(val, 4) -- val contains error string
+			return
+		end
+		local cf = getCFrameForEntry(entry)
+		if not cf then
+			Library:Notify("Couldn't find teleport position for "..rname, 4)
+			return
+		end
+		if tpToCFrameOnce(cf) then
+			local human = raw or (val and tostring(val) or "unknown")
+			Library:Notify(("Teleported to best %s brainrot (%s)"):format(rname, human), 3)
+		else
+			Library:Notify("Teleport failed (no character)", 3)
+		end
+	end)
+
+	notifyToggles[rname] = false
+	NotifyGroup:AddToggle("Notify_"..rname, {
+		Text = rname,
+		Default = false,
+		Callback = function(v)
+			notifyToggles[rname] = v
+		end
+	})
+	local _, v = findBestBrainrotForRarity(rname)
+	if type(v) == "number" then
+		lastBestValues[rname] = v
+	else
+		lastBestValues[rname] = nil
+	end
+end
+
+task.spawn(function()
+	while true do
+		for _, rname in ipairs(rarityNames) do
+			local entry, val, raw = findBestBrainrotForRarity(rname)
+			local numericVal = nil
+			if entry and type(val) == "number" then numericVal = val end
+			local prev = lastBestValues[rname
+			if numericVal then
+				local changed = false
+				if not prev then changed = true end
+				if prev and numericVal ~= prev then changed = true end
+				lastBestValues[rname] = numericVal
+				if changed and notifyToggles[rname] then
+					local human = raw
+					if not human then
+						local n = numericVal
+						if n >= 1000000 then
+							human = string.format("$%.2fm/s", n / 1000000)
+						elseif n >= 1000 then
+							human = string.format("$%.1fk/s", n / 1000)
+						else
+							human = string.format("$%d/s", math.floor(n))
+						end
+					end
+					Library:Notify(("Rarity: %s (%s) Spawned!"):format(rname, human), 3)
+				end
+			else
+				lastBestValues[rname] = nil
+			end
+		end
+		task.wait(1)
+	end
+end)
+
+-- ===== UI Settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Survive-LAVA-for-Brainrots")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
