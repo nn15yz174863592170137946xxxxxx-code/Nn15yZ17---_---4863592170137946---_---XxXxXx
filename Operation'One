@@ -1,0 +1,316 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+local UIS = game:GetService("UserInputService")
+
+-- ===== HELPERS =====
+local function isDead(plr)
+    local c = plr.Character
+    local h = c and c:FindFirstChildOfClass("Humanoid")
+    return (not h) or h.Health <= 0
+end
+
+local function sameTeam(plr)
+    if LocalPlayer.Team and plr.Team then
+        return LocalPlayer.Team == plr.Team
+    end
+    local t1 = LocalPlayer:GetAttribute("Team")
+    local t2 = plr:GetAttribute("Team")
+    return t1 and t1 == t2
+end
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO TAB ===== --
+Tabs.Info:AddLeftGroupbox("Info","help"):AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!",3)
+end)
+
+-- ===== AIMLOCK ===== --
+local AimGroup = Tabs.Main:AddLeftGroupbox("Aimlock","boxes")
+local aimEnabled = false
+local lockAnywhere = false
+
+AimGroup:AddToggle("EnableAimlock",{Text="Enable Aimlock",Default=false,Callback=function(v) aimEnabled=v end})
+AimGroup:AddToggle("LockAnywhere",{Text="Lock Anywhere",Default=false,Callback=function(v) lockAnywhere=v end})
+
+local aimKey = "E"
+AimGroup:AddLabel("Aimlock Keybind"):AddKeyPicker("AimlockKey",{
+    Default = aimKey,
+    Mode = "Toggle",
+    Callback = function()
+        aimEnabled = not aimEnabled
+        Toggles.EnableAimlock:SetValue(aimEnabled)
+    end,
+    ChangedCallback = function(k) aimKey = k end
+})
+
+-- ===== HEAD / TORSO SLIDERS =====
+local headChance = 30
+local torsoChance = 70
+
+AimGroup:AddSlider("HeadChance",{
+    Text="Head %",
+    Default=30,
+    Min=0,
+    Max=100,
+    Callback=function(v)
+        headChance = v
+        torsoChance = 100 - v
+        Options.TorsoChance:SetValue(torsoChance)
+    end
+})
+
+AimGroup:AddSlider("TorsoChance",{
+    Text="Torso %",
+    Default=70,
+    Min=0,
+    Max=100,
+    Callback=function(v)
+        torsoChance = v
+        headChance = 100 - v
+        Options.HeadChance:SetValue(headChance)
+    end
+})
+
+-- ===== FOV VISUAL =====
+local gui,fovCircle,crossV,crossH,fovStroke
+local fovSize = 500
+
+AimGroup:AddInput("FOVSize",{
+    Text="FOV Size",
+    Default="500",
+    Finished=true
+}):OnChanged(function(v)
+    local n = tonumber(v)
+    if n and fovCircle then
+        fovSize = n
+        fovCircle.Size = UDim2.new(0,n,0,n)
+    end
+end)
+
+local function createFOV()
+    gui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+    gui.IgnoreGuiInset=true
+    gui.ResetOnSpawn=false
+
+    local function mk(size)
+        local f=Instance.new("Frame",gui)
+        f.AnchorPoint=Vector2.new(.5,.5)
+        f.Position=UDim2.fromScale(.5,.5)
+        f.Size=size
+        f.BackgroundColor3=Color3.new(1,1,1)
+        f.BorderSizePixel=0
+        return f
+    end
+
+    crossV = mk(UDim2.new(0,2,0,14))
+    crossH = mk(UDim2.new(0,14,0,2))
+
+    fovCircle = mk(UDim2.new(0,fovSize,0,fovSize))
+    fovCircle.BackgroundTransparency=1
+    Instance.new("UICorner",fovCircle).CornerRadius=UDim.new(1,0)
+
+    fovStroke = Instance.new("UIStroke",fovCircle)
+    fovStroke.Thickness = 2
+end
+createFOV()
+
+task.spawn(function()
+    local h = 0
+    while task.wait(0.03) do
+        if fovStroke and fovCircle.Visible then
+            h = (h + 2) % 360
+            fovStroke.Color = Color3.fromHSV(h/360,1,1)
+        end
+    end
+end)
+
+-- ===== MOBILE BUTTON =====
+local AimGui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+AimGui.IgnoreGuiInset=true
+AimGui.ResetOnSpawn=false
+
+local btn = Instance.new("TextButton",AimGui)
+btn.Size=UDim2.new(0,140,0,40)
+btn.Position=UDim2.new(.875,0,.125,0)
+btn.Text="Aimlock : OFF"
+btn.TextScaled=true
+btn.Font=Enum.Font.SourceSansBold
+btn.BackgroundColor3=Color3.new(0,0,0)
+btn.TextColor3=Color3.new(1,1,1)
+btn.Draggable=true
+Instance.new("UICorner",btn)
+
+local function syncUI()
+    btn.Text = aimEnabled and "Aimlock : ON" or "Aimlock : OFF"
+    btn.BackgroundColor3 = aimEnabled and Color3.fromRGB(255,128,0) or Color3.new(0,0,0)
+    crossV.Visible = aimEnabled
+    crossH.Visible = aimEnabled
+    fovCircle.Visible = aimEnabled
+end
+
+btn.MouseButton1Click:Connect(function()
+    aimEnabled = not aimEnabled
+    Toggles.EnableAimlock:SetValue(aimEnabled)
+    syncUI()
+end)
+
+UIS.InputBegan:Connect(function(i,g)
+    if not g and i.KeyCode.Name == aimKey then
+        aimEnabled = not aimEnabled
+        Toggles.EnableAimlock:SetValue(aimEnabled)
+        syncUI()
+    end
+end)
+
+Toggles.EnableAimlock:OnChanged(function(v)
+    aimEnabled = v
+    syncUI()
+end)
+syncUI()
+
+-- ===== WHITELIST =====
+local WLGroup = Tabs.Main:AddLeftGroupbox("Whitelist","boxes")
+local WhitelistPlayers = {}
+WLGroup:AddInput("WhitelistInput",{Text="Input",Placeholder="(Partial username)"})
+
+local function findPlayer(txt)
+    txt = txt:lower()
+    for _,p in pairs(Players:GetPlayers()) do
+        if p.Name:lower():find(txt) or p.DisplayName:lower():find(txt) then
+            return p
+        end
+    end
+end
+
+WLGroup:AddButton("Add",function()
+    local p = findPlayer(Options.WhitelistInput.Value)
+    if p then WhitelistPlayers[p.Name] = true end
+end)
+
+WLGroup:AddButton("Remove",function()
+    local p = findPlayer(Options.WhitelistInput.Value)
+    if p then WhitelistPlayers[p.Name] = nil end
+end)
+
+-- ===== TRACKER DUMMIES =====
+local Targets = {}
+
+local function pickPart(plr)
+    local m = workspace:FindFirstChild(plr.Name)
+    if not m then return end
+    if math.random(100) <= headChance then
+        return m:FindFirstChild("collision3")
+    else
+        return m:FindFirstChild("collision")
+    end
+end
+
+for _,plr in pairs(Players:GetPlayers()) do
+    if plr ~= LocalPlayer then
+        local d = Instance.new("Part",workspace)
+        d.Size = Vector3.new(.2,.2,.2)
+        d.Anchored = true
+        d.CanCollide = false
+        d.Transparency = 1
+        Targets[plr] = d
+
+        task.spawn(function()
+            while d.Parent do
+                if sameTeam(plr) or isDead(plr) then
+                    d.CFrame = CFrame.new(0,-10000,0)
+                else
+                    local p = pickPart(plr)
+                    if p then d.CFrame = p.CFrame end
+                end
+                task.wait(0.01)
+            end
+        end)
+    end
+end
+
+-- ===== AIMLOCK (NEAREST TO FOV) =====
+task.spawn(function()
+    while task.wait(0.03) do
+        if not aimEnabled then continue end
+
+        local best,bestDist
+        local center = Vector2.new(cam.ViewportSize.X/2,cam.ViewportSize.Y/2)
+
+        for plr,d in pairs(Targets) do
+            if WhitelistPlayers[plr.Name] then continue end
+            if sameTeam(plr) then continue end
+            if isDead(plr) then continue end
+
+            local sp,on = cam:WorldToViewportPoint(d.Position)
+            if not on then continue end
+
+            local dist = (Vector2.new(sp.X,sp.Y)-center).Magnitude
+            if dist <= fovSize/2 and (not bestDist or dist < bestDist) then
+                bestDist = dist
+                best = d
+            end
+        end
+
+        if best then
+            cam.CFrame = CFrame.lookAt(cam.CFrame.Position, best.Position)
+        end
+    end
+end)
+
+-- ===== UI SETTINGS =====
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Operation-One")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
