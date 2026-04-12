@@ -1,0 +1,130 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO TAB ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== Hitbox ===== --
+local HitboxGroup = Tabs.Main:AddLeftGroupbox("Hitbox","boxes")
+
+local hitboxEnabled = false
+local hitboxSize = 50
+local clonedBalls = {}
+
+local function applyHitbox(v)
+    local assets = game:GetService("ReplicatedStorage"):FindFirstChild("Assets")
+    if not assets then return end
+    
+    if v then
+        for _, p in ipairs(assets:GetDescendants()) do
+            if p:IsA("BasePart") then
+                if p:IsDescendantOf(assets:FindFirstChild("Ball")) then
+                    if not clonedBalls[p] then
+                        local clone = p:Clone()
+                        clone.Parent = p.Parent
+                        clone.Name = p.Name .. "Part"
+                        clone.Size = p.Size
+                        clone.Transparency = 0
+                        clone.CanCollide = false
+                        
+                        p.Transparency = 1
+                        p.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+                        
+                        local weld = Instance.new("WeldConstraint")
+                        weld.Part0 = p
+                        weld.Part1 = clone
+                        weld.Parent = clone
+                        
+                        clonedBalls[p] = clone
+                    end
+                else
+                    p.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+                end
+            end
+        end
+    else
+        for _, p in ipairs(assets:GetDescendants()) do
+            if p:IsA("BasePart") then
+                if clonedBalls[p] then
+                    clonedBalls[p]:Destroy()
+                    clonedBalls[p] = nil
+                    p.Transparency = 0
+                    p.Size = Vector3.new(2, 2, 2)
+                else
+                    p.Size = Vector3.new(2, 2, 2)
+                end
+            end
+        end
+    end
+end
+
+HitboxGroup:AddToggle("EnableHitbox",{
+    Text = "Enable Hitbox",
+    Default = false,
+    Callback = function(v)
+        hitboxEnabled = v
+        applyHitbox(v)
+    end
+})
+
+-- ===== UI SETTINGS ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Volleyball-Legends")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
