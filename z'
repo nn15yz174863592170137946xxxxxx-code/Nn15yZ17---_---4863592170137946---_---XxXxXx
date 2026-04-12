@@ -1,6 +1,5 @@
 -- ===== logger ===== --
 
-
 -- ===== libs ===== --
 local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
 local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
@@ -69,26 +68,6 @@ local Games = {
 
 { name="T-Titans Battlegrounds", universeIds={1111698561}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/T-Titans%20Battlegrounds" },
 
-{ name="The storage", universeIds={4756005135}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/The%20Storage" },
-
-{ name="Violence District", universeIds={6739698191}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Violence%20District" },
-
-{ name="Volleyball Legends", universeIds={6931042565}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Volleyball%20Legends" },
-
-{ name="Wrath of Nature", universeIds={9592026646}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Wrath%20of%20Nature" },
-
-{ name="bLockerman's Minesweeper", universeIds={3047037061}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/bLockermans%20Minesweeper" },
-
-}
--- ===== auto loader ===== --
-for _,g in ipairs(Games) do
-if table.find(g.universeIds, UniverseId) then
-Library:Notify('Loading "' ..g.name.. '" ', 3)
-loadstring(game:HttpGet(g.url))()
-return
-end
-end
-Library:Notify("Game not supported.", 3)
 { name="The storage", universeIds={4756005135}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/The%20Storage" },
 
 { name="Violence District", universeIds={6739698191}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Violence%20District" },
