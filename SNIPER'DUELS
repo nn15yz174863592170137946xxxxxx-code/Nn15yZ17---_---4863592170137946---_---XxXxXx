@@ -1,0 +1,365 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+
+-- ===== config ===== --
+local MAX_LOCK_DISTANCE = 250 
+local SUDDEN_MOVE_THRESHOLD = 20
+local AUTO_WHITELIST_RADIUS = 20
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO TAB ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== aimlock ===== --
+local AimGroup = Tabs.Main:AddLeftGroupbox("Aimlock","boxes")
+local aimEnabled = false
+local lockAnywhere = false
+
+AimGroup:AddToggle("EnableAimlock",{Text="Enable Aimlock",Default=false,Callback=function(v) aimEnabled=v end})
+AimGroup:AddToggle("LockAnywhere",{Text="Lock Anywhere",Default=false,Callback=function(v) lockAnywhere=v end})
+
+local aimKey = "E"
+AimGroup:AddLabel("Aimlock Keybind"):AddKeyPicker("AimlockKey",{
+    Default = aimKey,
+    Mode = "Toggle",
+    Callback = function() aimEnabled = not aimEnabled ; Toggles.EnableAimlock:SetValue(aimEnabled) end,
+    ChangedCallback = function(k) aimKey = k end
+})
+
+local gui,fovCircle,crossV,crossH
+local fovSize = 500
+local crossOffset = Vector2.new(0,0)
+
+local fovInput = AimGroup:AddInput("FOVSize", {
+    Text = "FOV Size",
+    Default = tostring(fovSize),
+    Finished = true,
+    Placeholder = "500",
+})
+fovInput:OnChanged(function(v)
+    local n = tonumber(v)
+    if n and fovCircle then
+        fovSize = n
+        fovCircle.Size = UDim2.new(0,fovSize,0,fovSize)
+        fovCircle.Position = UDim2.new(0.5,crossOffset.X,0.5,crossOffset.Y)
+    end
+end)
+
+-- ===== whitelist (gui) ===== --
+local WhitelistGroup = Tabs.Main:AddLeftGroupbox("Whitelist","boxes")
+local WhitelistPlayers = {}
+WhitelistGroup:AddInput("WhitelistInput",{Text="Input",Placeholder="(Partial username)"})
+
+local function getClosestPlayer(txt)
+    local s = txt:lower()
+    local best,dist=nil,999
+    for _,plr in pairs(Players:GetPlayers()) do
+        local u = plr.Name:lower()
+        local d = plr.DisplayName:lower()
+        if u:find(s,1,true) or d:find(s,1,true) then
+            local pick = (#u < #d) and u or d
+            local diff = math.abs(#pick - #s)
+            if diff < dist then best,dist = plr,diff end
+        end
+    end
+    return best
+end
+
+WhitelistGroup:AddButton("Add",function()
+    local t = Options.WhitelistInput.Value
+    if t=="" then return Library:Notify("Player not found!",3) end
+    local p = getClosestPlayer(t)
+    if not p then return Library:Notify("Player not found!",3) end
+    if not table.find(WhitelistPlayers,p.Name) then
+        table.insert(WhitelistPlayers,p.Name)
+        Library:Notify(p.Name.." added!",3)
+    else
+        Library:Notify("Already whitelisted!",3)
+    end
+end)
+
+WhitelistGroup:AddButton("Remove",function()
+    local t = Options.WhitelistInput.Value
+    if t=="" then return Library:Notify("Player not found!",3) end
+    local p = getClosestPlayer(t)
+    if not p then return Library:Notify("Player not found!",3) end
+    for i=#WhitelistPlayers,1,-1 do
+        if WhitelistPlayers[i]==p.Name then
+            table.remove(WhitelistPlayers,i)
+            Library:Notify(p.Name.." removed!",3)
+        end
+    end
+end)
+
+-- ===== fov ui ===== --
+local function createFOV()
+    if gui then gui:Destroy() end
+    gui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+    gui.Name="AimlockFOV"
+    gui.IgnoreGuiInset=true
+    gui.ResetOnSpawn=false
+
+    local function mk(parent,pos,size)
+        local f=Instance.new("Frame",parent)
+        f.AnchorPoint=Vector2.new(.5,.5)
+        f.Position=pos
+        f.Size=size
+        f.BackgroundColor3=Color3.new(1,1,1)
+        f.BorderSizePixel=0
+        return f
+    end
+
+    crossV = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,2,0,14))
+    crossH = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,14,0,2))
+    fovCircle = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,fovSize,0,fovSize))
+    fovCircle.BackgroundTransparency=1
+    Instance.new("UICorner",fovCircle).CornerRadius = UDim.new(1,0)
+
+    local s = Instance.new("UIStroke",fovCircle)
+    s.Thickness = 2
+    task.spawn(function()
+        local h=0
+        while task.wait(.03) do
+            if fovCircle.Visible then
+                h=(h+3)%360
+                s.Color = Color3.fromHSV(h/360,1,1)
+            end
+        end
+    end)
+end
+createFOV()
+
+-- ===== mobile toggle button ===== --
+local AimGui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+AimGui.Name="AimlockToggleGui"
+AimGui.IgnoreGuiInset=true
+AimGui.ResetOnSpawn=false
+
+local btn = Instance.new("TextButton",AimGui)
+btn.Size=UDim2.new(0,140,0,40)
+btn.Position=UDim2.new(.875,0,.125,0)
+btn.Text="Aimlock : OFF"
+btn.TextColor3=Color3.new(1,1,1)
+btn.BackgroundColor3=Color3.new(0,0,0)
+btn.TextScaled=true
+btn.Font=Enum.Font.SourceSansBold
+btn.Draggable=true
+Instance.new("UICorner",btn).CornerRadius=UDim.new(0,10)
+
+local function updateBtn()
+    if aimEnabled then
+        btn.Text="Aimlock : ON"
+        btn.BackgroundColor3=Color3.fromRGB(255,128,0)
+        crossH.Visible=true
+        crossV.Visible=true
+        fovCircle.Visible=true
+    else
+        btn.Text="Aimlock : OFF"
+        btn.BackgroundColor3=Color3.new(0,0,0)
+        crossH.Visible=false
+        crossV.Visible=false
+        fovCircle.Visible=false
+    end
+end
+
+local function toggleAim(v)
+    aimEnabled=v
+    Toggles.EnableAimlock:SetValue(v)
+    updateBtn()
+end
+
+btn.MouseButton1Click:Connect(function() toggleAim(not aimEnabled) end)
+game:GetService("UserInputService").InputBegan:Connect(function(i,g)
+    if g then return end
+    if i.KeyCode.Name == aimKey then toggleAim(not aimEnabled) end
+end)
+Toggles.EnableAimlock:OnChanged(function(v) toggleAim(v) end)
+updateBtn()
+
+-- ===== auto-whitelist ===== --
+local function clearWhitelist()
+    for i=#WhitelistPlayers,1,-1 do table.remove(WhitelistPlayers,i) end
+end
+
+local function autoWhitelistNearby()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    clearWhitelist()
+    for _,plr in pairs(Players:GetPlayers()) do
+        if plr~=LocalPlayer and plr.Character then
+            local otherPart = plr.Character:FindFirstChild("HumanoidRootPart") or plr.Character:FindFirstChild("Head")
+            if otherPart then
+                local d = (otherPart.Position - hrp.Position).Magnitude
+                if d <= AUTO_WHITELIST_RADIUS then
+                    table.insert(WhitelistPlayers, plr.Name)
+                end
+            end
+        end
+    end
+    Library:Notify("Auto-whitelist updated ("..tostring(#WhitelistPlayers).." players)", 3)
+end
+
+local lastHRPPos = nil
+local lastCheck = tick()
+
+local function onCharacterAdded(char)
+    task.defer(function()
+        task.wait(0.2)
+        autoWhitelistNearby()
+        lastHRPPos = nil
+    end)
+    local hrp = char:WaitForChild("HumanoidRootPart", 2)
+    if hrp then
+        hrp:GetPropertyChangedSignal("CFrame"):Connect(function()
+            if lastHRPPos then
+                local d = (hrp.Position - lastHRPPos).Magnitude
+                if d >= SUDDEN_MOVE_THRESHOLD then
+                    autoWhitelistNearby()
+                end
+            end
+            lastHRPPos = hrp.Position
+        end)
+    end
+end
+
+if LocalPlayer.Character then
+    onCharacterAdded(LocalPlayer.Character)
+end
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local now = tick()
+    if lastHRPPos then
+        local d = (hrp.Position - lastHRPPos).Magnitude
+        if d >= SUDDEN_MOVE_THRESHOLD then
+            autoWhitelistNearby()
+        end
+    end
+    lastHRPPos = hrp.Position
+    lastCheck = now
+end)
+
+-- ===== aimlock logic ===== --
+local function isWhitelisted(name)
+    return table.find(WhitelistPlayers, name) ~= nil
+end
+
+local function getAimTargets(hrp)
+    local targets = {}
+    for _,plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character.Parent then
+            if not isWhitelisted(plr.Name) then
+                local humanoid = plr.Character:FindFirstChild("Humanoid")
+                if humanoid and humanoid.Health > 0 then
+                    local head = plr.Character:FindFirstChild("Head")
+                    local part = head or plr.Character:FindFirstChild("HumanoidRootPart")
+                    if part then
+                        local dist = (part.Position - hrp.Position).Magnitude
+                        if dist <= MAX_LOCK_DISTANCE then
+                            local ray = Ray.new(hrp.Position, (part.Position - hrp.Position))
+                            local hit = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character}, false, true)
+                            if hit and hit:IsDescendantOf(plr.Character) then
+                                if lockAnywhere then
+                                    table.insert(targets, {part = part, dist = dist})
+                                else
+                                    local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+                                    local sp, on = cam:WorldToViewportPoint(part.Position)
+                                    if on then
+                                        local dx, dy = sp.X - fPos.X, sp.Y - fPos.Y
+                                        if (dx*dx + dy*dy)^0.5 <= fovSize/2 then
+                                            table.insert(targets, {part = part, dist = dist})
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return targets
+end
+
+RunService:BindToRenderStep("DON_AimlockSnap", Enum.RenderPriority.Camera.Value + 1, function()
+    if not aimEnabled then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local targets = getAimTargets(hrp)
+    if #targets == 0 then return end
+
+    table.sort(targets, function(a,b) return a.dist < b.dist end)
+    local best = targets[1].part
+    if best and best.Position then
+        local camPos = cam.CFrame.Position
+        cam.CFrame = CFrame.new(camPos, best.Position)
+    end
+end)
+
+-- ===== ui settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("SNIPER-DUELS")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
