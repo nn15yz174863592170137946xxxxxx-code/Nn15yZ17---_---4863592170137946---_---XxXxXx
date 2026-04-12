@@ -1,0 +1,1217 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO TAB ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== AIMLOCK ===== --
+local AimGroup = Tabs.Main:AddLeftGroupbox("Aimlock","boxes")
+local aimEnabled = false
+local lockAnywhere = false
+local targetPlayers = true
+local targetEnemies = true
+local headChance = 80
+local torsoChance = 20
+
+AimGroup:AddToggle("EnableAimlock",{Text="Enable Aimlock",Default=false,Callback=function(v) aimEnabled=v end})
+AimGroup:AddToggle("LockAnywhere",{Text="Lock Anywhere",Default=false,Callback=function(v) lockAnywhere=v end})
+AimGroup:AddToggle("TargetPlayers",{Text="Target Players",Default=true,Callback=function(v) targetPlayers=v end})
+AimGroup:AddToggle("TargetEnemies",{Text="Target Enemies",Default=true,Callback=function(v) targetEnemies=v end})
+
+local aimKey = "E"
+AimGroup:AddLabel("Aimlock Keybind"):AddKeyPicker("AimlockKey",{
+    Default = aimKey,
+    Mode = "Toggle",
+    Callback = function() aimEnabled = not aimEnabled ; Toggles.EnableAimlock:SetValue(aimEnabled) end,
+    ChangedCallback = function(k) aimKey = k end
+})
+
+AimGroup:AddSlider("HeadChance",{
+    Text = "Head %",
+    Default = 80,
+    Min = 0,
+    Max = 100,
+    Callback = function(v)
+        headChance = v
+        torsoChance = 100 - v
+        Options.TorsoChance:SetValue(torsoChance)
+    end
+})
+
+AimGroup:AddSlider("TorsoChance",{
+    Text = "Torso %",
+    Default = 20,
+    Min = 0,
+    Max = 100,
+    Callback = function(v)
+        torsoChance = v
+        headChance = 100 - v
+        Options.HeadChance:SetValue(headChance)
+    end
+})
+
+-- ===== FOV Size Input ===== --
+local gui,fovCircle,crossV,crossH
+local fovSize = 500
+local crossOffset = Vector2.new(0,0)
+
+local fovInput = AimGroup:AddInput("FOVSize", {
+    Text = "FOV Size",
+    Default = tostring(fovSize),
+    Finished = true,
+    Placeholder = "500",
+})
+
+fovInput:OnChanged(function(v)
+    local n = tonumber(v)
+    if n and fovCircle then
+        fovSize = n
+        fovCircle.Size = UDim2.new(0,fovSize,0,fovSize)
+        fovCircle.Position = UDim2.new(0.5,crossOffset.X,0.5,crossOffset.Y)
+    end
+end)
+
+-- ===== WHITELIST ===== --
+local WhitelistGroup = Tabs.Main:AddLeftGroupbox("Whitelist","boxes")
+local WhitelistPlayers = {}
+WhitelistGroup:AddInput("WhitelistInput",{Text="Input",Placeholder="(Partial username)"})
+
+local function getClosestPlayer(txt)
+    local s = txt:lower()
+    local best,dist=nil,999
+    for _,plr in pairs(Players:GetPlayers()) do
+        local u = plr.Name:lower()
+        local d = plr.DisplayName:lower()
+        if u:find(s,1,true) or d:find(s,1,true) then
+            local pick = (#u < #d) and u or d
+            local diff = math.abs(#pick - #s)
+            if diff < dist then best,dist = plr,diff end
+        end
+    end
+    return best
+end
+
+WhitelistGroup:AddButton("Add",function()
+    local t = Options.WhitelistInput.Value
+    if t=="" then return Library:Notify("Player not found!",3) end
+    local p = getClosestPlayer(t)
+    if p and not table.find(WhitelistPlayers,p.Name) then
+        table.insert(WhitelistPlayers,p.Name)
+        Library:Notify(p.Name.." added!",3)
+    else
+        Library:Notify("Player not found!",3)
+    end
+end)
+
+WhitelistGroup:AddButton("Remove",function()
+    local t = Options.WhitelistInput.Value
+    if t=="" then return Library:Notify("Player not found!",3) end
+    local p = getClosestPlayer(t)
+    if not p then return Library:Notify("Player not found!",3) end
+    for i=#WhitelistPlayers,1,-1 do
+        if WhitelistPlayers[i]==p.Name then
+            table.remove(WhitelistPlayers,i)
+            Library:Notify(p.Name.." removed!",3)
+        end
+    end
+end)
+
+-- ===== FOV UI ===== --
+local function createFOV()
+    if gui then gui:Destroy() end
+    gui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+    gui.Name="AimlockFOV"
+    gui.IgnoreGuiInset=true
+    gui.ResetOnSpawn=false
+
+    local function mk(parent,pos,size)
+        local f=Instance.new("Frame",parent)
+        f.AnchorPoint=Vector2.new(.5,.5)
+        f.Position=pos
+        f.Size=size
+        f.BackgroundColor3=Color3.new(1,1,1)
+        f.BorderSizePixel=0
+        return f
+    end
+
+    crossV = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,2,0,14))
+    crossH = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,14,0,2))
+
+    fovCircle = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,fovSize,0,fovSize))
+    fovCircle.BackgroundTransparency=1
+    Instance.new("UICorner",fovCircle).CornerRadius = UDim.new(1,0)
+
+    local s = Instance.new("UIStroke",fovCircle)
+    s.Thickness = 2
+    task.spawn(function()
+        local h=0
+        while task.wait(.03) do
+            if fovCircle.Visible then
+                h=(h+3)%360
+                s.Color = Color3.fromHSV(h/360,1,1)
+            end
+        end
+    end)
+end
+createFOV()
+
+-- ===== MOBILE TOGGLE BUTTON ===== --
+local AimGui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+AimGui.Name="AimlockToggleGui"
+AimGui.IgnoreGuiInset=true
+AimGui.ResetOnSpawn=false
+
+local btn = Instance.new("TextButton",AimGui)
+btn.Size=UDim2.new(0,140,0,40)
+btn.Position=UDim2.new(.875,0,.125,0)
+btn.Text="Aimlock : OFF"
+btn.TextColor3=Color3.new(1,1,1)
+btn.BackgroundColor3=Color3.new(0,0,0)
+btn.TextScaled=true
+btn.Font=Enum.Font.SourceSansBold
+btn.Draggable=true
+Instance.new("UICorner",btn).CornerRadius=UDim.new(0,10)
+
+local function updateBtn()
+    if aimEnabled then
+        btn.Text="Aimlock : ON"
+        btn.BackgroundColor3=Color3.fromRGB(255,128,0)
+        crossH.Visible=true
+        crossV.Visible=true
+        fovCircle.Visible=true
+    else
+        btn.Text="Aimlock : OFF"
+        btn.BackgroundColor3=Color3.new(0,0,0)
+        crossH.Visible=false
+        crossV.Visible=false
+        fovCircle.Visible=false
+    end
+end
+
+local function toggleAim(v)
+    aimEnabled=v
+    Toggles.EnableAimlock:SetValue(v)
+    updateBtn()
+end
+
+btn.MouseButton1Click:Connect(function() toggleAim(not aimEnabled) end)
+game:GetService("UserInputService").InputBegan:Connect(function(i,g)
+    if g then return end
+    if i.KeyCode.Name == aimKey then toggleAim(not aimEnabled) end
+end)
+Toggles.EnableAimlock:OnChanged(function(v) task.spawn(function() toggleAim(v) end) end)
+updateBtn()
+
+-- ===== MISC GROUP ===== --
+local MiscGroup = Tabs.Main:AddRightGroupbox("Misc","boxes")
+MiscGroup:AddLabel("Yellow = Behind walls", true)
+
+local fullBrightEnabled = false
+local originalBrightness = Lighting.Brightness
+local originalAmbient = Lighting.Ambient
+local originalOutdoorAmbient = Lighting.OutdoorAmbient
+
+MiscGroup:AddToggle("FullBright", {
+    Text = "FullBright",
+    Default = false,
+    Callback = function(v)
+        fullBrightEnabled = v
+        if v then
+            Lighting.Brightness = 2
+            Lighting.Ambient = Color3.new(1,1,1)
+            Lighting.OutdoorAmbient = Color3.new(1,1,1)
+            Lighting.ClockTime = 12
+            Lighting.FogEnd = 100000
+        else
+            Lighting.Brightness = originalBrightness
+            Lighting.Ambient = originalAmbient
+            Lighting.OutdoorAmbient = originalOutdoorAmbient
+        end
+    end
+})
+
+local antiClaymore = false
+MiscGroup:AddToggle("AntiClaymore", {
+    Text = "Delete Claymores",
+    Default = false,
+    Callback = function(v) antiClaymore = v end
+})
+
+local antiLandmine = false
+MiscGroup:AddToggle("AntiLandmine", {
+    Text = "Delete Landmines",
+    Default = false,
+    Callback = function(v) antiLandmine = v end
+})
+
+task.spawn(function()
+    while task.wait(1) do
+        local claymoreCount = 0
+        local landmineCount = 0
+        
+        if antiClaymore then
+            local claymores = workspace:FindFirstChild("AiZones") and workspace.AiZones:FindFirstChild("OutpostClaymores")
+            if claymores then
+                for _, claymore in pairs(claymores:GetChildren()) do
+                    if claymore then
+                        claymore:Destroy()
+                        claymoreCount = claymoreCount + 1
+                    end
+                end
+            end
+        end
+        
+        if antiLandmine then
+            local landmines = workspace:FindFirstChild("AiZones") and workspace.AiZones:FindFirstChild("OutpostLandmines")
+            if landmines then
+                for _, landmine in pairs(landmines:GetChildren()) do
+                    if landmine then
+                        landmine:Destroy()
+                        landmineCount = landmineCount + 1
+                    end
+                end
+            end
+        end
+        
+        if claymoreCount > 0 then
+            Library:Notify("Deleted "..claymoreCount.." claymores", 2)
+        end
+        if landmineCount > 0 then
+            Library:Notify("Deleted "..landmineCount.." landmines", 2)
+        end
+    end
+end)
+
+-- ===== ESP ===== --
+local playerESP = false
+local enemiesESP = false
+local containersESP = false
+local itemsESP = false
+local questItemsESP = false
+local maxESPCount = 50
+
+local playerColor = Color3.new(1,1,1)
+local enemiesColor = Color3.new(1,0,0)
+local containersColor = Color3.new(0,1,1)
+local itemsColor = Color3.new(0.5,0.5,0.5)
+local questItemsColor = Color3.new(0,1,0)
+
+MiscGroup:AddToggle("PlayerESP", {Text="Players ESP", Default=false, Callback=function(v) playerESP=v end})
+MiscGroup:AddToggle("EnemiesESP", {Text="Enemies ESP", Default=false, Callback=function(v) enemiesESP=v end})
+MiscGroup:AddToggle("ContainersESP", {Text="Containers ESP", Default=false, Callback=function(v) containersESP=v end})
+MiscGroup:AddToggle("ItemsESP", {Text="Items ESP", Default=false, Callback=function(v) itemsESP=v end})
+MiscGroup:AddToggle("QuestItemsESP", {Text="QuestItems ESP", Default=false, Callback=function(v) questItemsESP=v end})
+
+local function getPlayerCount()
+    local count = 0
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then count = count + 1 end
+    end
+    return count
+end
+
+local maxSlider = MiscGroup:AddSlider("MaxESPCount", {
+    Text = "Max ESP Count (per type)",
+    Default = 50,
+    Min = getPlayerCount(),
+    Max = 500,
+    Callback = function(v) maxESPCount = v end
+})
+
+local function updateSliderMin()
+    local minVal = getPlayerCount()
+    if minVal < 1 then minVal = 1 end
+    maxSlider:SetMin(minVal)
+    if maxESPCount < minVal then
+        maxESPCount = minVal
+        maxSlider:SetValue(minVal)
+    end
+end
+
+Players.PlayerAdded:Connect(updateSliderMin)
+Players.PlayerRemoving:Connect(updateSliderMin)
+
+local ESPObjects = {
+    Players = {},
+    Enemies = {},
+    Containers = {},
+    Items = {},
+    QuestItems = {}
+}
+
+local function createESPBillboard(color, textSize)
+    textSize = textSize or 20
+    local gui = Instance.new("BillboardGui")
+    gui.Size = UDim2.fromOffset(400, 60)
+    gui.AlwaysOnTop = true
+    gui.Enabled = false
+    gui.StudsOffset = Vector3.new(0, 3, 0)
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.ClipsDescendants = false
+
+    local txt = Instance.new("TextLabel", gui)
+    txt.Size = UDim2.fromScale(1, 1)
+    txt.BackgroundTransparency = 1
+    txt.TextColor3 = color
+    txt.TextStrokeColor3 = Color3.new(0,0,0)
+    txt.TextStrokeTransparency = 0.3
+    txt.Font = Enum.Font.SourceSansBold
+    txt.TextSize = textSize
+    txt.TextWrapped = true
+    txt.TextTruncate = Enum.TextTruncate.None
+    txt.RichText = true
+    return gui, txt
+end
+
+local playerBoxes = {}
+local enemyBoxes = {}
+
+local function getCharacterSize(char)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return 3, 5 end
+    local minX, maxX = math.huge, -math.huge
+    local minY, maxY = math.huge, -math.huge
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local size = part.Size
+            local pos = part.Position
+            local xMin, xMax = pos.X - size.X/2, pos.X + size.X/2
+            local yMin, yMax = pos.Y - size.Y/2, pos.Y + size.Y/2
+            if xMin < minX then minX = xMin end
+            if xMax > maxX then maxX = xMax end
+            if yMin < minY then minY = yMin end
+            if yMax > maxY then maxY = yMax end
+        end
+    end
+    return (maxX - minX) * 1.2, (maxY - minY) * 1.2
+end
+
+local function worldToScreenSize(worldSize, distance)
+    local viewportHeight = cam.ViewportSize.Y
+    local angle = math.rad(cam.FieldOfView)
+    local pixelsPerStud = viewportHeight / (2 * math.tan(angle / 2) * distance)
+    return worldSize * pixelsPerStud
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr ~= LocalPlayer then
+        local gui, txt = createESPBillboard(playerColor, 20)
+        gui.Name = "PlayerESP_"..plr.Name
+        gui.Parent = game:GetService("CoreGui")
+        ESPObjects.Players[plr] = {Gui=gui, Text=txt}
+    end
+end
+
+Players.PlayerAdded:Connect(function(plr)
+    if plr == LocalPlayer then return end
+    task.wait(1)
+    local gui, txt = createESPBillboard(playerColor, 20)
+    gui.Name = "PlayerESP_"..plr.Name
+    gui.Parent = game:GetService("CoreGui")
+    ESPObjects.Players[plr] = {Gui=gui, Text=txt}
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+    if ESPObjects.Players[plr] then
+        ESPObjects.Players[plr].Gui:Destroy()
+        ESPObjects.Players[plr] = nil
+    end
+    if playerBoxes[plr] then
+        playerBoxes[plr]:Remove()
+        playerBoxes[plr] = nil
+    end
+end)
+
+local function updateEnemiesESP()
+    local zone = workspace:FindFirstChild("AiZones")
+    if not zone then return end
+    for _, obj in pairs(zone:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
+            if not ESPObjects.Enemies[obj] then
+                local gui, txt = createESPBillboard(enemiesColor, 20)
+                gui.Name = "EnemyESP_"..obj.Name
+                gui.Parent = game:GetService("CoreGui")
+                ESPObjects.Enemies[obj] = {Gui=gui, Text=txt}
+            end
+        end
+    end
+    for obj, data in pairs(ESPObjects.Enemies) do
+        if not obj.Parent or not obj:FindFirstChildOfClass("Humanoid") then
+            data.Gui:Destroy()
+            ESPObjects.Enemies[obj] = nil
+            if enemyBoxes[obj] then
+                enemyBoxes[obj]:Remove()
+                enemyBoxes[obj] = nil
+            end
+        end
+    end
+end
+
+local function updateContainersESP()
+    local containerFolder = workspace:FindFirstChild("Containers")
+    if not containerFolder then return end
+    for _, container in pairs(containerFolder:GetChildren()) do
+        if container:IsA("Model") then
+            if not ESPObjects.Containers[container] then
+                local gui, txt = createESPBillboard(containersColor, 20)
+                gui.Name = "ContainerESP_"..container.Name
+                gui.Parent = game:GetService("CoreGui")
+                ESPObjects.Containers[container] = {Gui=gui, Text=txt}
+            end
+        end
+    end
+    for obj, data in pairs(ESPObjects.Containers) do
+        if not obj.Parent then
+            data.Gui:Destroy()
+            ESPObjects.Containers[obj] = nil
+        end
+    end
+end
+
+local function updateItemsESP()
+    local itemsFolder = workspace:FindFirstChild("DroppedItems")
+    if not itemsFolder then return end
+    for _, item in pairs(itemsFolder:GetChildren()) do
+        if item:IsA("Model") or item:IsA("BasePart") then
+            if not ESPObjects.Items[item] then
+                local gui, txt = createESPBillboard(itemsColor, 15)
+                gui.Name = "ItemESP_"..item.Name
+                gui.Parent = game:GetService("CoreGui")
+                ESPObjects.Items[item] = {Gui=gui, Text=txt}
+            end
+        end
+    end
+    for obj, data in pairs(ESPObjects.Items) do
+        if not obj.Parent then
+            data.Gui:Destroy()
+            ESPObjects.Items[obj] = nil
+        end
+    end
+end
+
+local function updateQuestItemsESP()
+    local questFolder = workspace:FindFirstChild("QuestItems")
+    if not questFolder then return end
+    for _, questItem in pairs(questFolder:GetChildren()) do
+        if questItem:IsA("Model") or questItem:IsA("BasePart") then
+            if not ESPObjects.QuestItems[questItem] then
+                local gui, txt = createESPBillboard(questItemsColor, 20)
+                gui.Name = "QuestESP_"..questItem.Name
+                gui.Parent = game:GetService("CoreGui")
+                ESPObjects.QuestItems[questItem] = {Gui=gui, Text=txt}
+            end
+        end
+    end
+    for obj, data in pairs(ESPObjects.QuestItems) do
+        if not obj.Parent then
+            data.Gui:Destroy()
+            ESPObjects.QuestItems[obj] = nil
+        end
+    end
+end
+
+local exitESP = false
+local exitColor = Color3.new(0,1,0)
+MiscGroup:AddToggle("ExitESP", {Text="Exit Locations ESP", Default=false, Callback=function(v) exitESP=v end})
+local ExitESPObjects = {}
+local function updateExitESP()
+    local exitFolder = workspace:FindFirstChild("NoCollision") and workspace.NoCollision:FindFirstChild("ExitLocations")
+    if not exitFolder then return end
+    for _, exitPart in pairs(exitFolder:GetChildren()) do
+        if exitPart:IsA("BasePart") or exitPart:IsA("MeshPart") or exitPart:IsA("Part") then
+            if not ExitESPObjects[exitPart] then
+                local gui = Instance.new("BillboardGui")
+                gui.Size = UDim2.fromOffset(200, 40)
+                gui.AlwaysOnTop = true
+                gui.Enabled = false
+                gui.StudsOffset = Vector3.new(0, 3, 0)
+                gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+                gui.Parent = game:GetService("CoreGui")
+                local txt = Instance.new("TextLabel", gui)
+                txt.Size = UDim2.fromScale(1, 1)
+                txt.BackgroundTransparency = 1
+                txt.TextColor3 = exitColor
+                txt.TextStrokeColor3 = Color3.new(0,0,0)
+                txt.TextStrokeTransparency = 0.3
+                txt.Font = Enum.Font.SourceSansBold
+                txt.TextSize = 20
+                txt.Text = "EXIT"
+                txt.RichText = true
+                ExitESPObjects[exitPart] = {Gui=gui, Text=txt}
+            end
+        end
+    end
+    for obj, data in pairs(ExitESPObjects) do
+        if not obj.Parent then
+            data.Gui:Destroy()
+            ExitESPObjects[obj] = nil
+        end
+    end
+end
+task.spawn(function()
+    while task.wait(0.1) do
+        if exitESP then
+            updateExitESP()
+            local camPos = cam.CFrame.Position
+            local validExits = {}
+            for obj, data in pairs(ExitESPObjects) do
+                if obj and obj.Parent then
+                    local dist = (camPos - obj.Position).Magnitude
+                    table.insert(validExits, {obj = obj, data = data, dist = dist})
+                else
+                    data.Gui.Enabled = false
+                end
+            end
+            table.sort(validExits, function(a,b) return a.dist < b.dist end)
+            for i, entry in ipairs(validExits) do
+                if i <= maxESPCount then
+                    local data = entry.data
+                    data.Gui.Adornee = entry.obj
+                    data.Gui.Enabled = true
+                    data.Text.Text = string.format("<b>EXIT | %d studs</b>", math.floor(entry.dist))
+                else
+                    entry.data.Gui.Enabled = false
+                end
+            end
+        else
+            for _, data in pairs(ExitESPObjects) do
+                data.Gui.Enabled = false
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.03) do
+        if not (playerESP or enemiesESP or containersESP or itemsESP or questItemsESP) then
+            for _, data in pairs(ESPObjects.Players) do data.Gui.Enabled = false end
+            for _, data in pairs(ESPObjects.Enemies) do data.Gui.Enabled = false end
+            for _, data in pairs(ESPObjects.Containers) do data.Gui.Enabled = false end
+            for _, data in pairs(ESPObjects.Items) do data.Gui.Enabled = false end
+            for _, data in pairs(ESPObjects.QuestItems) do data.Gui.Enabled = false end
+            continue
+        end
+
+        updateEnemiesESP()
+        updateContainersESP()
+        updateItemsESP()
+        updateQuestItemsESP()
+
+        local camPos = cam.CFrame.Position
+
+        if playerESP then
+    local validPlayers = {}
+    for plr, data in pairs(ESPObjects.Players) do
+        local char = plr.Character
+        if char then
+            local head = char:FindFirstChild("Head")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if head and hum and hum.Health > 0 then
+                local dist = (camPos - head.Position).Magnitude
+
+                table.insert(validPlayers, {
+                    plr = plr,
+                    data = data,
+                    head = head,
+                    dist = dist,
+                    hum = hum,
+                    char = char,
+                    hrp = char:FindFirstChild("HumanoidRootPart")
+                })
+            else
+                data.Gui.Enabled = false
+                if playerBoxes[plr] then playerBoxes[plr]:Remove() playerBoxes[plr] = nil end
+            end
+        else
+            data.Gui.Enabled = false
+            if playerBoxes[plr] then playerBoxes[plr]:Remove() playerBoxes[plr] = nil end
+        end
+    end
+    table.sort(validPlayers, function(a,b) return a.dist < b.dist end)
+    for i, entry in ipairs(validPlayers) do
+        if i <= maxESPCount then
+            local data = entry.data
+            local offset = 1 + (entry.dist * 0.075)
+            data.Gui.StudsOffset = Vector3.new(0, offset, 0)
+            data.Gui.Adornee = entry.head
+            data.Gui.Enabled = true
+            local visibleText = entry.visible and " | Visible" or ""
+            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.plr.Name, math.floor(entry.hum.Health), math.floor(entry.dist), visibleText)
+
+            if not playerBoxes[entry.plr] then
+                local box = Drawing.new("Square")
+                box.Thickness = 1
+                box.Transparency = 0.8
+                box.Filled = false
+                box.Color = Color3.new(1,1,1)
+                playerBoxes[entry.plr] = box
+            end
+            local box = playerBoxes[entry.plr]
+            local screenPos, onScreen = cam:WorldToViewportPoint(entry.hrp.Position)
+            if onScreen then
+                local width, height = getCharacterSize(entry.char)
+                local screenWidth = worldToScreenSize(width, entry.dist)
+                local screenHeight = worldToScreenSize(height, entry.dist)
+                box.Size = Vector2.new(screenWidth, screenHeight)
+                box.Position = Vector2.new(screenPos.X - screenWidth/2, screenPos.Y - screenHeight/2)
+                box.Visible = true
+            else
+                box.Visible = false
+            end
+        else
+            entry.data.Gui.Enabled = false
+            if playerBoxes[entry.plr] then playerBoxes[entry.plr]:Remove() playerBoxes[entry.plr] = nil end
+        end
+    end
+else
+    for _, data in pairs(ESPObjects.Players) do
+        data.Gui.Enabled = false
+    end
+    for plr, box in pairs(playerBoxes) do
+        if box then
+            box:Remove()
+            playerBoxes[plr] = nil
+        end
+    end
+end
+
+        if enemiesESP then
+    local validEnemies = {}
+    for obj, data in pairs(ESPObjects.Enemies) do
+        local head = obj:FindFirstChild("Head")
+        local hrp = head or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart")
+        local hum = obj:FindFirstChildOfClass("Humanoid")
+        if hrp and hum and hum.Health > 0 then
+            local dist = (camPos - hrp.Position).Magnitude
+
+            table.insert(validEnemies, {
+                obj = obj,
+                data = data,
+                head = head,
+                hrp = hrp,
+                hum = hum,
+                dist = dist,
+                hasHealth = true,
+                char = obj
+            })
+        else
+            data.Gui.Enabled = false
+            if enemyBoxes[obj] then enemyBoxes[obj]:Remove() enemyBoxes[obj] = nil end
+        end
+    end
+    table.sort(validEnemies, function(a,b) return a.dist < b.dist end)
+    for i, entry in ipairs(validEnemies) do
+        if i <= maxESPCount then
+            local data = entry.data
+            local adornee = entry.head or entry.hrp
+            local offset = 1 + (entry.dist * 0.075)
+            data.Gui.StudsOffset = Vector3.new(0, offset, 0)
+            data.Gui.Adornee = adornee
+            data.Gui.Enabled = true
+            local visibleText = entry.visible and " | Visible" or ""
+            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.obj.Name, math.floor(entry.hum.Health), math.floor(entry.dist), visibleText)
+
+            if not enemyBoxes[entry.obj] then
+                local box = Drawing.new("Square")
+                box.Thickness = 1
+                box.Transparency = 0.8
+                box.Filled = false
+                box.Color = Color3.new(1,0,0)
+                enemyBoxes[entry.obj] = box
+            end
+            local box = enemyBoxes[entry.obj]
+            local screenPos, onScreen = cam:WorldToViewportPoint(entry.hrp.Position)
+            if onScreen then
+                local width, height = getCharacterSize(entry.char)
+                local screenWidth = worldToScreenSize(width, entry.dist)
+                local screenHeight = worldToScreenSize(height, entry.dist)
+                box.Size = Vector2.new(screenWidth, screenHeight)
+                box.Position = Vector2.new(screenPos.X - screenWidth/2, screenPos.Y - screenHeight/2)
+                box.Visible = true
+            else
+                box.Visible = false
+            end
+        else
+            entry.data.Gui.Enabled = false
+            if enemyBoxes[obj] then enemyBoxes[obj]:Remove() enemyBoxes[obj] = nil end
+        end
+    end
+else
+    for _, data in pairs(ESPObjects.Enemies) do
+        data.Gui.Enabled = false
+    end
+    for obj, box in pairs(enemyBoxes) do
+        if box then
+            box:Remove()
+            enemyBoxes[obj] = nil
+        end
+    end
+end
+
+if containersESP then
+    local validContainers = {}
+    for obj, data in pairs(ESPObjects.Containers) do
+        local part = obj:FindFirstChildWhichIsA("BasePart")
+        if part then
+            local dist = (camPos - part.Position).Magnitude
+            table.insert(validContainers, {
+                obj = obj,
+                data = data,
+                part = part,
+                dist = dist
+            })
+        else
+            data.Gui.Enabled = false
+        end
+    end
+    table.sort(validContainers, function(a,b) return a.dist < b.dist end)
+    for i, entry in ipairs(validContainers) do
+        if i <= maxESPCount then
+            local data = entry.data
+            data.Gui.Adornee = entry.part
+            data.Gui.Enabled = true
+            data.Text.Text = string.format("<b>%s | %d studs</b>", entry.obj.Name, math.floor(entry.dist))
+        else
+            entry.data.Gui.Enabled = false
+        end
+    end
+else
+    for _, data in pairs(ESPObjects.Containers) do
+        data.Gui.Enabled = false
+    end
+end
+
+        if itemsESP then
+            local validItems = {}
+            for obj, data in pairs(ESPObjects.Items) do
+                local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+                if part then
+                    local dist = (camPos - part.Position).Magnitude
+                    table.insert(validItems, {
+                        obj = obj,
+                        data = data,
+                        part = part,
+                        dist = dist
+                    })
+                else
+                    data.Gui.Enabled = false
+                end
+            end
+            table.sort(validItems, function(a,b) return a.dist < b.dist end)
+            for i, entry in ipairs(validItems) do
+                if i <= maxESPCount then
+                    local data = entry.data
+                    data.Gui.Adornee = entry.part
+                    data.Gui.Enabled = true
+                    data.Text.Text = string.format("<b>%s | %d studs</b>", entry.obj.Name, math.floor(entry.dist))
+                else
+                    entry.data.Gui.Enabled = false
+                end
+            end
+        else
+            for _, data in pairs(ESPObjects.Items) do
+                data.Gui.Enabled = false
+            end
+        end
+
+        if questItemsESP then
+            local validQuest = {}
+            for obj, data in pairs(ESPObjects.QuestItems) do
+                local part = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart")
+                if part then
+                    local dist = (camPos - part.Position).Magnitude
+                    table.insert(validQuest, {
+                        obj = obj,
+                        data = data,
+                        part = part,
+                        dist = dist
+                    })
+                else
+                    data.Gui.Enabled = false
+                end
+            end
+            table.sort(validQuest, function(a,b) return a.dist < b.dist end)
+            for i, entry in ipairs(validQuest) do
+                if i <= maxESPCount then
+                    local data = entry.data
+                    data.Gui.Adornee = entry.part
+                    data.Gui.Enabled = true
+                    data.Text.Text = string.format("<b>%s | %d studs</b>", entry.obj.Name, math.floor(entry.dist))
+                else
+                    entry.data.Gui.Enabled = false
+                end
+            end
+        else
+            for _, data in pairs(ESPObjects.QuestItems) do
+                data.Gui.Enabled = false
+            end
+        end
+    end
+end)
+
+
+-- ===== WEAPON DATA TRACKER ===== --
+local currentMuzzleVelocity = nil
+local currentProjectileDrop = nil
+local lastWeaponName = nil
+
+local function getWeaponData(weaponName)
+    local rangedWeapons = game:GetService("ReplicatedStorage"):FindFirstChild("RangedWeapons")
+    if not rangedWeapons then return nil, nil end
+    local weapon = rangedWeapons:FindFirstChild(weaponName)
+    if not weapon then return nil, nil end
+    local ammoCallSign = weapon:GetAttribute("DefaultAmmoCallSign")
+    if not ammoCallSign then return nil, nil end
+    local ammoTypes = game:GetService("ReplicatedStorage"):FindFirstChild("AmmoTypes")
+    if not ammoTypes then return nil, nil end
+    for _, ammo in ipairs(ammoTypes:GetChildren()) do
+        if ammo:GetAttribute("CallSign") == ammoCallSign then
+            local muzzleVel = ammo:GetAttribute("MuzzleVelocity")
+            local drop = ammo:GetAttribute("ProjectileDrop")
+            if muzzleVel and drop then
+                return muzzleVel, drop
+            end
+        end
+    end
+    return nil, nil
+end
+
+task.spawn(function()
+    while true do
+        local char = LocalPlayer.Character
+        if char then
+            local currentWeapon = nil
+            for _, child in ipairs(char:GetChildren()) do
+                if game:GetService("ReplicatedStorage"):FindFirstChild("RangedWeapons") and game.ReplicatedStorage.RangedWeapons:FindFirstChild(child.Name) then
+                    currentWeapon = child
+                    break
+                end
+            end
+            if currentWeapon and currentWeapon.Name ~= lastWeaponName then
+                lastWeaponName = currentWeapon.Name
+                currentMuzzleVelocity, currentProjectileDrop = getWeaponData(currentWeapon.Name)
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+-- ===== AIMLOCK LOOP ===== --
+task.spawn(function()
+    while task.wait(0.03) do
+        if not aimEnabled then continue end
+        local char = LocalPlayer.Character
+        if not char then continue end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        local camPos = cam.CFrame.Position
+        local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+
+        local function hasPassThrough(part)
+            return part and part:IsA("BasePart") and part:GetAttribute("PassThrough") ~= nil
+        end
+
+local function getClosestVisiblePoint(part, targetChar)
+    if not part or not part:IsA("BasePart") then return nil, math.huge end
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {char}
+    raycastParams.IgnoreWater = true
+
+    local centerPoint = part.Position
+    local direction = (centerPoint - camPos).Unit
+    local distance = (centerPoint - camPos).Magnitude
+    local raycastResult = workspace:Raycast(camPos, direction * distance, raycastParams)
+    local hit = raycastResult and raycastResult.Instance
+
+    while hit and hasPassThrough(hit) do
+        raycastParams.FilterDescendantsInstances = {char, hit}
+        raycastResult = workspace:Raycast(camPos, direction * distance, raycastParams)
+        hit = raycastResult and raycastResult.Instance
+    end
+
+    if hit and (hit == part or hit:IsDescendantOf(targetChar)) then
+        return centerPoint, distance
+    end
+
+    local size = part.Size
+    local closestPoint = nil
+    local closestDist = math.huge
+
+    for x = -1, 1 do
+        for y = -1, 1 do
+            for z = -1, 1 do
+                local offset = Vector3.new(x * size.X/2, y * size.Y/2, z * size.Z/2)
+                local checkPoint = part.Position + offset
+                direction = (checkPoint - camPos).Unit
+                distance = (checkPoint - camPos).Magnitude
+                raycastResult = workspace:Raycast(camPos, direction * distance, raycastParams)
+                hit = raycastResult and raycastResult.Instance
+
+                while hit and hasPassThrough(hit) do
+                    raycastParams.FilterDescendantsInstances = {char, hit}
+                    raycastResult = workspace:Raycast(camPos, direction * distance, raycastParams)
+                    hit = raycastResult and raycastResult.Instance
+                end
+
+                if hit and (hit == part or hit:IsDescendantOf(targetChar)) then
+                    if distance < closestDist then
+                        closestDist = distance
+                        closestPoint = checkPoint
+                    end
+                end
+            end
+        end
+    end
+    return closestPoint, closestDist
+end
+
+        local potentialTargets = {}
+
+        if targetPlayers then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr == LocalPlayer then continue end
+                if plr.Name == "DOM_MINE" then continue end
+                if table.find(WhitelistPlayers, plr.Name) then continue end
+                local character = plr.Character
+                if not character then continue end
+                local hum = character:FindFirstChild("Humanoid")
+                if not hum or hum.Health <= 0 then continue end
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    table.insert(potentialTargets, {
+                        Type = "Player",
+                        Character = character,
+                        RootPart = rootPart,
+                        Humanoid = hum
+                    })
+                end
+            end
+        end
+
+        if targetEnemies then
+            local zone = workspace:FindFirstChild("AiZones")
+            if zone then
+                for _, enemy in pairs(zone:GetDescendants()) do
+                    if enemy:IsA("Model") and enemy:FindFirstChildOfClass("Humanoid") then
+                        local hum = enemy:FindFirstChildOfClass("Humanoid")
+                        if not hum or hum.Health <= 0 then continue end
+                        local rootPart = enemy:FindFirstChild("HumanoidRootPart")
+                        if rootPart then
+                            table.insert(potentialTargets, {
+                                Type = "Enemy",
+                                Character = enemy,
+                                RootPart = rootPart,
+                                Humanoid = hum
+                            })
+                        end
+                    end
+                end
+            end
+        end
+
+        if #potentialTargets == 0 then continue end
+
+        local scoredTargets = {}
+        for _, target in ipairs(potentialTargets) do
+            local rootPos = target.RootPart.Position
+            local screenPos, onScreen = cam:WorldToViewportPoint(rootPos)
+            local dist3D = (camPos - rootPos).Magnitude
+
+            if lockAnywhere then
+                table.insert(scoredTargets, {
+                    Target = target,
+                    Distance = dist3D,
+                    ScreenPos = screenPos,
+                    OnScreen = onScreen
+                })
+            else
+                if onScreen then
+                    local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+                    table.insert(scoredTargets, {
+                        Target = target,
+                        ScreenDistance = screenDist,
+                        ScreenPos = screenPos,
+                        Dist3D = dist3D,
+                        OnScreen = true
+                    })
+                end
+            end
+        end
+
+        if lockAnywhere then
+            table.sort(scoredTargets, function(a, b) return a.Distance < b.Distance end)
+        else
+            table.sort(scoredTargets, function(a, b) return a.ScreenDistance < b.ScreenDistance end)
+        end
+
+        local bestTargetPart = nil
+        local bestTargetPoint = nil
+        local bestTargetChar = nil
+
+        for i = 1, math.min(2, #scoredTargets) do
+            local entry = scoredTargets[i]
+            local target = entry.Target
+            local character = target.Character
+
+            if not lockAnywhere and entry.ScreenDistance > fovSize / 2 then
+                break
+            end
+
+            local headParts = {}
+            local torsoParts = {}
+            local limbParts = {}
+
+            local foundAny = false
+            for _, child in ipairs(character:GetChildren()) do
+                if child:IsA("BasePart") then
+                    foundAny = true
+                    local name = child.Name:lower()
+                    if name:find("head") or name:find("face") then
+                        table.insert(headParts, child)
+                    elseif name:find("torso") or name:find("upper") or name:find("lower") or name:find("root") then
+                        table.insert(torsoParts, child)
+                    else
+                        table.insert(limbParts, child)
+                    end
+                end
+            end
+
+            if not foundAny then
+                for _, child in ipairs(character:GetDescendants()) do
+                    if child:IsA("BasePart") then
+                        local name = child.Name:lower()
+                        if name:find("head") or name:find("face") then
+                            table.insert(headParts, child)
+                        elseif name:find("torso") or name:find("upper") or name:find("lower") or name:find("root") then
+                            table.insert(torsoParts, child)
+                        else
+                            table.insert(limbParts, child)
+                        end
+                    end
+                end
+            end
+
+            if #headParts == 0 and #torsoParts == 0 then
+                torsoParts = limbParts
+                limbParts = {}
+            end
+
+            local partsToScan = {}
+            local rand = math.random(100)
+            if rand <= headChance and #headParts > 0 then
+                partsToScan = headParts
+            elseif #torsoParts > 0 then
+                partsToScan = torsoParts
+            elseif #headParts > 0 then
+                partsToScan = headParts
+            else
+                partsToScan = limbParts
+            end
+
+            local bestPart = nil
+            local bestPoint = nil
+            local bestPartDist = math.huge
+
+            for _, part in ipairs(partsToScan) do
+                local point, dist = getClosestVisiblePoint(part, character)
+                if point and dist < bestPartDist then
+                    bestPartDist = dist
+                    bestPart = part
+                    bestPoint = point
+                end
+            end
+
+            if bestPart and bestPoint then
+                bestTargetPart = bestPart
+                bestTargetPoint = bestPoint
+                bestTargetChar = character
+                break
+            end
+        end
+
+        if bestTargetPart then
+            local aimPoint = bestTargetPoint or bestTargetPart.Position
+            local targetVel = bestTargetPart.Velocity or Vector3.new(0,0,0)
+            local distance = (camPos - aimPoint).Magnitude
+            local predPos = aimPoint
+
+            if currentMuzzleVelocity and currentProjectileDrop and distance > 0 then
+                local time = distance / currentMuzzleVelocity
+                local moveOffset = targetVel * time
+                local dropOffset = Vector3.new(0, -0.5 * currentProjectileDrop * time * time, 0)
+                predPos = aimPoint + moveOffset + dropOffset
+            else
+                predPos = aimPoint + Vector3.new(targetVel.X * 0.05, targetVel.Y * 0.01, targetVel.Z * 0.05)
+            end
+
+            cam.CFrame = CFrame.lookAt(camPos, predPos)
+        end
+    end
+end)
+
+-- ===== UI SETTINGS ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Project-Delta")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
