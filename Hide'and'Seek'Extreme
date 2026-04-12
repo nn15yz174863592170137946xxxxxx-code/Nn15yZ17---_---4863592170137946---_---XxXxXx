@@ -1,0 +1,593 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+-- ===== services ===== --
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","help"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== info tab ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== main tab ===== --
+local MainGroup = Tabs.Main:AddLeftGroupbox("Main","boxes")
+local SettingsGroup = Tabs.Main:AddLeftGroupbox("Settings","settings")
+
+-- ===== variables ===== --
+local playerESP = false
+local espObjects = {}
+local espHighlights = {}
+
+local hitboxSize = 10
+local hitboxApply = false
+local originalHeadSizes = {}
+local hitboxMaintainConnection = nil
+
+local walkSpeedVal = 16
+local walkSpeedApply = false
+local jumpPowerVal = 55
+local jumpPowerApply = false
+
+-- ===== helper functions ===== --
+local function isPlayerSeeker(plr)
+    local char = plr.Character
+    if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.WalkSpeed >= 20 then
+        return true
+    end
+    if char:FindFirstChild("ItScript") then
+        return true
+    end
+    return false
+end
+
+local function updateESP()
+    for plr, data in pairs(espObjects) do
+        local char = plr.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChildOfClass("Humanoid") then
+            if data.gui then pcall(function() data.gui:Destroy() end) end
+            if espHighlights[plr] then pcall(function() espHighlights[plr]:Destroy() end); espHighlights[plr] = nil end
+            espObjects[plr] = nil
+        end
+    end
+    if not playerESP then return end
+
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
+            local plr = Players:GetPlayerFromCharacter(obj)
+            if plr and plr ~= LocalPlayer then
+                local hrp = obj:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = math.floor((Workspace.CurrentCamera.CFrame.Position - hrp.Position).Magnitude)
+                    local isSeeker = isPlayerSeeker(plr)
+                    local color = isSeeker and Color3.new(1,0,0) or Color3.new(1,1,1)
+
+                    if not espObjects[plr] then
+                        local gui = Instance.new("BillboardGui")
+                        gui.Size = UDim2.fromOffset(300, 50)
+                        gui.AlwaysOnTop = true
+                        gui.StudsOffset = Vector3.new(0,3,0)
+                        gui.Parent = game:GetService("CoreGui")
+                        local txt = Instance.new("TextLabel", gui)
+                        txt.Size = UDim2.fromScale(1,1)
+                        txt.BackgroundTransparency = 1
+                        txt.TextColor3 = color
+                        txt.TextStrokeColor3 = Color3.new(0,0,0)
+                        txt.TextStrokeTransparency = 0.3
+                        txt.Font = Enum.Font.SourceSansBold
+                        txt.TextSize = 20
+                        txt.RichText = true
+                        txt.Text = ""
+                        espObjects[plr] = {gui = gui, text = txt}
+                    end
+                    local data = espObjects[plr]
+                    data.gui.Adornee = hrp
+                    data.gui.Enabled = true
+                    data.text.Text = "<b>Name: " .. plr.Name .. " | Studs: " .. dist .. "</b>"
+                    data.text.TextColor3 = color
+
+                    if not espHighlights[plr] then
+                        local hl = Instance.new("Highlight")
+                        hl.Name = "PlayerHighlight"
+                        hl.Adornee = obj
+                        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        hl.FillTransparency = 0.5
+                        hl.OutlineTransparency = 1
+                        hl.FillColor = color
+                        hl.Parent = obj
+                        espHighlights[plr] = hl
+                    else
+                        espHighlights[plr].Adornee = obj
+                        espHighlights[plr].Enabled = true
+                        espHighlights[plr].FillColor = color
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ===== HITBOX FUNCTIONS ===== --
+local function applyHitboxToPlayer(plr, size)
+    if plr == LocalPlayer then return end
+    local char = plr.Character
+    if not char then return end
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+
+    if not originalHeadSizes[plr] then
+        originalHeadSizes[plr] = head.Size
+    end
+
+    head.Size = Vector3.new(size, size, size)
+    head.Transparency = 0.8
+    head.Massless = true
+    head.CanCollide = false
+end
+
+local function restoreHitboxForPlayer(plr)
+    local char = plr.Character
+    if not char then return end
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+
+    if originalHeadSizes[plr] then
+        head.Size = originalHeadSizes[plr]
+        head.Transparency = 0
+        head.Massless = false
+        head.CanCollide = true
+    end
+    originalHeadSizes[plr] = nil
+end
+
+local function applyHitboxToAll(size)
+    for _, plr in pairs(Players:GetPlayers()) do
+        applyHitboxToPlayer(plr, size)
+    end
+end
+
+local function restoreHitboxForAll()
+    for plr in pairs(originalHeadSizes) do
+        restoreHitboxForPlayer(plr)
+    end
+    originalHeadSizes = {}
+end
+
+local function startHitboxMaintain()
+    if hitboxMaintainConnection then return end
+    hitboxMaintainConnection = RunService.Heartbeat:Connect(function()
+        if not hitboxApply then return end
+        for plr in pairs(originalHeadSizes) do
+            local char = plr.Character
+            if char then
+                local head = char:FindFirstChild("Head")
+                if head then
+                    head.CanCollide = false
+                end
+            end
+        end
+    end)
+end
+
+local function stopHitboxMaintain()
+    if hitboxMaintainConnection then
+        hitboxMaintainConnection:Disconnect()
+        hitboxMaintainConnection = nil
+    end
+end
+
+-- ===== walk/jump functions ===== --
+local function setWalkSpeed(val, apply)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    if apply then
+        hum.WalkSpeed = val
+    else
+        local isSeeker = isPlayerSeeker(LocalPlayer)
+        hum.WalkSpeed = isSeeker and 20 or 16
+    end
+end
+
+local function setJumpPower(val, apply)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    if apply then
+        hum.JumpPower = val
+    else
+        hum.JumpPower = 55
+    end
+end
+
+-- ===== player added/removed hooks for hitbox ===== --
+local function onPlayerAdded(plr)
+    if hitboxApply then
+        plr.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            applyHitboxToPlayer(plr, hitboxSize)
+        end)
+    end
+end
+
+local function onPlayerRemoving(plr)
+    restoreHitboxForPlayer(plr)
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+-- ===== toggles and inputs ===== --
+MainGroup:AddToggle("PlayerESP", {
+    Text = "Player ESP",
+    Default = false,
+    Callback = function(v)
+        playerESP = v
+        if not v then
+            for _, data in pairs(espObjects) do
+                if data.gui then pcall(function() data.gui:Destroy() end) end
+            end
+            for _, hl in pairs(espHighlights) do
+                pcall(function() hl:Destroy() end)
+            end
+            espObjects = {}
+            espHighlights = {}
+        end
+    end
+})
+
+MainGroup:AddToggle("CollectCredits", {
+    Text = "Collect All Credits",
+    Default = false,
+    Callback = function(v)
+        if v then
+            task.spawn(function()
+                while Toggles.CollectCredits.Value do
+                    local gameObjects = Workspace:FindFirstChild("GameObjects")
+                    if gameObjects then
+                        for _, obj in pairs(gameObjects:GetDescendants()) do
+                            if obj:IsA("BasePart") and obj:FindFirstChildOfClass("TouchTransmitter") then
+                                if obj:FindFirstChild("Collected") then
+                                    firetouchinterest(LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart"), obj, 0)
+                                    task.wait()
+                                    firetouchinterest(LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart"), obj, 1)
+                                    task.wait(0.1)
+                                end
+                            end
+                        end
+                    end
+                    task.wait(1)
+                end
+            end)
+        end
+    end
+})
+
+MainGroup:AddInput("HitboxSize", {
+    Text = "Hitbox Size",
+    Default = "10",
+    Numeric = true,
+    Finished = false,
+    Callback = function(v)
+        local num = tonumber(v)
+        if num then
+            hitboxSize = num
+            if hitboxApply then
+                applyHitboxToAll(hitboxSize)
+            end
+        end
+    end
+})
+
+MainGroup:AddToggle("HitboxApply", {
+    Text = "Apply Hitbox",
+    Default = false,
+    Callback = function(v)
+        hitboxApply = v
+        if v then
+            applyHitboxToAll(hitboxSize)
+            startHitboxMaintain()
+        else
+            stopHitboxMaintain()
+            restoreHitboxForAll()
+        end
+    end
+})
+
+SettingsGroup:AddLabel("Hider = 16, Seeker = 20", true)
+
+SettingsGroup:AddInput("WalkSpeed", {
+    Text = "WalkSpeed",
+    Default = "16",
+    Numeric = true,
+    Finished = false,
+    Callback = function(v)
+        local num = tonumber(v)
+        if num then
+            walkSpeedVal = num
+            if walkSpeedApply then
+                setWalkSpeed(walkSpeedVal, true)
+            end
+        end
+    end
+})
+
+SettingsGroup:AddToggle("WalkSpeedApply", {
+    Text = "Apply WalkSpeed",
+    Default = false,
+    Callback = function(v)
+        walkSpeedApply = v
+        setWalkSpeed(walkSpeedVal, v)
+    end
+})
+
+
+SettingsGroup:AddLabel("Default = 55", true)
+
+SettingsGroup:AddInput("JumpPower", {
+    Text = "JumpPower",
+    Default = "55",
+    Numeric = true,
+    Finished = false,
+    Callback = function(v)
+        local num = tonumber(v)
+        if num then
+            jumpPowerVal = num
+            if jumpPowerApply then
+                setJumpPower(jumpPowerVal, true)
+            end
+        end
+    end
+})
+
+SettingsGroup:AddToggle("JumpPowerApply", {
+    Text = "Apply JumpPower",
+    Default = false,
+    Callback = function(v)
+        jumpPowerApply = v
+        setJumpPower(jumpPowerVal, v)
+    end
+})
+
+-- ===== teleport group ===== --
+local TeleportGroup = Tabs.Main:AddRightGroupbox("Teleport","users")
+
+local playerDropdown = TeleportGroup:AddDropdown("PlayerDropdown", {
+    Text = "Players",
+    Values = {},
+    Default = 1,
+    Multi = false,
+    Callback = function() end
+})
+
+local function updatePlayerDropdown()
+    local names = {}
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(names, plr.Name)
+        end
+    end
+    table.sort(names)
+    playerDropdown:SetValues(names)
+end
+
+Players.PlayerAdded:Connect(updatePlayerDropdown)
+Players.PlayerRemoving:Connect(updatePlayerDropdown)
+updatePlayerDropdown()
+
+local originalPositions = {}
+
+TeleportGroup:AddButton("Bring Player", function()
+    local selected = playerDropdown.Value
+    if not selected then return end
+    local target = Players:FindFirstChild(selected)
+    if not target then return end
+    local char = target.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local localChar = LocalPlayer.Character
+    if not localChar then return end
+    local localHrp = localChar:FindFirstChild("HumanoidRootPart")
+    if not localHrp then return end
+
+    originalPositions[target] = hrp.CFrame
+
+    hrp.CFrame = localHrp.CFrame + Vector3.new(0, 3, 0)
+
+    task.spawn(function()
+        task.wait(1)
+        if originalPositions[target] and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            target.Character.HumanoidRootPart.CFrame = originalPositions[target]
+        end
+        originalPositions[target] = nil
+    end)
+end)
+
+TeleportGroup:AddButton("Bring All Players", function()
+    local localChar = LocalPlayer.Character
+    if not localChar then return end
+    local localHrp = localChar:FindFirstChild("HumanoidRootPart")
+    if not localHrp then return end
+
+    local playersToBring = {}
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local char = plr.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    table.insert(playersToBring, {plr = plr, hrp = hrp, orig = hrp.CFrame})
+                end
+            end
+        end
+    end
+
+    for _, data in ipairs(playersToBring) do
+        data.hrp.CFrame = localHrp.CFrame + Vector3.new(0, 3, 0)
+        originalPositions[data.plr] = data.orig
+    end
+
+    task.spawn(function()
+        task.wait(1)
+        for _, data in ipairs(playersToBring) do
+            if originalPositions[data.plr] and data.plr.Character and data.plr.Character:FindFirstChild("HumanoidRootPart") then
+                data.plr.Character.HumanoidRootPart.CFrame = originalPositions[data.plr]
+            end
+            originalPositions[data.plr] = nil
+        end
+    end)
+end)
+
+TeleportGroup:AddLabel("Farm infinite Credits or help Seeker by bringing them to you with loop bring", true)
+
+local loopBringEnabled = false
+local loopBringThread = nil
+
+TeleportGroup:AddToggle("LoopBringPlayer", {
+    Text = "Loop Bring Selected Player",
+    Default = false,
+    Callback = function(v)
+        loopBringEnabled = v
+        if v then
+            if loopBringThread then task.cancel(loopBringThread) end
+            loopBringThread = task.spawn(function()
+                while loopBringEnabled do
+                    local selected = playerDropdown.Value
+                    if selected then
+                        local target = Players:FindFirstChild(selected)
+                        if target then
+                            local char = target.Character
+                            if char then
+                                local hrp = char:FindFirstChild("HumanoidRootPart")
+                                if hrp then
+                                    local localChar = LocalPlayer.Character
+                                    if localChar then
+                                        local localHrp = localChar:FindFirstChild("HumanoidRootPart")
+                                        if localHrp then
+                                            local orig = hrp.CFrame
+                                            hrp.CFrame = localHrp.CFrame + Vector3.new(0, 3, 0)
+                                            task.wait(0.1)
+                                            if target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                                                target.Character.HumanoidRootPart.CFrame = orig
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.1)
+                end
+            end)
+        else
+            if loopBringThread then
+                task.cancel(loopBringThread)
+                loopBringThread = nil
+            end
+        end
+    end
+})
+
+-- ===== esp update loop ===== --
+RunService.RenderStepped:Connect(function()
+    if playerESP then
+        updateESP()
+    end
+end)
+
+-- ===== attribute change handling ===== --
+local function onAttributeChanged(plr)
+    if plr == LocalPlayer then
+        if not walkSpeedApply then
+            setWalkSpeed(walkSpeedVal, false)
+        end
+    end
+end
+
+for _, plr in pairs(Players:GetPlayers()) do
+    plr:GetAttributeChangedSignal("IsSeekerCharacter"):Connect(function()
+        onAttributeChanged(plr)
+    end)
+end
+
+Players.PlayerAdded:Connect(function(plr)
+    plr:GetAttributeChangedSignal("IsSeekerCharacter"):Connect(function()
+        onAttributeChanged(plr)
+    end)
+    updatePlayerDropdown()
+end)
+
+-- ===== character respawn handling ===== --
+local function onCharacterAdded(char)
+    task.wait(0.5)
+    setWalkSpeed(walkSpeedVal, walkSpeedApply)
+    setJumpPower(jumpPowerVal, jumpPowerApply)
+end
+
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+if LocalPlayer.Character then
+    onCharacterAdded(LocalPlayer.Character)
+end
+
+-- ===== ui settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Hide-and-Seek-Extreme")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
