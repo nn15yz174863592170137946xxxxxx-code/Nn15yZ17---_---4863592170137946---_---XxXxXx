@@ -1,0 +1,294 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO TAB ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== aimlock ===== --
+local AimGroup = Tabs.Main:AddLeftGroupbox("Aimlock","boxes")
+local aimEnabled = false
+local lockAnywhere = false
+
+AimGroup:AddToggle("EnableAimlock",{Text="Enable Aimlock",Default=false,Callback=function(v) aimEnabled=v end})
+AimGroup:AddToggle("LockAnywhere",{Text="Lock Anywhere",Default=false,Callback=function(v) lockAnywhere=v end})
+
+local aimKey = "E"
+AimGroup:AddLabel("Aimlock Keybind"):AddKeyPicker("AimlockKey",{
+    Default = aimKey,
+    Mode = "Toggle",
+    Callback = function() aimEnabled = not aimEnabled ; Toggles.EnableAimlock:SetValue(aimEnabled) end,
+    ChangedCallback = function(k) aimKey = k end
+})
+
+-- ===== FOV Size Input =====
+local gui,fovCircle,crossV,crossH
+local fovSize = 500
+local crossOffset = Vector2.new(0,0)
+
+local fovInput = AimGroup:AddInput("FOVSize", {
+    Text = "FOV Size",
+    Default = tostring(fovSize),
+    Finished = true,
+    Placeholder = "500",
+})
+
+fovInput:OnChanged(function(v)
+    local n = tonumber(v)
+    if n and fovCircle then
+        fovSize = n
+        fovCircle.Size = UDim2.new(0,fovSize,0,fovSize)
+        fovCircle.Position = UDim2.new(0.5,crossOffset.X,0.5,crossOffset.Y)
+    end
+end)
+
+-- ===== whitelist ===== --
+local WhitelistGroup = Tabs.Main:AddLeftGroupbox("Whitelist","boxes")
+local WhitelistPlayers = {}
+WhitelistGroup:AddInput("WhitelistInput",{Text="Input",Placeholder="(Partial username)"})
+
+local function getClosestPlayer(txt)
+    local s = txt:lower()
+    local best,dist=nil,999
+    for _,plr in pairs(Players:GetPlayers()) do
+        local u = plr.Name:lower()
+        local d = plr.DisplayName:lower()
+        if u:find(s,1,true) or d:find(s,1,true) then
+            local pick = (#u < #d) and u or d
+            local diff = math.abs(#pick - #s)
+            if diff < dist then best,dist = plr,diff end
+        end
+    end
+    return best
+end
+
+WhitelistGroup:AddButton("Add",function()
+    local t = Options.WhitelistInput.Value
+    if t=="" then return Library:Notify("Player not found!",3) end
+    local p = getClosestPlayer(t)
+    if p and not table.find(WhitelistPlayers,p.Name) then
+        table.insert(WhitelistPlayers,p.Name)
+        Library:Notify(p.Name.." added!",3)
+    else
+        Library:Notify("Player not found!",3)
+    end
+end)
+
+WhitelistGroup:AddButton("Remove",function()
+    local t = Options.WhitelistInput.Value
+    if t=="" then return Library:Notify("Player not found!",3) end
+    local p = getClosestPlayer(t)
+    if not p then return Library:Notify("Player not found!",3) end
+    for i=#WhitelistPlayers,1,-1 do
+        if WhitelistPlayers[i]==p.Name then
+            table.remove(WhitelistPlayers,i)
+            Library:Notify(p.Name.." removed!",3)
+        end
+    end
+end)
+
+-- ===== fov ui ===== --
+local function createFOV()
+    if gui then gui:Destroy() end
+    gui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+    gui.Name="AimlockFOV"
+    gui.IgnoreGuiInset=true
+    gui.ResetOnSpawn=false
+
+    local function mk(parent,pos,size)
+        local f=Instance.new("Frame",parent)
+        f.AnchorPoint=Vector2.new(.5,.5)
+        f.Position=pos
+        f.Size=size
+        f.BackgroundColor3=Color3.new(1,1,1)
+        f.BorderSizePixel=0
+        return f
+    end
+
+    crossV = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,2,0,14))
+    crossH = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,14,0,2))
+
+    fovCircle = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,fovSize,0,fovSize))
+    fovCircle.BackgroundTransparency=1
+    Instance.new("UICorner",fovCircle).CornerRadius = UDim.new(1,0)
+
+    local s = Instance.new("UIStroke",fovCircle)
+    s.Thickness = 2
+    task.spawn(function()
+        local h=0
+        while task.wait(.03) do
+            if fovCircle.Visible then
+                h=(h+3)%360
+                s.Color = Color3.fromHSV(h/360,1,1)
+            end
+        end
+    end)
+end
+createFOV()
+
+-- ===== mobile toggle button ===== --
+local AimGui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+AimGui.Name="AimlockToggleGui"
+AimGui.IgnoreGuiInset=true
+AimGui.ResetOnSpawn=false
+
+local btn = Instance.new("TextButton",AimGui)
+btn.Size=UDim2.new(0,140,0,40)
+btn.Position=UDim2.new(.875,0,.125,0)
+btn.Text="Aimlock : OFF"
+btn.TextColor3=Color3.new(1,1,1)
+btn.BackgroundColor3=Color3.new(0,0,0)
+btn.TextScaled=true
+btn.Font=Enum.Font.SourceSansBold
+btn.Draggable=true
+Instance.new("UICorner",btn).CornerRadius=UDim.new(0,10)
+
+local function updateBtn()
+    if aimEnabled then
+        btn.Text="Aimlock : ON"
+        btn.BackgroundColor3=Color3.fromRGB(255,128,0)
+        crossH.Visible=true
+        crossV.Visible=true
+        fovCircle.Visible=true
+    else
+        btn.Text="Aimlock : OFF"
+        btn.BackgroundColor3=Color3.new(0,0,0)
+        crossH.Visible=false
+        crossV.Visible=false
+        fovCircle.Visible=false
+    end
+end
+
+local function toggleAim(v)
+    aimEnabled=v
+    Toggles.EnableAimlock:SetValue(v)
+    updateBtn()
+end
+
+btn.MouseButton1Click:Connect(function() toggleAim(not aimEnabled) end)
+game:GetService("UserInputService").InputBegan:Connect(function(i,g)
+    if g then return end
+    if i.KeyCode.Name == aimKey then toggleAim(not aimEnabled) end
+end)
+Toggles.EnableAimlock:OnChanged(function(v) task.spawn(function() toggleAim(v) end) end)
+updateBtn()
+
+-- ===== aimlock loop ===== --
+task.spawn(function()
+    while task.wait(0.03) do
+        if not aimEnabled then continue end
+        local char = LocalPlayer.Character
+        if not char then continue end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        local camPos = cam.CFrame.Position
+        local bestTarget = nil
+        local bestDist = math.huge
+
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr == LocalPlayer then continue end
+            if table.find(WhitelistPlayers, plr.Name) then continue end
+
+            local character = plr.Character
+            if not character then continue end
+
+            local humanoid = character:FindFirstChild("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then continue end
+
+            local head = character:FindFirstChild("Head")
+            if not head then continue end
+
+            local ray = Ray.new(camPos, (head.Position - camPos).Unit * (head.Position - camPos).Magnitude)
+            local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
+            if hit and hit:IsDescendantOf(character) then
+                if lockAnywhere then
+                    local dist = (head.Position - camPos).Magnitude
+                    if dist < bestDist then
+                        bestTarget = head
+                        bestDist = dist
+                    end
+                else
+
+                    local screenPos, onScreen = cam:WorldToViewportPoint(head.Position)
+                    if onScreen then
+                        local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+                        local dx = screenPos.X - fPos.X
+                        local dy = screenPos.Y - fPos.Y
+                        local screenDist = math.sqrt(dx*dx + dy*dy)
+                        if screenDist <= fovSize/2 and screenDist < bestDist then
+                            bestTarget = head
+                            bestDist = screenDist
+                        end
+                    end
+                end
+            end
+        end
+
+        if bestTarget then
+            cam.CFrame = CFrame.lookAt(camPos, bestTarget.Position)
+        end
+    end
+end)
+
+-- ===== ui settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Fate-Trigger")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
