@@ -1,0 +1,91 @@
+-- ===== logger ===== --
+
+
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+-- ===== notify + clipboard ===== --
+local invite = "https://discord.gg/3NjyJjjXxF"
+setclipboard(invite)
+Library:Notify("Join Discord for Scripts!", 3)
+local UniverseId = game.GameId
+-- ===== games ===== --
+local Games = {
+{ name="Animal Simulator", universeIds={2023680558}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Animal%20Simulator" },
+
+{ name="Arcade Basketball", universeIds={7884563721}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Arcade%20Basketball" },
+
+{ name="Arsenal", universeIds={111958650}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Arsenal" },
+
+{ name="Aura Craft", universeIds={5918399007}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Aura%20Craft" },
+
+{ name="Basketball Legends", universeIds={4931927012}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Basketball%20Legends" },
+
+{ name="CRAB ROYALE", universeIds={5837827057}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/CRAB%20ROYALE" },
+
+{ name="Climb For Brainrots", universeIds={9563386957}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Climb%20For%20Brainrots" },
+
+{ name="Deadeye", universeIds={9571037154}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Deadeye" },
+
+{ name="Defusal", universeIds={6993600665}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Defusal" },
+
+{ name="Escape Tsunami For Brainrots", universeIds={9363735110}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Escape%20Tsunami%20For%20Brainrots" },
+
+{ name="Fate Trigger [FPS]", universeIds={9326439632}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Fate%20Trigger" },
+
+{ name="[FPS] Flick", universeIds={8795154789}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Flick" },
+
+{ name="Gun Grounds FFA", universeIds={4281211770}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Gun%20Grounds%20FFA" },
+
+{ name="Hide and Seek Extreme", universeIds={93740418}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Hide%20and%20Seek%20Extreme" },
+
+{ name="LUCKY BLOCKS Battlegrounds", universeIds={279565647}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/LUCKY%20BLOCKS%20Battlegrounds" },
+
+{ name="Murderers VS Sheriffs DUELS", universeIds={4348829796}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Murderers%20VS%20Sheriffs%20DUELS" },
+
+{ name="NBA Champions Basketball", universeIds={9032167172}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/NBA%20Champions%20Basketball" },
+
+{ name="OP Blade", universeIds={8809915587}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/OP%20Blade" },
+
+{ name="One Tap", universeIds={9294074907}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/One%20Tap" },
+
+{ name="OneShot", universeIds={9304284122}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/OneShot" },
+
+{ name="Operation One", universeIds={8307114974}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Operation%20One" },
+
+{ name="Piggy", universeIds={1516533665}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Piggy" },
+
+{ name="Pistol Arena", universeIds={9588121608}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Pistol%20Arena" },
+
+{ name="Prison Life", universeIds={73885730}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Prison%20Life" },
+
+{ name="Project Delta", universeIds={2862098693}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Project%20Delta" },
+
+{ name="SNIPER DUELS", universeIds={7264587281}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/SNIPER%20DUELS" },
+
+{ name="Slap DUELS", universeIds={8080863905}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Slap%20DUELS" },
+
+{ name="Survive LAVA for Brainrots", universeIds={9649298941}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Survive%20LAVA%20for%20Brainrots" },
+
+{ name="T-Titans Battlegrounds", universeIds={1111698561}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/T-Titans%20Battlegrounds" },
+
+{ name="The storage", universeIds={4756005135}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/The%20Storage" },
+
+{ name="Violence District", universeIds={6739698191}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Violence%20District" },
+
+{ name="Volleyball Legends", universeIds={6931042565}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Volleyball%20Legends" },
+
+{ name="Wrath of Nature", universeIds={9592026646}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Wrath%20of%20Nature" },
+
+{ name="bLockerman's Minesweeper", universeIds={3047037061}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/bLockermans%20Minesweeper" },
+
+}
+-- ===== auto loader ===== --
+for _,g in ipairs(Games) do
+if table.find(g.universeIds, UniverseId) then
+Library:Notify('Loading "' ..g.name.. '" ', 3)
+loadstring(game:HttpGet(g.url))()
+return
+end
+end
+Library:Notify("Game not supported.", 3)
