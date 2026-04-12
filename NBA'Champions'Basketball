@@ -1,0 +1,224 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== Info ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== Remote Override ===== --
+local currentReleaseValue = nil
+local releaseToggles = {}
+local randomToggle = nil
+
+local function findFinishShotRemote()
+    local function search(container)
+        for _, child in ipairs(container:GetChildren()) do
+            if child.Name == "FinishShot" and child:IsA("RemoteEvent") then
+                return child
+            end
+            local found = search(child)
+            if found then return found end
+        end
+        return nil
+    end
+    return search(game:GetService("ReplicatedStorage"))
+end
+
+local finishShotRemote = findFinishShotRemote()
+if not finishShotRemote then
+    finishShotRemote = game:GetService("ReplicatedStorage"):FindFirstChild("Comms")
+        and game.ReplicatedStorage.Comms:FindFirstChild("ActionProvider")
+        and game.ReplicatedStorage.Comms.ActionProvider:FindFirstChild("RE")
+        and game.ReplicatedStorage.Comms.ActionProvider.RE:FindFirstChild("FinishShot")
+end
+
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    
+    if currentReleaseValue and method == "FireServer" and self == finishShotRemote then
+        if args[2] ~= nil then
+            args[2] = currentReleaseValue
+            return oldNamecall(self, unpack(args))
+        end
+    end
+    
+    return oldNamecall(self, ...)
+end)
+
+local function setReleaseValue(val, toggleName)
+    if val == nil then
+        currentReleaseValue = nil
+    else
+        currentReleaseValue = val
+        for name, toggle in pairs(releaseToggles) do
+            if name ~= toggleName then
+                toggle:SetValue(false)
+            end
+        end
+        if randomToggle and randomToggle:GetValue() then
+            randomToggle:SetValue(false)
+        end
+    end
+end
+
+-- ===== Auto Shoot ===== --
+local AutoShootGroup = Tabs.Main:AddLeftGroupbox("Auto Shoot","boxes")
+
+local ReleaseList = {
+    {Name="Perfect Release", Value=1},
+    {Name="Slightly Early",  Value=0.75},
+    {Name="Early",           Value=0.7},
+    {Name="Very Early",      Value=0.5},
+}
+
+for _, item in ipairs(ReleaseList) do
+    releaseToggles[item.Name] = AutoShootGroup:AddToggle("Release_"..item.Name, {
+        Text = item.Name,
+        Default = false,
+        Callback = function(v)
+            if v then
+                setReleaseValue(item.Value, item.Name)
+                Library:Notify(item.Name.." enabled", 3)
+            else
+                if currentReleaseValue == item.Value then
+                    setReleaseValue(nil)
+                end
+            end
+        end
+    })
+end
+
+-- ===== Auto Random ===== --
+local RandomGroup = Tabs.Main:AddRightGroupbox("Auto Random","shuffle")
+
+local Weights = {
+    ["Perfect Release"] = 0,
+    ["Slightly Early"]  = 0,
+    ["Early"]           = 0,
+    ["Very Early"]      = 0,
+}
+
+local Values = {
+    ["Perfect Release"] = 1,
+    ["Slightly Early"]  = 0.75,
+    ["Early"]           = 0.7,
+    ["Very Early"]      = 0.5,
+}
+
+local randomEnabled = false
+local randomLoop = nil
+
+local function pickRandom()
+    local pool = {}
+    for name, weight in pairs(Weights) do
+        for _ = 1, weight do
+            table.insert(pool, name)
+        end
+    end
+    if #pool > 0 then
+        local chosen = pool[math.random(#pool)]
+        currentReleaseValue = Values[chosen]
+    end
+end
+
+local function startRandomLoop()
+    if randomLoop then return end
+    randomLoop = task.spawn(function()
+        while randomEnabled do
+            pickRandom()
+            task.wait(0.1)
+        end
+        randomLoop = nil
+    end)
+end
+
+local function stopRandomLoop()
+    randomEnabled = false
+    if randomLoop then
+        task.cancel(randomLoop)
+        randomLoop = nil
+    end
+    currentReleaseValue = nil
+end
+
+randomToggle = RandomGroup:AddToggle("AutoRandom",{
+    Text = "Auto Random",
+    Default = false,
+    Callback = function(v)
+        if v then
+            for name, toggle in pairs(releaseToggles) do
+                toggle:SetValue(false)
+            end
+            randomEnabled = true
+            startRandomLoop()
+            Library:Notify("Auto Random enabled", 3)
+        else
+            stopRandomLoop()
+            Library:Notify("Auto Random disabled", 3)
+        end
+    end
+})
+
+RandomGroup:AddSlider("PerfectSlider", {Text="Perfect Release", Min=0, Max=100, Default=0, Callback=function(v) Weights["Perfect Release"]=v end})
+RandomGroup:AddSlider("SlightlySlider",{Text="Slightly Early", Min=0, Max=100, Default=0, Callback=function(v) Weights["Slightly Early"]=v end})
+RandomGroup:AddSlider("EarlySlider",   {Text="Early",          Min=0, Max=100, Default=0, Callback=function(v) Weights["Early"]=v end})
+RandomGroup:AddSlider("VerySlider",    {Text="Very Early",     Min=0, Max=100, Default=0, Callback=function(v) Weights["Very Early"]=v end})
+
+-- ===== UI Settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("NBA-Champions-Basketball")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
