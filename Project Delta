@@ -665,8 +665,7 @@ task.spawn(function()
             data.Gui.StudsOffset = Vector3.new(0, offset, 0)
             data.Gui.Adornee = entry.head
             data.Gui.Enabled = true
-            local visibleText = entry.visible and " | Visible" or ""
-            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.plr.Name, math.floor(entry.hum.Health), math.floor(entry.dist), visibleText)
+            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.plr.Name, math.floor(entry.hum.Health), math.floor(entry.dist))
 
             if not playerBoxes[entry.plr] then
                 local box = Drawing.new("Square")
@@ -738,8 +737,7 @@ end
             data.Gui.StudsOffset = Vector3.new(0, offset, 0)
             data.Gui.Adornee = adornee
             data.Gui.Enabled = true
-            local visibleText = entry.visible and " | Visible" or ""
-            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.obj.Name, math.floor(entry.hum.Health), math.floor(entry.dist), visibleText)
+            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.obj.Name, math.floor(entry.hum.Health), math.floor(entry.dist))
 
             if not enemyBoxes[entry.obj] then
                 local box = Drawing.new("Square")
@@ -1171,8 +1169,8 @@ end
             if currentMuzzleVelocity and currentProjectileDrop and distance > 0 then
                 local time = distance / currentMuzzleVelocity
                 local moveOffset = targetVel * time
-                local dropOffset = Vector3.new(0, -0.5 * currentProjectileDrop * time * time, 0)
-                predPos = aimPoint + moveOffset + dropOffset
+local dropOffset = Vector3.new(0, 0.5 * currentProjectileDrop * time * time, 0)
+predPos = aimPoint + moveOffset + dropOffset
             else
                 predPos = aimPoint + Vector3.new(targetVel.X * 0.05, targetVel.Y * 0.01, targetVel.Z * 0.05)
             end
