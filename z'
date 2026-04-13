@@ -42,6 +42,8 @@ local Games = {
 
 { name="Murderers VS Sheriffs DUELS", universeIds={4348829796}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Murderers%20VS%20Sheriffs%20DUELS" },
 
+{ name="Murder Mystery 2", universeIds={66654135}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Murderers%20VS%20Sheriffs%20DUELS" },
+
 { name="NBA Champions Basketball", universeIds={9032167172}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/NBA%20Champions%20Basketball" },
 
 { name="OP Blade", universeIds={8809915587}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/OP%20Blade" },
