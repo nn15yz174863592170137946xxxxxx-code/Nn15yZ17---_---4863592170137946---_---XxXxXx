@@ -1,0 +1,664 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+local WeaponService = require(ReplicatedStorage:WaitForChild("ClientServices"):WaitForChild("WeaponService"))
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info", "info"),
+    Main = Window:AddTab("Main", "user"),
+    ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
+}
+
+-- ===== Info ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info", "help")
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== Main ===== --
+local MainGroup = Tabs.Main:AddLeftGroupbox("Main", "boxes")
+
+MainGroup:AddLabel("Innocent", true)
+local autoCollectCoins = false
+local autoCollectGun = false
+
+MainGroup:AddToggle("AutoCollectCoins", {
+    Text = "Auto Collect Coins",
+    Default = false,
+    Callback = function(v) autoCollectCoins = v end
+})
+MainGroup:AddToggle("AutoCollectGun", {
+    Text = "Auto Collect Gun",
+    Default = false,
+    Callback = function(v) autoCollectGun = v end
+})
+
+MainGroup:AddDivider()
+MainGroup:AddLabel("Sheriff/Hero", true)
+local gunAutoShoot = false
+local gunSilentAim = false
+
+MainGroup:AddToggle("GunAutoShoot", {
+    Text = "Auto Shoot",
+    Default = false,
+    Callback = function(v) gunAutoShoot = v end
+})
+MainGroup:AddToggle("GunSilentAim", {
+    Text = "Silent Aim",
+    Default = false,
+    Callback = function(v) gunSilentAim = v end
+})
+
+MainGroup:AddDivider()
+MainGroup:AddLabel("Murderer", true)
+MainGroup:AddLabel("TP Players if in range", true)
+
+local tpRange = 3
+local knifeReach = false
+local selectedPlayer = nil
+
+local rangeSlider = MainGroup:AddSlider("TPRange", {
+    Text = "Studs",
+    Default = 3,
+    Min = 0,
+    Max = 3,
+    Rounding = 1,
+    Callback = function(v) tpRange = v end
+})
+
+MainGroup:AddToggle("KnifeReach", {
+    Text = "Knife Reach",
+    Default = false,
+    Callback = function(v) knifeReach = v end
+})
+
+local playerDropdown = MainGroup:AddDropdown("PlayerSelect", {
+    Text = "Players",
+    Values = {},
+    Default = "",
+    Callback = function(v)
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Name == v then selectedPlayer = plr break end
+        end
+    end
+})
+
+MainGroup:AddButton("Kill Selected", function()
+    if not selectedPlayer then
+        Library:Notify("No player selected!", 2)
+        return
+    end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local knife = char:FindFirstChild("Knife")
+    if not knife then
+        local backpack = LocalPlayer.Backpack
+        if backpack then
+            knife = backpack:FindFirstChild("Knife")
+            if knife then
+                knife.Parent = char
+            end
+        end
+    end
+    if not knife then
+        Library:Notify("No knife found!", 2)
+        return
+    end
+    local targetChar = selectedPlayer.Character
+    if not targetChar then return end
+    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+    local rightHand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+    if targetHRP and rightHand then
+        targetHRP.CFrame = rightHand.CFrame
+    end
+end)
+
+-- ===== Utility Functions ===== --
+local function hasItem(plr, itemName)
+    local char = plr.Character
+    if not char then return false end
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Tool") and child.Name == itemName then
+            return true
+        end
+    end
+    local backpack = plr:FindFirstChild("Backpack")
+    if backpack then
+        for _, child in ipairs(backpack:GetChildren()) do
+            if child:IsA("Tool") and child.Name == itemName then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function getNearestMurderer()
+    local nearest = nil
+    local nearestDist = math.huge
+    local myPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myPos then return nil end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and hasItem(plr, "Knife") then
+            local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local dist = (myPos.Position - hrp.Position).Magnitude
+                if dist < nearestDist then
+                    nearestDist = dist
+                    nearest = plr
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+local function isMurdererNearPosition(pos, range)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and hasItem(plr, "Knife") then
+            local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and (hrp.Position - pos).Magnitude <= range then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- ===== Auto Collect Coins ===== --
+task.spawn(function()
+    while task.wait(1) do
+        if not autoCollectCoins then continue end
+        local char = LocalPlayer.Character
+        if not char then continue end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+        local startPos = hrp.Position
+        local myPos = hrp.Position
+        local coins = {}
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and string.match(obj.Name:lower(), "coin") then
+                local dist = (myPos - obj.Position).Magnitude
+                if dist <= 1000 then
+                    local touch = obj:FindFirstChildOfClass("TouchTransmitter")
+                    if touch then table.insert(coins, obj) end
+                end
+            end
+        end
+        for _, coin in ipairs(coins) do
+            if not autoCollectCoins then break end
+            hrp.Position = coin.Position
+            firetouchinterest(hrp, coin, 0)
+            firetouchinterest(hrp, coin, 1)
+            task.wait(0.1)
+        end
+        hrp.Position = startPos
+    end
+end)
+
+-- ===== Auto Collect Gun ===== --
+task.spawn(function()
+    while task.wait(1) do
+        if not autoCollectGun then continue end
+        if hasItem(LocalPlayer, "Gun") then continue end
+        local char = LocalPlayer.Character
+        if not char then continue end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+        local startPos = hrp.Position
+        
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if not autoCollectGun then break end
+            if hasItem(LocalPlayer, "Gun") then break end
+            if obj:IsA("BasePart") and obj.Name == "GunDrop" then
+                local dist = (startPos - obj.Position).Magnitude
+                if dist <= 1000 then
+                    if not isMurdererNearPosition(obj.Position, 3) then
+                        hrp.Position = obj.Position
+                        firetouchinterest(hrp, obj, 0)
+                        firetouchinterest(hrp, obj, 1)
+                        task.wait(0.2)
+                    end
+                end
+            end
+        end
+        hrp.Position = startPos
+    end
+end)
+
+-- ===== Gun Silent Aim\Auto Shoot ===== --
+local oldGetMouseTargetCFrame = WeaponService.GetMouseTargetCFrame
+local oldGetTargetPosition = WeaponService.GetTargetPosition
+
+WeaponService.GetMouseTargetCFrame = function(...)
+    if gunSilentAim and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Gun") then
+        local targetPlr = getNearestMurderer()
+        if targetPlr and targetPlr.Character then
+            local hrp = targetPlr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then return hrp.CFrame end
+        end
+    end
+    return oldGetMouseTargetCFrame(...)
+end
+
+WeaponService.GetTargetPosition = function(...)
+    if gunSilentAim and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Gun") then
+        local targetPlr = getNearestMurderer()
+        if targetPlr and targetPlr.Character then
+            local hrp = targetPlr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then return hrp.CFrame end
+        end
+    end
+    return oldGetTargetPosition(...)
+end
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if not gunAutoShoot then continue end
+        local char = LocalPlayer.Character
+        if not char then continue end
+        local gun = char:FindFirstChild("Gun")
+        if not gun then continue end
+        local targetPlr = getNearestMurderer()
+        if not targetPlr then continue end
+        local hrp = targetPlr.Character and targetPlr.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+        local shootRemote = gun:FindFirstChild("Shoot")
+        local gunAttachment = char:FindFirstChild("HumanoidRootPart"):FindFirstChild("GunRaycastAttachment")
+        if shootRemote and gunAttachment then
+            shootRemote:FireServer(gunAttachment.WorldCFrame, hrp.CFrame)
+        end
+    end
+end)
+
+-- ===== Knife Reach ===== --
+task.spawn(function()
+    while task.wait() do
+        if not knifeReach then continue end
+        local char = LocalPlayer.Character
+        if not char then continue end
+        local knife = char:FindFirstChild("Knife")
+        if not knife then continue end
+        local rightHand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+        if not rightHand then continue end
+        local nearest = nil
+        local nearestDist = tpRange
+        local myPos = char:FindFirstChild("HumanoidRootPart").Position
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = (myPos - hrp.Position).Magnitude
+                    if dist <= nearestDist then
+                        nearestDist = dist
+                        nearest = plr
+                    end
+                end
+            end
+        end
+        if nearest then
+            local targetHRP = nearest.Character.HumanoidRootPart
+            targetHRP.CFrame = rightHand.CFrame
+        end
+    end
+end)
+
+MainGroup:AddButton("Kill All", function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local knife = char:FindFirstChild("Knife")
+    if not knife then
+        local backpack = LocalPlayer.Backpack
+        if backpack then
+            knife = backpack:FindFirstChild("Knife")
+            if knife then
+                knife.Parent = char
+            end
+        end
+    end
+    if not knife then
+        Library:Notify("No knife found!", 2)
+        return
+    end
+    local rightHand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+    if not rightHand then return end
+    local myPos = char:FindFirstChild("HumanoidRootPart").Position
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and (myPos - hrp.Position).Magnitude <= 1000 then
+                hrp.CFrame = rightHand.CFrame
+            end
+        end
+    end
+end)
+
+-- ===== Player Dropdown ===== --
+task.spawn(function()
+    while task.wait(0.5) do
+        local names = {}
+        local myPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and myPos and (myPos.Position - hrp.Position).Magnitude <= 1000 then
+                    table.insert(names, plr.Name)
+                end
+            end
+        end
+        playerDropdown:SetValues(names)
+    end
+end)
+
+-- ===== ESP ===== --
+local ESPGroup = Tabs.Main:AddRightGroupbox("ESP", "eye")
+local innocentsESP = false
+local sheriffsESP = false
+local murderersESP = false
+local gunESP = false
+
+ESPGroup:AddToggle("InnocentsESP", {
+    Text = "Innocents ESP",
+    Default = false,
+    Callback = function(v) innocentsESP = v end
+})
+ESPGroup:AddToggle("SheriffsESP", {
+    Text = "Sheriffs ESP",
+    Default = false,
+    Callback = function(v) sheriffsESP = v end
+})
+ESPGroup:AddToggle("MurderersESP", {
+    Text = "Murderers ESP",
+    Default = false,
+    Callback = function(v) murderersESP = v end
+})
+ESPGroup:AddToggle("GunESP", {
+    Text = "Gun ESP",
+    Default = false,
+    Callback = function(v) gunESP = v end
+})
+
+local ESPObjects = {}
+local GunESPObjects = {}
+
+local function createESPBillboard(textSize)
+    textSize = textSize or 20
+    local gui = Instance.new("BillboardGui")
+    gui.Size = UDim2.fromOffset(400, 60)
+    gui.AlwaysOnTop = true
+    gui.Enabled = false
+    gui.StudsOffset = Vector3.new(0, 3, 0)
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    local txt = Instance.new("TextLabel", gui)
+    txt.Size = UDim2.fromScale(1, 1)
+    txt.BackgroundTransparency = 1
+    txt.TextStrokeColor3 = Color3.new(0, 0, 0)
+    txt.TextStrokeTransparency = 0.3
+    txt.Font = Enum.Font.SourceSansBold
+    txt.TextSize = textSize
+    txt.TextWrapped = true
+    txt.RichText = true
+    
+    return gui, txt
+end
+
+local function createBoxAdornment(color, adornee)
+    local box = Instance.new("BoxHandleAdornment")
+    box.AlwaysOnTop = true
+    box.AdornCullingMode = Enum.AdornCullingMode.Automatic
+    box.ZIndex = 10
+    box.SizeRelativeOffset = Vector3.new(0, 0, 0)
+    box.Color3 = color
+    box.Transparency = 0.75
+    box.Adornee = adornee
+    box.Parent = adornee
+    box.Visible = false
+    return box
+end
+
+local function anyPlayerHasWeaponInRange(camPos, range)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local char = plr.Character
+        if not char then continue end
+        local head = char:FindFirstChild("Head")
+        if not head then continue end
+        local dist = (camPos - head.Position).Magnitude
+        if dist <= range then
+            if hasItem(plr, "Gun") or hasItem(plr, "Knife") then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function localPlayerHasWeapon()
+    return hasItem(LocalPlayer, "Gun") or hasItem(LocalPlayer, "Knife")
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr ~= LocalPlayer then
+        ESPObjects[plr] = {Gui = nil, Text = nil, Boxes = {}}
+    end
+end
+
+Players.PlayerAdded:Connect(function(plr)
+    if plr == LocalPlayer then return end
+    ESPObjects[plr] = {Gui = nil, Text = nil, Boxes = {}}
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+    if ESPObjects[plr] then
+        if ESPObjects[plr].Gui then
+            ESPObjects[plr].Gui:Destroy()
+        end
+        for _, box in pairs(ESPObjects[plr].Boxes) do
+            box:Destroy()
+        end
+        ESPObjects[plr] = nil
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.03) do
+        local camPos = cam.CFrame.Position
+        local allPlayersNoWeapon = not anyPlayerHasWeaponInRange(camPos, 1000)
+        local lpHasWeapon = localPlayerHasWeapon()
+        
+        for plr, data in pairs(ESPObjects) do
+            local char = plr.Character
+            if not char then
+                if data.Gui then data.Gui.Enabled = false end
+                for _, box in pairs(data.Boxes) do box.Visible = false end
+                continue
+            end
+            
+            local head = char:FindFirstChild("Head")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not head or not hum or hum.Health <= 0 then
+                if data.Gui then data.Gui.Enabled = false end
+                for _, box in pairs(data.Boxes) do box.Visible = false end
+                continue
+            end
+            
+            local dist = (camPos - head.Position).Magnitude
+            if dist > 1000 then
+                if data.Gui then data.Gui.Enabled = false end
+                for _, box in pairs(data.Boxes) do box.Visible = false end
+                continue
+            end
+            
+            local hasGun = hasItem(plr, "Gun")
+            local hasKnife = hasItem(plr, "Knife")
+            local roleText = nil
+            local color = nil
+            
+            if hasGun then
+                if sheriffsESP then
+                    roleText = "Sheriff"
+                    color = Color3.new(0, 0.5, 1)
+                end
+            elseif hasKnife then
+                if murderersESP then
+                    roleText = "Murderer"
+                    color = Color3.new(1, 0, 0)
+                end
+            else
+                if innocentsESP then
+                    roleText = "Innocent"
+                    if allPlayersNoWeapon and not lpHasWeapon then
+                        color = Color3.new(1, 1, 1)
+                    else
+                        color = Color3.new(0, 1, 0)
+                    end
+                end
+            end
+            
+            if roleText and color then
+                if not data.Gui then
+                    data.Gui, data.Text = createESPBillboard(20)
+                    data.Gui.Name = "ESP_" .. plr.Name
+                    data.Gui.Parent = game:GetService("CoreGui")
+                end
+                data.Text.TextColor3 = color
+                data.Gui.Adornee = head
+                data.Gui.Enabled = true
+                local offset = 1 + (dist * 0.075)
+                data.Gui.StudsOffset = Vector3.new(0, offset, 0)
+                data.Text.Text = string.format("<b>%s | %d studs</b>", plr.Name, math.floor(dist))
+                
+                local newBoxes = {}
+                for part, box in pairs(data.Boxes) do
+                    if part and part.Parent == char then
+                        box.Color3 = color
+                        box.Visible = true
+                        newBoxes[part] = box
+                    else
+                        box:Destroy()
+                    end
+                end
+                
+                for _, part in ipairs(char:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        if not newBoxes[part] then
+                            local box = createBoxAdornment(color, part)
+                            box.Visible = true
+                            newBoxes[part] = box
+                        end
+                    end
+                end
+                data.Boxes = newBoxes
+            else
+                if data.Gui then data.Gui.Enabled = false end
+                for _, box in pairs(data.Boxes) do box.Visible = false end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    local lastScan = 0
+    while task.wait(0.1) do
+        if not gunESP then
+            for _, data in pairs(GunESPObjects) do
+                if data.Gui then data.Gui.Enabled = false end
+                if data.Box then data.Box.Visible = false end
+            end
+            continue
+        end
+        
+        local camPos = cam.CFrame.Position
+        local now = tick()
+        if now - lastScan >= 1 then
+            lastScan = now
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and obj.Name == "GunDrop" then
+                    if not GunESPObjects[obj] then
+                        local gui, txt = createESPBillboard(15)
+                        gui.Name = "GunESP"
+                        gui.Parent = game:GetService("CoreGui")
+                        txt.TextColor3 = Color3.new(1, 1, 1)
+                        local box = createBoxAdornment(Color3.new(1, 1, 1), obj)
+                        GunESPObjects[obj] = {Gui = gui, Text = txt, Box = box}
+                    end
+                end
+            end
+        end
+        
+        for obj, data in pairs(GunESPObjects) do
+            if not obj or not obj.Parent then
+                if data.Gui then data.Gui:Destroy() end
+                if data.Box then data.Box:Destroy() end
+                GunESPObjects[obj] = nil
+                continue
+            end
+            
+            local dist = (camPos - obj.Position).Magnitude
+            if dist > 1000 then
+                data.Gui.Enabled = false
+                data.Box.Visible = false
+                continue
+            end
+            
+            data.Gui.Adornee = obj
+            data.Gui.Enabled = true
+            data.Text.Text = string.format("<b>Gun | %d studs</b>", math.floor(dist))
+            data.Box.Adornee = obj
+            data.Box.Visible = true
+        end
+    end
+end)
+
+-- ===== UI Settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Murder-Mystery-2")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
