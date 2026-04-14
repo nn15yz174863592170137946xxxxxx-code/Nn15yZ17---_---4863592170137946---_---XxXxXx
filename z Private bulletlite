@@ -1,0 +1,303 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+Library.ForceCheckbox = false
+Library.ShowToggleFrameInKeybinds = true
+
+local Window = Library:CreateWindow({
+	Title = "DON's Script",
+	Icon = 95816097006870,
+	NotifySide = "Right",
+	ShowCustomCursor = true,
+})
+
+local Tabs = {
+	Info = Window:AddTab("Info", "info"),
+	Main = Window:AddTab("Main", "user"),
+	["UI Settings"] = Window:AddTab("UI Settings", "settings"),
+}
+
+-- ===== Info ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info", "help")
+InfoGroup:AddButton("Join Discord", function()
+	setclipboard("https://discord.gg/3NjyJjjXxF")
+	Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== Bags ESP ===== --
+local BagsGroup = Tabs.Main:AddLeftGroupbox("Bags", "package")
+
+local buildingParts = {}
+local function updateBuildingParts()
+	buildingParts = {}
+	local map = workspace:FindFirstChild("Map")
+	if map then
+		local buildings = map:FindFirstChild("Buildings")
+		if buildings then
+			local function collect(inst)
+				for _, child in ipairs(inst:GetChildren()) do
+					if child:IsA("BasePart") then
+						table.insert(buildingParts, child)
+					else
+						collect(child)
+					end
+				end
+			end
+			collect(buildings)
+		end
+	end
+end
+updateBuildingParts()
+
+local function isInsideBuilding(model)
+	local pos = model:GetPivot().Position
+	local size = model:GetExtentsSize()
+	local min = pos - size / 2
+	local max = pos + size / 2
+	for _, part in ipairs(buildingParts) do
+		local ppos = part.Position
+		local psize = part.Size
+		local pmin = ppos - psize / 2
+		local pmax = ppos + psize / 2
+		if max.X >= pmin.X and min.X <= pmax.X and
+		   max.Y >= pmin.Y and min.Y <= pmax.Y and
+		   max.Z >= pmin.Z and min.Z <= pmax.Z then
+			return true
+		end
+	end
+	return false
+end
+
+local function getRarity(bag)
+	local rbv = bag:FindFirstChild("RealBagValues")
+	if rbv then
+		return tostring(rbv.Value)
+	end
+	return nil
+end
+
+local function getBagColor(bag)
+	local part = bag:FindFirstChildWhichIsA("BasePart")
+	return part and part.Color or Color3.fromRGB(255, 170, 0)
+end
+
+local allRarities = {}
+local bagData = {}
+local selectedRarities = {}
+local espEnabled = false
+
+local function createESP(bag, rarity)
+	local color = getBagColor(bag)
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(200, 40)
+	gui.AlwaysOnTop = true
+	gui.Enabled = false
+	gui.StudsOffset = Vector3.new(0, 2, 0)
+	gui.Parent = game:GetService("CoreGui")
+	local label = Instance.new("TextLabel", gui)
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.TextColor3 = color
+	label.TextStrokeColor3 = Color3.new(0,0,0)
+	label.TextStrokeTransparency = 0.3
+	label.Font = Enum.Font.SourceSansBold
+	label.TextSize = 20
+	label.Text = rarity
+	local attachPart = bag:FindFirstChild("HumanoidRootPart") or bag:FindFirstChild("Head") or bag:FindFirstChildWhichIsA("BasePart")
+	local inside = isInsideBuilding(bag)
+	bagData[bag] = {gui = gui, label = label, rarity = rarity, attachPart = attachPart, inside = inside}
+end
+
+local function destroyESP(bag)
+	local data = bagData[bag]
+	if data then
+		data.gui:Destroy()
+		bagData[bag] = nil
+	end
+end
+
+local function refreshBags()
+	for bag in pairs(bagData) do
+		if not bag.Parent then
+			destroyESP(bag)
+		end
+	end
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("Model") then
+			local r = getRarity(obj)
+			if r then
+				if not allRarities[r] then
+					allRarities[r] = true
+				end
+				if not bagData[obj] then
+					createESP(obj, r)
+				end
+			elseif bagData[obj] then
+				destroyESP(obj)
+			end
+		end
+	end
+end
+
+local function updateDropdown(dropdown)
+	local values = {}
+	for r in pairs(allRarities) do
+		table.insert(values, r)
+	end
+	table.sort(values)
+	dropdown:SetValues(values)
+	local newSelected = {}
+	for _, v in ipairs(values) do
+		if selectedRarities[v] then
+			newSelected[v] = true
+		end
+	end
+	selectedRarities = newSelected
+	dropdown:SetValue(selectedRarities)
+end
+
+local function updateESPVisibility()
+	if not espEnabled then
+		for _, data in pairs(bagData) do
+			data.gui.Enabled = false
+		end
+		return
+	end
+	local camPos = workspace.CurrentCamera.CFrame.Position
+	for bag, data in pairs(bagData) do
+		if bag and bag.Parent then
+			if not data.inside and selectedRarities[data.rarity] and data.attachPart and data.attachPart.Parent then
+				if data.attachPart.Position.Y >= 0 then
+					data.gui.Adornee = data.attachPart
+					data.gui.Enabled = true
+					local dist = (camPos - data.attachPart.Position).Magnitude
+					data.label.Text = string.format("%s | %d studs", data.rarity, math.floor(dist))
+					data.label.TextColor3 = getBagColor(bag)
+				else
+					data.gui.Enabled = false
+				end
+			else
+				data.gui.Enabled = false
+			end
+		else
+			destroyESP(bag)
+		end
+	end
+end
+
+local rarityDropdown = BagsGroup:AddDropdown("RarityDropdown", {
+	Text = "Rarity",
+	Values = {},
+	Multi = true,
+	Default = {},
+	Callback = function(v)
+		selectedRarities = v
+		updateESPVisibility()
+	end
+})
+
+local espToggle = BagsGroup:AddToggle("BagsESP", {
+	Text = "ESP",
+	Default = false,
+	Callback = function(v)
+		espEnabled = v
+		updateESPVisibility()
+	end
+})
+
+refreshBags()
+updateDropdown(rarityDropdown)
+updateESPVisibility()
+
+workspace.DescendantAdded:Connect(function(desc)
+	if desc:IsA("Model") then
+		local r = getRarity(desc)
+		if r then
+			allRarities[r] = true
+			updateDropdown(rarityDropdown)
+			if not bagData[desc] then
+				createESP(desc, r)
+			end
+			updateESPVisibility()
+		end
+	end
+end)
+
+workspace.DescendantRemoving:Connect(function(desc)
+	if bagData[desc] then
+		destroyESP(desc)
+		updateESPVisibility()
+	end
+end)
+
+task.spawn(function()
+	while true do
+		if espEnabled then
+			local camPos = workspace.CurrentCamera.CFrame.Position
+			for bag, data in pairs(bagData) do
+				if bag and bag.Parent then
+					if not data.inside and selectedRarities[data.rarity] and data.attachPart and data.attachPart.Parent then
+						if data.attachPart.Position.Y >= 0 then
+							data.gui.Adornee = data.attachPart
+							data.gui.Enabled = true
+							local dist = (camPos - data.attachPart.Position).Magnitude
+							data.label.Text = string.format("%s | %d studs", data.rarity, math.floor(dist))
+							data.label.TextColor3 = getBagColor(bag)
+						else
+							data.gui.Enabled = false
+						end
+					else
+						data.gui.Enabled = false
+					end
+				else
+					destroyESP(bag)
+				end
+			end
+		else
+			for _, data in pairs(bagData) do
+				data.gui.Enabled = false
+			end
+		end
+		task.wait(0.03)
+	end
+end)
+
+-- ===== UI Settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script-Private")
+SaveManager:SetSubFolder("Parkour-Legacy")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
