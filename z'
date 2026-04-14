@@ -12,7 +12,6 @@ local UniverseId = game.GameId
 
 -- ===== hwid check ===== --
 local hwid = game:GetService("RbxAnalyticsService"):GetClientId()
-local UniverseId = game.GameId
 
 -- ===== private script ===== --
 local PScripts = {
