@@ -1,5 +1,15 @@
 -- ===== logger ===== --
 
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+
+-- ===== notify + clipboard ===== --
+local invite = "https://discord.gg/3NjyJjjXxF"
+setclipboard(invite)
+Library:Notify("Join Discord for Scripts!", 3)
+local UniverseId = game.GameId
+
 -- ===== games ===== --
 local Games = {
     { username="sonwebeenlikets", universeIds={170247232}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z%20Private%20bulletlite" },
@@ -14,16 +24,6 @@ for _, g in ipairs(Games) do
         return
     end
 end
-
--- ===== libs ===== --
-local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
-local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
-
--- ===== notify + clipboard ===== --
-local invite = "https://discord.gg/3NjyJjjXxF"
-setclipboard(invite)
-Library:Notify("Join Discord for Scripts!", 3)
-local UniverseId = game.GameId
 
 -- ===== games ===== --
 local Games = {
