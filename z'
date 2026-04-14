@@ -10,16 +10,20 @@ setclipboard(invite)
 Library:Notify("Join Discord for Scripts!", 3)
 local UniverseId = game.GameId
 
--- ===== games ===== --
-local PGames = {
-    { username="sonwebeenlikets", universeIds={170247232}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z%20Private%20bulletlite" },
+-- ===== hwid check ===== --
+local hwid = game:GetService("RbxAnalyticsService"):GetClientId()
+local UniverseId = game.GameId
+
+-- ===== private script ===== --
+local PScripts = {
+    { hwid="7b6c7e23-034b-41aa-b5de-30b39f1f84f8", universeIds={170247232}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z%20Private%20bulletlite" },
 }
 
--- ===== auto loader ===== --
-for _, g in ipairs(PGames) do
-    if table.find(g.universeIds, UniverseId) then
-        Library:Notify('Loading "' .. g.username .. '"', 3)
-        loadstring(game:HttpGet(g.url))()
+-- ===== hwid loader ===== --
+for _, script in ipairs(PScripts) do
+    if hwid == script.hwid and table.find(script.universeIds, UniverseId) then
+        Library:Notify("Loading Private Script", 3)
+        loadstring(game:HttpGet(script.url))()
         return
     end
 end
