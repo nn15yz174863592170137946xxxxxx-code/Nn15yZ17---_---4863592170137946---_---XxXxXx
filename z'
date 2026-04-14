@@ -91,6 +91,8 @@ local Games = {
 
 { name="The storage", universeIds={4756005135}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/The%20Storage" },
 
+{ name="Vagrant Survival", universeIds={9224753153}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Vagrant%20Survival" },
+
 { name="Violence District", universeIds={6739698191}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Violence%20District" },
 
 { name="Volleyball Legends", universeIds={6931042565}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Volleyball%20Legends" },
