@@ -232,7 +232,10 @@ task.spawn(function()
                 local head = character:FindFirstChild("Head")
                 if not head then continue end
 
-                local ray = Ray.new(camPos, (head.Position - camPos).Unit * (head.Position - camPos).Magnitude)
+                local dist = (head.Position - camPos).Magnitude
+                if dist > 500 then continue end
+
+                local ray = Ray.new(camPos, (head.Position - camPos).Unit * dist)
                 local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
                 if hit and hit:IsDescendantOf(character) then
                     if lockAnywhere then
@@ -269,7 +272,10 @@ task.spawn(function()
                         local head = enemy:FindFirstChild("Head")
                         if not head then continue end
 
-                        local ray = Ray.new(camPos, (head.Position - camPos).Unit * (head.Position - camPos).Magnitude)
+                        local dist = (head.Position - camPos).Magnitude
+                        if dist > 500 then continue end
+
+                        local ray = Ray.new(camPos, (head.Position - camPos).Unit * dist)
                         local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
                         if hit and hit:IsDescendantOf(enemy) then
                             if lockAnywhere then
