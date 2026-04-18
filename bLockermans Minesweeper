@@ -28,34 +28,28 @@ Tabs.Info:AddLeftGroupbox("Info"):AddButton("Join Discord", function()
 end)
 
 -- ===== MAIN ===== --
-local CalcGroup = Tabs.Main:AddLeftGroupbox("Calculator","boxes")
+local CalcGroup = Tabs.Main:AddLeftGroupbox("Minesweeper Solver","boxes")
 local calcEnabled = false
 local autoFlag = false
 local flagDistance = 25
-local flagDelay = 0.0
+local flagDelay = 0.2
 
-CalcGroup:AddToggle("Calc",{Text="Calculate",Default=false,Callback=function(v)
-    calcEnabled = v
-end})
-CalcGroup:AddToggle("AutoFlag",{Text="Auto Flag",Default=false,Callback=function(v)
-    autoFlag = v
-end})
-CalcGroup:AddSlider("FlagDistance",{Text="Distance",Default=25,Min=0,Max=250,Callback=function(v)
-    flagDistance = v
-end})
-CalcGroup:AddInput("FlagDelayInput",{Text="Delay",Placeholder="0.0",Callback=function(v)
-    local n = tonumber(v)
-    if n then flagDelay = n end
-end})
-flagDelay = 0.0 -- default
+CalcGroup:AddToggle("Calculator",{Text="Calculator",Default=false,Callback=function(v) calcEnabled=v end})
+CalcGroup:AddToggle("Auto Flag",{Text="Auto Flag",Default=false,Callback=function(v) autoFlag=v end})
+CalcGroup:AddSlider("FlagDistance",{Text="Flag Distance",Default=10,Min=0,Max=32,Callback=function(v) flagDistance=v end})
+CalcGroup:AddSlider("Flag Delay",{Text="Flag Delay",Default=0.2,Min=0,Max=1,Rounding=1,Callback=function(v) flagDelay=v end})
 
--- ===== UI ===== --
-Tabs.UI:AddLeftGroupbox("Menu"):AddButton("Unload", function()
-    Library:Unload()
-end)
+-- ===== COLOR SETTINGS ===== --
+local BOMB_COLOR = "Really red"
+local SAFE_COLOR = "Toothpaste"
 
 -- ===== MINESWEEPER LOGIC ===== --
-local PartsFolder = workspace:WaitForChild("Flag"):WaitForChild("Parts")
+local PartsFolder = workspace:FindFirstChild("Flag") and workspace.Flag:FindFirstChild("Parts")
+if not PartsFolder then
+    warn("workspace.Flag.Parts not found")
+    PartsFolder = Instance.new("Folder")
+end
+
 local OFFSETS = {
     Vector3.new( 1,0, 0), Vector3.new(-1,0, 0),
     Vector3.new( 0,0, 1), Vector3.new( 0,0,-1),
@@ -63,9 +57,7 @@ local OFFSETS = {
     Vector3.new( 1,0,-1), Vector3.new(-1,0,-1),
 }
 
--- ===== OPTIMIZATION CACHE ===== --
 local neighborCache = {}
-local solved = {}
 
 local function getNeighbors(part, parts)
     if neighborCache[part] then return neighborCache[part] end
@@ -84,6 +76,29 @@ local function getNeighbors(part, parts)
     return list
 end
 
+local function isBomb(part)
+    return part.BrickColor.Name == BOMB_COLOR
+end
+
+local function isSafe(part)
+    return part.BrickColor.Name == SAFE_COLOR
+end
+
+local function isRevealed(part)
+    local gui = part:FindFirstChild("NumberGui")
+    return gui and gui:FindFirstChild("TextLabel") ~= nil
+end
+
+local function getNumber(part)
+    local gui = part:FindFirstChild("NumberGui")
+    if not gui then return nil end
+    local label = gui:FindFirstChild("TextLabel")
+    if not label then return nil end
+    local num = tonumber(label.Text)
+    if num and num >= 1 and num <= 8 then return num end
+    return nil
+end
+
 local function hasModel(part)
     for _,c in ipairs(part:GetChildren()) do
         if c:IsA("Model") then return true end
@@ -91,62 +106,61 @@ local function hasModel(part)
     return false
 end
 
--- ===== LOOP ===== --
+local function clickCell(part)
+    local cd = part:FindFirstChild("ClickDetector")
+    if cd then
+        fireclickdetector(cd)
+        return true
+    end
+    return false
+end
+
 task.spawn(function()
     while task.wait(flagDelay) do
         local parts = PartsFolder:GetChildren()
+        if #parts == 0 then continue end
 
-        -- ===== CALCULATOR ===== --
         if calcEnabled then
             local changed = true
             while changed do
                 changed = false
-                for _,clear in ipairs(parts) do
-                    local gui = clear:FindFirstChild("NumberGui")
-                    local label = gui and gui:FindFirstChild("TextLabel")
-                    local number = label and tonumber(label.Text)
+                for _, cell in ipairs(parts) do
+                    local number = getNumber(cell)
                     if not number then continue end
-
-                    local neighbors = getNeighbors(clear, parts)
-                    local hidden, flagged = {}, 0
-
-                    for _,n in ipairs(neighbors) do
-                        local c = n.BrickColor.Name
-                        if c == "Really red" then
-                            flagged += 1
-                        elseif c ~= "Ghost grey" and c ~= "Quill grey" then
+                    local neighbors = getNeighbors(cell, parts)
+                    local hidden = {}
+                    local flagged = 0
+                    for _, n in ipairs(neighbors) do
+                        if isBomb(n) then
+                            flagged = flagged + 1
+                        elseif not isSafe(n) and not isRevealed(n) then
                             table.insert(hidden, n)
                         end
                     end
-
                     if flagged == number and #hidden > 0 then
-                        for _,h in ipairs(hidden) do
-                            if h.BrickColor.Name ~= "Toothpaste" then
-                                h.BrickColor = BrickColor.new("Toothpaste")
+                        for _, h in ipairs(hidden) do
+                            if not isSafe(h) then
+                                h.BrickColor = BrickColor.new(SAFE_COLOR)
                                 changed = true
                             end
                         end
-                        solved[clear] = true
-
                     elseif flagged + #hidden == number and #hidden > 0 then
-                        for _,h in ipairs(hidden) do
-                            if h.BrickColor.Name ~= "Really red" then
-                                h.BrickColor = BrickColor.new("Really red")
+                        for _, h in ipairs(hidden) do
+                            if not isBomb(h) then
+                                h.BrickColor = BrickColor.new(BOMB_COLOR)
                                 changed = true
                             end
                         end
-                        solved[clear] = true
                     end
                 end
             end
         end
 
-        -- ===== AUTO FLAG ===== --
         if autoFlag and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             local hrp = LocalPlayer.Character.HumanoidRootPart
             local closest, dist
-            for _,p in ipairs(parts) do
-                if p.BrickColor.Name ~= "Really red" or hasModel(p) then continue end
+            for _, p in ipairs(parts) do
+                if not isBomb(p) or hasModel(p) then continue end
                 local d = (p.Position - hrp.Position).Magnitude
                 if d <= flagDistance and (not dist or d < dist) then
                     local cd = p:FindFirstChild("ClickDetector")
