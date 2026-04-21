@@ -11,6 +11,13 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local cam = workspace.CurrentCamera
 
+local function tableFind(tbl, val)
+    for i, v in ipairs(tbl) do
+        if v == val then return i end
+    end
+    return nil
+end
+
 -- ===== window ===== --
 local Window = Library:CreateWindow({
     Title = "DON's Script",
@@ -22,12 +29,12 @@ local Window = Library:CreateWindow({
 local Tabs = {
     Info = Window:AddTab("Info","info"),
     Main = Window:AddTab("Main","user"),
+    BlatantTab = Window:AddTab("BLATANT", "skull"),
     ["UI Settings"] = Window:AddTab("UI Settings","settings"),
 }
 
 -- ===== INFO TAB ===== --
 local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
-
 InfoGroup:AddButton("Join Discord", function()
     setclipboard("https://discord.gg/3NjyJjjXxF")
     Library:Notify("Discord link copied!", 3)
@@ -39,11 +46,13 @@ local aimEnabled = false
 local lockAnywhere = false
 local targetPlayers = true
 local targetEnemies = true
+local targetWildlife = true
 
 AimGroup:AddToggle("EnableAimlock",{Text="Enable Aimlock",Default=false,Callback=function(v) aimEnabled=v end})
 AimGroup:AddToggle("LockAnywhere",{Text="Lock Anywhere",Default=false,Callback=function(v) lockAnywhere=v end})
 AimGroup:AddToggle("TargetPlayers",{Text="Target Players",Default=true,Callback=function(v) targetPlayers=v end})
 AimGroup:AddToggle("TargetEnemies",{Text="Target Enemies",Default=true,Callback=function(v) targetEnemies=v end})
+AimGroup:AddToggle("TargetWildlife",{Text="Target Wildlife",Default=true,Callback=function(v) targetWildlife=v end})
 
 local aimKey = "E"
 AimGroup:AddLabel("Aimlock Keybind"):AddKeyPicker("AimlockKey",{
@@ -98,7 +107,7 @@ WhitelistGroup:AddButton("Add",function()
     local t = Options.WhitelistInput.Value
     if t=="" then return Library:Notify("Player not found!",3) end
     local p = getClosestPlayer(t)
-    if p and not table.find(WhitelistPlayers,p.Name) then
+    if p and not tableFind(WhitelistPlayers,p.Name) then
         table.insert(WhitelistPlayers,p.Name)
         Library:Notify(p.Name.." added!",3)
     else
@@ -218,10 +227,21 @@ task.spawn(function()
         local bestTarget = nil
         local bestDist = math.huge
 
+        local function getWildlifeHead(wildlife)
+            local headModel = wildlife:FindFirstChild("Head")
+            if headModel and headModel:IsA("Model") then
+                local headPart = headModel:FindFirstChildWhichIsA("BasePart")
+                if headPart then return headPart end
+            end
+            local rootPart = wildlife:FindFirstChild("HumanoidRootPart")
+            if rootPart then return rootPart end
+            return wildlife:FindFirstChildWhichIsA("BasePart")
+        end
+
         if targetPlayers then
             for _, plr in ipairs(Players:GetPlayers()) do
                 if plr == LocalPlayer then continue end
-                if table.find(WhitelistPlayers, plr.Name) then continue end
+                if tableFind(WhitelistPlayers, plr.Name) then continue end
 
                 local character = plr.Character
                 if not character then continue end
@@ -239,7 +259,6 @@ task.spawn(function()
                 local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
                 if hit and hit:IsDescendantOf(character) then
                     if lockAnywhere then
-                        local dist = (head.Position - camPos).Magnitude
                         if dist < bestDist then
                             bestTarget = head
                             bestDist = dist
@@ -279,7 +298,47 @@ task.spawn(function()
                         local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
                         if hit and hit:IsDescendantOf(enemy) then
                             if lockAnywhere then
-                                local dist = (head.Position - camPos).Magnitude
+                                if dist < bestDist then
+                                    bestTarget = head
+                                    bestDist = dist
+                                end
+                            else
+                                local screenPos, onScreen = cam:WorldToViewportPoint(head.Position)
+                                if onScreen then
+                                    local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+                                    local dx = screenPos.X - fPos.X
+                                    local dy = screenPos.Y - fPos.Y
+                                    local screenDist = math.sqrt(dx*dx + dy*dy)
+                                    if screenDist <= fovSize/2 and screenDist < bestDist then
+                                        bestTarget = head
+                                        bestDist = screenDist
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if targetWildlife then
+            local wildlifeFolder = workspace:FindFirstChild("Spawned") and workspace.Spawned:FindFirstChild("Wildlife")
+            if wildlifeFolder then
+                for _, wildlife in ipairs(wildlifeFolder:GetChildren()) do
+                    if wildlife:IsA("Model") then
+                        local humanoid = wildlife:FindFirstChildOfClass("Humanoid")
+                        if not humanoid or humanoid.Health <= 0 then continue end
+
+                        local head = getWildlifeHead(wildlife)
+                        if not head then continue end
+
+                        local dist = (head.Position - camPos).Magnitude
+                        if dist > 500 then continue end
+
+                        local ray = Ray.new(camPos, (head.Position - camPos).Unit * dist)
+                        local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
+                        if hit and hit:IsDescendantOf(wildlife) then
+                            if lockAnywhere then
                                 if dist < bestDist then
                                     bestTarget = head
                                     bestDist = dist
@@ -313,13 +372,75 @@ end)
 local ESPGroup = Tabs.Main:AddRightGroupbox("ESP","eye")
 local playersESP = false
 local enemiesESP = false
+local wildlifeESP = false
 local lootsESP = false
+local playersCham = false
+local enemiesCham = false
+local wildlifeCham = false
 
 ESPGroup:AddToggle("PlayersESP",{Text="Players ESP",Default=false,Callback=function(v) playersESP=v end})
 ESPGroup:AddToggle("EnemiesESP",{Text="Enemies ESP",Default=false,Callback=function(v) enemiesESP=v end})
+ESPGroup:AddToggle("WildlifeESP",{Text="Wildlife ESP",Default=false,Callback=function(v) wildlifeESP=v end})
 ESPGroup:AddToggle("LootsESP",{Text="Loots ESP",Default=false,Callback=function(v) lootsESP=v end})
+ESPGroup:AddDivider()
+ESPGroup:AddToggle("PlayersCham",{Text="Players Cham",Default=false,Callback=function(v) playersCham=v end})
+ESPGroup:AddToggle("EnemiesCham",{Text="Enemies Cham",Default=false,Callback=function(v) enemiesCham=v end})
+ESPGroup:AddToggle("WildlifeCham",{Text="Wildlife Cham",Default=false,Callback=function(v) wildlifeCham=v end})
 
-local ESPObjects = {Players={}, Enemies={}, Loots={}}
+local ESPObjects = {Players={}, Enemies={}, Wildlife={}, Loots={}}
+local ChamObjects = {Players={}, Enemies={}, Wildlife={}} -- for drawing boxes
+
+local function createChamBox(color)
+    local box = Drawing.new("Square")
+    box.Thickness = 1
+    box.Transparency = 1
+    box.Filled = false
+    box.Color = color
+    box.Visible = false
+    return box
+end
+
+local function updateChamBox(box, hrp, distance)
+    if not hrp then
+        box.Visible = false
+        return
+    end
+    local screenPos, onScreen = cam:WorldToViewportPoint(hrp.Position)
+    if not onScreen then
+        box.Visible = false
+        return
+    end
+    local screenWidth, screenHeight = cam.ViewportSize.X, cam.ViewportSize.Y
+    local factor = 1 / (screenPos.Z * math.tan(math.rad(cam.FieldOfView * 0.5)) * 2) * 100
+    local width = math.floor(screenWidth / 30 * factor)
+    local height = math.floor(screenHeight / 20 * factor)
+    box.Size = Vector2.new(width, height)
+    box.Position = Vector2.new(screenPos.X - width / 2, screenPos.Y - height / 2)
+    box.Visible = true
+end
+
+local function getWildlifeHeadPart(wildlife)
+    local headModel = wildlife:FindFirstChild("Head")
+    if headModel and headModel:IsA("Model") then
+        local headPart = headModel:FindFirstChildWhichIsA("BasePart")
+        if headPart then return headPart end
+    end
+    return wildlife:FindFirstChild("HumanoidRootPart") or wildlife:FindFirstChildWhichIsA("BasePart")
+end
+
+local function getEnemyToolName(enemy)
+    for _, child in ipairs(enemy:GetChildren()) do
+        if child:IsA("Tool") then
+            return child.Name
+        end
+    end
+    for _, child in ipairs(enemy:GetDescendants()) do
+        if child:IsA("Tool") then
+            return child.Name
+        end
+    end
+    return "Enemy"
+end
 
 local function createESPBillboard(color, textSize)
     textSize = textSize or 20
@@ -343,23 +464,11 @@ local function createESPBillboard(color, textSize)
     return gui,txt
 end
 
-local function createBoxAdornment(color, adornee)
-    local box = Instance.new("BoxHandleAdornment")
-    box.AlwaysOnTop = true
-    box.AdornCullingMode = Enum.AdornCullingMode.Automatic
-    box.ZIndex = 10
-    box.SizeRelativeOffset = Vector3.new(0,0,0)
-    box.Color3 = color
-    box.Transparency = 0.75
-    box.Adornee = adornee
-    box.Parent = adornee
-    box.Visible = false
-    return box
-end
-
 task.spawn(function()
     while task.wait(0.03) do
-        local camPos = cam.CFrame.Position
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hrpPos = hrp and hrp.Position or cam.CFrame.Position
 
         if playersESP then
             local charsFolder = workspace:FindFirstChild("Spawned") and workspace.Spawned:FindFirstChild("Characters")
@@ -371,7 +480,7 @@ task.spawn(function()
                             local gui, txt = createESPBillboard(color,20)
                             gui.Name = "PlayerESP_"..char.Name
                             gui.Parent = game:GetService("CoreGui")
-                            ESPObjects.Players[char] = {Gui=gui, Text=txt, Boxes={}}
+                            ESPObjects.Players[char] = {Gui=gui, Text=txt}
                         end
                     end
                 end
@@ -379,7 +488,6 @@ task.spawn(function()
             for char, data in pairs(ESPObjects.Players) do
                 if not char.Parent then
                     if data.Gui then data.Gui:Destroy() end
-                    for _,box in pairs(data.Boxes) do box:Destroy() end
                     ESPObjects.Players[char] = nil
                     continue
                 end
@@ -387,43 +495,18 @@ task.spawn(function()
                 local hum = char:FindFirstChildOfClass("Humanoid")
                 if not head or not hum or hum.Health <= 0 then
                     data.Gui.Enabled = false
-                    for _,box in pairs(data.Boxes) do box.Visible = false end
                     continue
                 end
-                local dist = (camPos - head.Position).Magnitude
-                local color = Color3.new(1,1,1)
-                data.Text.TextColor3 = color
+                local dist = (hrpPos - head.Position).Magnitude
                 data.Gui.Adornee = head
                 data.Gui.Enabled = true
                 local offset = 1 + (dist * 0.075)
                 data.Gui.StudsOffset = Vector3.new(0,offset,0)
                 data.Text.Text = string.format("<b>%s | Health: %d | %d studs</b>", char.Name, math.floor(hum.Health), math.floor(dist))
-
-                local newBoxes = {}
-                for part,box in pairs(data.Boxes) do
-                    if part and part.Parent == char then
-                        box.Color3 = color
-                        box.Visible = true
-                        newBoxes[part] = box
-                    else
-                        box:Destroy()
-                    end
-                end
-                for _,part in ipairs(char:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        if not newBoxes[part] then
-                            local box = createBoxAdornment(color,part)
-                            box.Visible = true
-                            newBoxes[part] = box
-                        end
-                    end
-                end
-                data.Boxes = newBoxes
             end
         else
             for _, data in pairs(ESPObjects.Players) do
                 if data.Gui then data.Gui.Enabled = false end
-                for _,box in pairs(data.Boxes) do box.Visible = false end
             end
         end
 
@@ -437,7 +520,7 @@ task.spawn(function()
                             local gui, txt = createESPBillboard(color,20)
                             gui.Name = "EnemyESP_"..enemy.Name
                             gui.Parent = game:GetService("CoreGui")
-                            ESPObjects.Enemies[enemy] = {Gui=gui, Text=txt, Boxes={}}
+                            ESPObjects.Enemies[enemy] = {Gui=gui, Text=txt}
                         end
                     end
                 end
@@ -445,7 +528,6 @@ task.spawn(function()
             for enemy, data in pairs(ESPObjects.Enemies) do
                 if not enemy.Parent then
                     if data.Gui then data.Gui:Destroy() end
-                    for _,box in pairs(data.Boxes) do box:Destroy() end
                     ESPObjects.Enemies[enemy] = nil
                     continue
                 end
@@ -453,43 +535,59 @@ task.spawn(function()
                 local hum = enemy:FindFirstChildOfClass("Humanoid")
                 if not head or not hum or hum.Health <= 0 then
                     data.Gui.Enabled = false
-                    for _,box in pairs(data.Boxes) do box.Visible = false end
                     continue
                 end
-                local dist = (camPos - head.Position).Magnitude
-                local color = Color3.new(1,0,0)
-                data.Text.TextColor3 = color
+                local dist = (hrpPos - head.Position).Magnitude
+                local toolName = getEnemyToolName(enemy)
                 data.Gui.Adornee = head
                 data.Gui.Enabled = true
                 local offset = 1 + (dist * 0.075)
                 data.Gui.StudsOffset = Vector3.new(0,offset,0)
-                data.Text.Text = string.format("<b>%s | Health: %d | %d studs</b>", enemy.Name, math.floor(hum.Health), math.floor(dist))
-
-                local newBoxes = {}
-                for part,box in pairs(data.Boxes) do
-                    if part and part.Parent == enemy then
-                        box.Color3 = color
-                        box.Visible = true
-                        newBoxes[part] = box
-                    else
-                        box:Destroy()
-                    end
-                end
-                for _,part in ipairs(enemy:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        if not newBoxes[part] then
-                            local box = createBoxAdornment(color,part)
-                            box.Visible = true
-                            newBoxes[part] = box
-                        end
-                    end
-                end
-                data.Boxes = newBoxes
+                data.Text.Text = string.format("<b>%s | Health: %d | %d studs</b>", toolName, math.floor(hum.Health), math.floor(dist))
             end
         else
             for _, data in pairs(ESPObjects.Enemies) do
                 if data.Gui then data.Gui.Enabled = false end
-                for _,box in pairs(data.Boxes) do box.Visible = false end
+            end
+        end
+
+        if wildlifeESP then
+            local wildlifeFolder = workspace:FindFirstChild("Spawned") and workspace.Spawned:FindFirstChild("Wildlife")
+            if wildlifeFolder then
+                for _, wildlife in ipairs(wildlifeFolder:GetChildren()) do
+                    if wildlife:IsA("Model") then
+                        if not ESPObjects.Wildlife[wildlife] then
+                            local color = Color3.new(0.5,0.5,1)
+                            local gui, txt = createESPBillboard(color,18)
+                            gui.Name = "WildlifeESP_"..wildlife.Name
+                            gui.Parent = game:GetService("CoreGui")
+                            ESPObjects.Wildlife[wildlife] = {Gui=gui, Text=txt}
+                        end
+                    end
+                end
+            end
+            for wildlife, data in pairs(ESPObjects.Wildlife) do
+                if not wildlife.Parent then
+                    if data.Gui then data.Gui:Destroy() end
+                    ESPObjects.Wildlife[wildlife] = nil
+                    continue
+                end
+                local head = getWildlifeHeadPart(wildlife)
+                local hum = wildlife:FindFirstChildOfClass("Humanoid")
+                if not head or not hum or hum.Health <= 0 then
+                    data.Gui.Enabled = false
+                    continue
+                end
+                local dist = (hrpPos - head.Position).Magnitude
+                data.Gui.Adornee = head
+                data.Gui.Enabled = true
+                local offset = 1 + (dist * 0.075)
+                data.Gui.StudsOffset = Vector3.new(0,offset,0)
+                data.Text.Text = string.format("<b>Wildlife | Health: %d | %d studs</b>", math.floor(hum.Health), math.floor(dist))
+            end
+        else
+            for _, data in pairs(ESPObjects.Wildlife) do
+                if data.Gui then data.Gui.Enabled = false end
             end
         end
 
@@ -506,7 +604,7 @@ task.spawn(function()
                     local partA = a:IsA("BasePart") and a or a:FindFirstChildWhichIsA("BasePart")
                     local partB = b:IsA("BasePart") and b or b:FindFirstChildWhichIsA("BasePart")
                     if not partA or not partB then return false end
-                    return (camPos - partA.Position).Magnitude < (camPos - partB.Position).Magnitude
+                    return (hrpPos - partA.Position).Magnitude < (hrpPos - partB.Position).Magnitude
                 end)
                 for i = 1, math.min(100, #lootItems) do
                     local loot = lootItems[i]
@@ -527,7 +625,7 @@ task.spawn(function()
                 end
                 local part = loot:IsA("BasePart") and loot or loot:FindFirstChildWhichIsA("BasePart")
                 if not part then data.Gui.Enabled = false continue end
-                local dist = (camPos - part.Position).Magnitude
+                local dist = (hrpPos - part.Position).Magnitude
                 data.Gui.Adornee = part
                 data.Gui.Enabled = true
                 data.Gui.StudsOffset = Vector3.new(0,0,0)
@@ -538,8 +636,332 @@ task.spawn(function()
                 if data.Gui then data.Gui.Enabled = false end
             end
         end
+
+        if playersCham then
+            local charsFolder = workspace:FindFirstChild("Spawned") and workspace.Spawned:FindFirstChild("Characters")
+            if charsFolder then
+                for _, char in ipairs(charsFolder:GetChildren()) do
+                    if char:IsA("Model") and char ~= LocalPlayer.Character then
+                        if not ChamObjects.Players[char] then
+                            ChamObjects.Players[char] = createChamBox(Color3.new(1,1,1))
+                        end
+                    end
+                end
+            end
+            for char, box in pairs(ChamObjects.Players) do
+                if not char.Parent then
+                    box:Remove()
+                    ChamObjects.Players[char] = nil
+                    continue
+                end
+                local hrpPart = char:FindFirstChild("HumanoidRootPart")
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if not hrpPart or not hum or hum.Health <= 0 then
+                    box.Visible = false
+                    continue
+                end
+                updateChamBox(box, hrpPart)
+            end
+        else
+            for _, box in pairs(ChamObjects.Players) do
+                if box then box.Visible = false end
+            end
+        end
+
+        if enemiesCham then
+            local enemiesFolder = workspace:FindFirstChild("Spawned") and workspace.Spawned:FindFirstChild("Enemies")
+            if enemiesFolder then
+                for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+                    if enemy:IsA("Model") then
+                        if not ChamObjects.Enemies[enemy] then
+                            ChamObjects.Enemies[enemy] = createChamBox(Color3.new(1,0,0))
+                        end
+                    end
+                end
+            end
+            for enemy, box in pairs(ChamObjects.Enemies) do
+                if not enemy.Parent then
+                    box:Remove()
+                    ChamObjects.Enemies[enemy] = nil
+                    continue
+                end
+                local hrpPart = enemy:FindFirstChild("HumanoidRootPart")
+                local hum = enemy:FindFirstChildOfClass("Humanoid")
+                if not hrpPart or not hum or hum.Health <= 0 then
+                    box.Visible = false
+                    continue
+                end
+                updateChamBox(box, hrpPart)
+            end
+        else
+            for _, box in pairs(ChamObjects.Enemies) do
+                if box then box.Visible = false end
+            end
+        end
+
+        if wildlifeCham then
+            local wildlifeFolder = workspace:FindFirstChild("Spawned") and workspace.Spawned:FindFirstChild("Wildlife")
+            if wildlifeFolder then
+                for _, wildlife in ipairs(wildlifeFolder:GetChildren()) do
+                    if wildlife:IsA("Model") then
+                        if not ChamObjects.Wildlife[wildlife] then
+                            ChamObjects.Wildlife[wildlife] = createChamBox(Color3.new(0.5,0.5,1))
+                        end
+                    end
+                end
+            end
+            for wildlife, box in pairs(ChamObjects.Wildlife) do
+                if not wildlife.Parent then
+                    box:Remove()
+                    ChamObjects.Wildlife[wildlife] = nil
+                    continue
+                end
+                local hrpPart = wildlife:FindFirstChild("HumanoidRootPart") or getWildlifeHeadPart(wildlife)
+                local hum = wildlife:FindFirstChildOfClass("Humanoid")
+                if not hrpPart or not hum or hum.Health <= 0 then
+                    box.Visible = false
+                    continue
+                end
+                updateChamBox(box, hrpPart)
+            end
+        else
+            for _, box in pairs(ChamObjects.Wildlife) do
+                if box then box.Visible = false end
+            end
+        end
     end
 end)
+
+-- ===== BLATANT TAB ===== --
+local WarningsGroup = Tabs.BlatantTab:AddLeftGroupbox("WARNINGS!!", "skull")
+WarningsGroup:AddLabel("THIS IS BLATANT CHEATING (OBVIOUS CHEAT) very risky.", true)
+
+local PlayerGroup = Tabs.BlatantTab:AddLeftGroupbox("Player", "skull")
+
+local walkSpeedValue = 16
+local walkSpeedApply = false
+local walkSpeedLoop = nil
+local originalWalkSpeed = nil
+
+PlayerGroup:AddSlider("WalkSpeed", {Text="WalkSpeed", Default=16, Min=0, Max=29, Callback=function(v) walkSpeedValue = v end})
+local walkSpeedToggle = PlayerGroup:AddToggle("ApplyWalkSpeed", {Text="Apply", Default=false, Callback=function(v)
+    walkSpeedApply = v
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    if not hum then return end
+    if v then
+        originalWalkSpeed = hum.WalkSpeed
+        if walkSpeedLoop then task.cancel(walkSpeedLoop) end
+        walkSpeedLoop = task.spawn(function()
+            while walkSpeedApply do
+                local c = LocalPlayer.Character
+                if c then
+                    local h = c:FindFirstChild("Humanoid")
+                    if h then h.WalkSpeed = walkSpeedValue end
+                end
+                task.wait(0.1)
+            end
+        end)
+    else
+        if walkSpeedLoop then task.cancel(walkSpeedLoop); walkSpeedLoop = nil end
+        if originalWalkSpeed then
+            local c = LocalPlayer.Character
+            if c then
+                local h = c:FindFirstChild("Humanoid")
+                if h then h.WalkSpeed = originalWalkSpeed end
+            end
+        end
+    end
+end})
+
+local jumpPowerValue = 40
+local jumpPowerApply = false
+local jumpPowerLoop = nil
+local originalJumpPower = nil
+
+PlayerGroup:AddSlider("JumpPower", {Text="JumpPower", Default=40, Min=0, Max=100, Callback=function(v) jumpPowerValue = v end})
+local jumpPowerToggle = PlayerGroup:AddToggle("ApplyJumpPower", {Text="Apply", Default=false, Callback=function(v)
+    jumpPowerApply = v
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    if not hum then return end
+    if v then
+        originalJumpPower = hum.JumpPower
+        if jumpPowerLoop then task.cancel(jumpPowerLoop) end
+        jumpPowerLoop = task.spawn(function()
+            while jumpPowerApply do
+                local c = LocalPlayer.Character
+                if c then
+                    local h = c:FindFirstChild("Humanoid")
+                    if h then h.JumpPower = jumpPowerValue end
+                end
+                task.wait(0.1)
+            end
+        end)
+    else
+        if jumpPowerLoop then task.cancel(jumpPowerLoop); jumpPowerLoop = nil end
+        if originalJumpPower then
+            local c = LocalPlayer.Character
+            if c then
+                local h = c:FindFirstChild("Humanoid")
+                if h then h.JumpPower = originalJumpPower end
+            end
+        end
+    end
+end})
+
+-- ===== Hitbox Group =====
+local HitboxGroup = Tabs.BlatantTab:AddRightGroupbox("Hitbox", "skull")
+HitboxGroup:AddLabel("made it least obvious", true)
+HitboxGroup:AddDivider()
+HitboxGroup:AddLabel("0 = Default", true)
+
+local hitboxSize = 0
+local hitboxApply = false
+local hitboxLoop = nil
+local headPercent = 80
+local torsoPercent = 20
+local wallCheck = false
+
+HitboxGroup:AddSlider("HitboxSize", {Text="Hitbox Size", Default=0, Min=0, Max=25, Callback=function(v) hitboxSize = v end})
+
+local headSlider = HitboxGroup:AddSlider("HeadPercent", {Text="Head %", Default=80, Min=0, Max=100, Callback=function(v)
+    headPercent = v
+    torsoPercent = 100 - v
+    torsoSlider:SetValue(torsoPercent)
+end})
+local torsoSlider = HitboxGroup:AddSlider("TorsoPercent", {Text="Torso %", Default=20, Min=0, Max=100, Callback=function(v)
+    torsoPercent = v
+    headPercent = 100 - v
+    headSlider:SetValue(headPercent)
+end})
+
+HitboxGroup:AddCheckbox("WallCheck", {Text="Wall Check", Default=false, Callback=function(v) wallCheck = v end})
+
+local partData = {}
+
+local function restorePart(part)
+    local data = partData[part]
+    if data and part.Parent then
+        part.Size = data.originalSize
+        part.Transparency = data.originalTransparency
+        partData[part] = nil
+    end
+end
+
+local function expandPart(part)
+    if not part or not part.Parent then return end
+    if hitboxSize == 0 then
+        restorePart(part)
+        return
+    end
+    if not partData[part] then
+        partData[part] = {
+            originalSize = part.Size,
+            originalTransparency = part.Transparency
+        }
+    end
+    local add = hitboxSize
+    part.Size = partData[part].originalSize + Vector3.new(add, add, add)
+    part.Transparency = 0.5
+end
+
+local function getTargetPart(target, type)
+    if type == "head" then
+        return target:FindFirstChild("Head")
+    else
+        return target:FindFirstChild("Torso") or target:FindFirstChild("UpperTorso") or target:FindFirstChild("HumanoidRootPart")
+    end
+end
+
+local function getValidPlayers()
+    local players = {}
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return players end
+    local hrpPos = hrp.Position
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        if tableFind(WhitelistPlayers, plr.Name) then continue end
+        local character = plr.Character
+        if character then
+            local hum = character:FindFirstChild("Humanoid")
+            if hum and hum.Health > 0 then
+                local refPart = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+                if refPart and (hrpPos - refPart.Position).Magnitude <= 500 then
+                    table.insert(players, character)
+                end
+            end
+        end
+    end
+    return players
+end
+
+local function isVisible(part)
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local ray = Ray.new(cam.CFrame.Position, (part.Position - cam.CFrame.Position).Unit * 500)
+    local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
+    return hit and hit:IsDescendantOf(part.Parent)
+end
+
+local targetCurrentPart = {}
+
+local function hitboxLoopFunc()
+    while hitboxApply do
+        local players = getValidPlayers()
+        if #players == 0 then
+            for part, _ in pairs(partData) do
+                restorePart(part)
+            end
+            targetCurrentPart = {}
+            task.wait(0.03)
+            continue
+        end
+
+        for _, target in ipairs(players) do
+            local useHead = math.random(100) <= headPercent
+            local targetType = useHead and "head" or "torso"
+            local current = targetCurrentPart[target]
+            local selectedPart = getTargetPart(target, targetType)
+            if not selectedPart then continue end
+            if wallCheck and not isVisible(selectedPart) then continue end
+
+            if current and current ~= targetType then
+                local oldPart = getTargetPart(target, current)
+                if oldPart then restorePart(oldPart) end
+            end
+
+            if hitboxSize > 0 then
+                expandPart(selectedPart)
+            else
+                restorePart(selectedPart)
+            end
+            targetCurrentPart[target] = targetType
+        end
+
+        task.wait(0.03)
+    end
+    for part, _ in pairs(partData) do
+        restorePart(part)
+    end
+    targetCurrentPart = {}
+end
+
+local hitboxToggle = HitboxGroup:AddToggle("ApplyHitbox", {Text="Apply", Default=false, Callback=function(v)
+    hitboxApply = v
+    if v then
+        if hitboxLoop then task.cancel(hitboxLoop) end
+        hitboxLoop = task.spawn(hitboxLoopFunc)
+    else
+        if hitboxLoop then task.cancel(hitboxLoop); hitboxLoop = nil end
+        for part, _ in pairs(partData) do
+            restorePart(part)
+        end
+        targetCurrentPart = {}
+    end
+end})
 
 -- ===== ui settings ===== --
 local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
