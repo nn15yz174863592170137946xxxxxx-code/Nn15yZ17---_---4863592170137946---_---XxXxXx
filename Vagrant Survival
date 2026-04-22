@@ -732,6 +732,56 @@ task.spawn(function()
     end
 end)
 
+-- ===== Others ===== --
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local OthersGroup = Tabs.Main:AddRightGroupbox("Others", "boxes")
+
+local fullBrightEnabled = false
+local originalBrightness = Lighting.Brightness
+local originalClockTime = Lighting.ClockTime
+local originalTimeOfDay = Lighting.TimeOfDay
+local heartbeatConnection = nil
+
+local function forceFullBright()
+    Lighting.Brightness = 2
+    Lighting.ClockTime = 14
+    Lighting.TimeOfDay = "14:00:00"
+end
+
+local function startFullBright()
+    if heartbeatConnection then return end
+    forceFullBright()
+    heartbeatConnection = RunService.Heartbeat:Connect(function()
+        if fullBrightEnabled then
+            forceFullBright()
+        end
+    end)
+end
+
+local function stopFullBright()
+    if heartbeatConnection then
+        heartbeatConnection:Disconnect()
+        heartbeatConnection = nil
+    end
+    Lighting.Brightness = originalBrightness
+    Lighting.ClockTime = originalClockTime
+    Lighting.TimeOfDay = originalTimeOfDay
+end
+
+OthersGroup:AddToggle("FullBright", {
+    Text = "Full Bright",
+    Default = false,
+    Callback = function(v)
+        fullBrightEnabled = v
+        if v then
+            startFullBright()
+        else
+            stopFullBright()
+        end
+    end
+})
+
 -- ===== BLATANT TAB ===== --
 local WarningsGroup = Tabs.BlatantTab:AddLeftGroupbox("WARNINGS!!", "skull")
 WarningsGroup:AddLabel("THIS IS BLATANT CHEATING (OBVIOUS CHEAT) very risky.", true)
