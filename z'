@@ -47,6 +47,8 @@ local Games = {
 
 { name="Defusal", universeIds={6993600665}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Defusal" },
 
+{ name="ENTRENCHED WW1", universeIds={1281592938}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/ENTRENCHED%20WW1" },
+
 { name="Escape Tsunami For Brainrots", universeIds={9363735110}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Escape%20Tsunami%20For%20Brainrots" },
 
 { name="Fate Trigger [FPS]", universeIds={9326439632}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Fate%20Trigger" },
