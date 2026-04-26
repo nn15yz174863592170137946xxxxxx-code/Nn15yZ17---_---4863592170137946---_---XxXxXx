@@ -235,29 +235,67 @@ task.spawn(function()
             return hit and hit:IsDescendantOf(targetModel)
         end
 
-        local function evaluateTarget(targetModel, head, targetTeam)
-            if not head or not isAlive(targetModel) then return end
-            if targetTeam == "Lobby" then return end
+        local candidates = {}
 
-            local targetHumanoid = targetModel:FindFirstChildOfClass("Humanoid")
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr == LocalPlayer then continue end
+            if table.find(WhitelistPlayers, plr.Name) then continue end
 
-            if targetHumanoid and targetHumanoid:GetAttribute("OMG") == true then
-                return
+            local character = plr.Character
+            if not character then continue end
+
+            local head = getHead(character)
+            if not head then continue end
+
+            if head.Transparency == 1 then continue end
+
+            local hum = character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                if hum.WalkSpeed > 50 then continue end
+                if hum.WalkSpeed < 5 then continue end
             end
-            if targetModel:GetAttribute("OMG") == true then
-                return
+
+            local targetTeam = nil
+            local targetParent = character.Parent
+            if targetParent and targetParent.Parent == workspace:FindFirstChild("Characters") then
+                targetTeam = targetParent.Name
             end
-            if lockAnywhere and targetModel:GetAttribute("Downed") == true then
-                return
-            end
+
+            if targetTeam == "Lobby" then continue end
 
             if localTeam == "Infections" or localTeam == "Killer" then
-                if targetTeam ~= "Survivors" then return end
+                if targetTeam ~= "Survivors" then continue end
             elseif localTeam == "Survivors" then
-                if targetTeam == "Survivors" then return end
+                if targetTeam == "Survivors" then continue end
             end
 
-            if not isVisible(head, targetModel) then return end
+            if not isAlive(character) then continue end
+
+            table.insert(candidates, {
+                head = head,
+                model = character,
+                team = targetTeam,
+            })
+        end
+
+        local infectionCandidates = {}
+        local nonInfectionCandidates = {}
+        for _, c in ipairs(candidates) do
+            local dist = (c.head.Position - camPos).Magnitude
+            if c.team == "Infections" and dist <= 200 then
+                table.insert(infectionCandidates, c)
+            else
+                table.insert(nonInfectionCandidates, c)
+            end
+        end
+
+        local finalCandidates = (#infectionCandidates > 0) and infectionCandidates or (#nonInfectionCandidates > 0 and nonInfectionCandidates or {})
+
+        for _, c in ipairs(finalCandidates) do
+            local head = c.head
+            local model = c.model
+
+            if not isVisible(head, model) then continue end
 
             if lockAnywhere then
                 local dist = (head.Position - camPos).Magnitude
@@ -280,33 +318,36 @@ task.spawn(function()
             end
         end
 
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr == LocalPlayer then continue end
-            if table.find(WhitelistPlayers, plr.Name) then continue end
-
-            local character = plr.Character
-            if not character then continue end
-
-            local head = getHead(character)
-            if not head then continue end
-
-            local targetTeam = nil
-            local targetParent = character.Parent
-            if targetParent and targetParent.Parent == workspace:FindFirstChild("Characters") then
-                targetTeam = targetParent.Name
-            end
-
-            evaluateTarget(character, head, targetTeam)
-        end
-
         if localTeam == "Survivors" then
             local botsFolder = workspace:FindFirstChild("Characters") and workspace.Characters:FindFirstChild("Bots")
             if botsFolder then
                 for _, bot in ipairs(botsFolder:GetChildren()) do
                     if bot:IsA("Model") then
                         local head = getHead(bot)
-                        if head then
-                            evaluateTarget(bot, head, "Bot")
+                        if not head then continue end
+                        if head.Transparency == 1 then continue end
+
+                        if not isAlive(bot) then continue end
+                        if not isVisible(head, bot) then continue end
+
+                        if lockAnywhere then
+                            local dist = (head.Position - camPos).Magnitude
+                            if dist < bestDist then
+                                bestTarget = head
+                                bestDist = dist
+                            end
+                        else
+                            local screenPos, onScreen = cam:WorldToViewportPoint(head.Position)
+                            if onScreen then
+                                local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+                                local dx = screenPos.X - fPos.X
+                                local dy = screenPos.Y - fPos.Y
+                                local screenDist = math.sqrt(dx*dx + dy*dy)
+                                if screenDist <= fovSize/2 and screenDist < bestDist then
+                                    bestTarget = head
+                                    bestDist = screenDist
+                                end
+                            end
                         end
                     end
                 end
@@ -332,7 +373,7 @@ ESPGroup:AddToggle("InfectionsESP", {Text="Infections ESP", Default=false, Callb
 ESPGroup:AddToggle("KillerESP", {Text="Killer ESP", Default=false, Callback=function(v) killerESP=v end})
 ESPGroup:AddToggle("SurvivorsESP", {Text="Survivors ESP", Default=false, Callback=function(v) survivorsESP=v end})
 
-local espObjects = {} -- key = model, value = {billboard, textLabel}
+local espObjects = {}
 
 local function createESPBillboard(color, textSize, offset)
     local gui = Instance.new("BillboardGui")
@@ -358,13 +399,13 @@ end
 
 local function getTeamColor(team)
     if team == "Bots" then
-        return Color3.fromRGB(192,192,192)  -- light grey
+        return Color3.fromRGB(192,192,192)
     elseif team == "Infections" then
-        return Color3.fromRGB(0,255,0)      -- green
+        return Color3.fromRGB(0,255,0)
     elseif team == "Killer" then
-        return Color3.fromRGB(255,0,0)      -- red
+        return Color3.fromRGB(255,0,0)
     elseif team == "Survivors" then
-        return Color3.fromRGB(255,255,255)  -- white
+        return Color3.fromRGB(255,255,255)
     else
         return Color3.new(0.5,0.5,0.5)
     end
