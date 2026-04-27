@@ -1,0 +1,678 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO TAB ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== aimlock ===== --
+local AimGroup = Tabs.Main:AddLeftGroupbox("Aimlock","boxes")
+local aimEnabled = false
+local lockAnywhere = false
+local targetPlayers = true
+local targetBoats = true
+local targetBuildings = true
+local targetPlanes = true
+
+AimGroup:AddLabel("Within 1k Studs (cuz u wouldn't hit them that far", true)
+AimGroup:AddToggle("EnableAimlock",{Text="Enable Aimlock",Default=false,Callback=function(v) aimEnabled=v end})
+AimGroup:AddToggle("LockAnywhere",{Text="Lock Anywhere",Default=false,Callback=function(v) lockAnywhere=v end})
+AimGroup:AddToggle("TargetPlayers",{Text="Target Players",Default=true,Callback=function(v) targetPlayers=v end})
+AimGroup:AddToggle("TargetBoats",{Text="Target Boats",Default=true,Callback=function(v) targetBoats=v end})
+AimGroup:AddToggle("TargetBuildings",{Text="Target Buildings",Default=true,Callback=function(v) targetBuildings=v end})
+AimGroup:AddToggle("TargetPlanes",{Text="Target Planes",Default=true,Callback=function(v) targetPlanes=v end})
+
+local aimKey = "E"
+AimGroup:AddLabel("Aimlock Keybind"):AddKeyPicker("AimlockKey",{
+    Default = aimKey,
+    Mode = "Toggle",
+    Callback = function() aimEnabled = not aimEnabled ; Toggles.EnableAimlock:SetValue(aimEnabled) end,
+    ChangedCallback = function(k) aimKey = k end
+})
+
+-- ===== FOV Size Input =====
+local gui,fovCircle,crossV,crossH
+local fovSize = 500
+local crossOffset = Vector2.new(0,0)
+
+local fovInput = AimGroup:AddInput("FOVSize", {
+    Text = "FOV Size",
+    Default = tostring(fovSize),
+    Finished = true,
+    Placeholder = "500",
+})
+
+fovInput:OnChanged(function(v)
+    local n = tonumber(v)
+    if n and fovCircle then
+        fovSize = n
+        fovCircle.Size = UDim2.new(0,fovSize,0,fovSize)
+        fovCircle.Position = UDim2.new(0.5,crossOffset.X,0.5,crossOffset.Y)
+    end
+end)
+
+-- ===== whitelist ===== --
+local WhitelistGroup = Tabs.Main:AddLeftGroupbox("Whitelist","boxes")
+local WhitelistPlayers = {}
+WhitelistGroup:AddInput("WhitelistInput",{Text="Input",Placeholder="(Partial username)"})
+
+local function getClosestPlayer(txt)
+    local s = txt:lower()
+    local best,dist=nil,999
+    for _,plr in pairs(Players:GetPlayers()) do
+        local u = plr.Name:lower()
+        local d = plr.DisplayName:lower()
+        if u:find(s,1,true) or d:find(s,1,true) then
+            local pick = (#u < #d) and u or d
+            local diff = math.abs(#pick - #s)
+            if diff < dist then best,dist = plr,diff end
+        end
+    end
+    return best
+end
+
+WhitelistGroup:AddButton("Add",function()
+    local t = Options.WhitelistInput.Value
+    if t=="" then return Library:Notify("Player not found!",3) end
+    local p = getClosestPlayer(t)
+    if p and not table.find(WhitelistPlayers,p.Name) then
+        table.insert(WhitelistPlayers,p.Name)
+        Library:Notify(p.Name.." added!",3)
+    else
+        Library:Notify("Player not found!",3)
+    end
+end)
+
+WhitelistGroup:AddButton("Remove",function()
+    local t = Options.WhitelistInput.Value
+    if t=="" then return Library:Notify("Player not found!",3) end
+    local p = getClosestPlayer(t)
+    if not p then return Library:Notify("Player not found!",3) end
+    for i=#WhitelistPlayers,1,-1 do
+        if WhitelistPlayers[i]==p.Name then
+            table.remove(WhitelistPlayers,i)
+            Library:Notify(p.Name.." removed!",3)
+        end
+    end
+end)
+
+-- ===== fov ui ===== --
+local function createFOV()
+    if gui then gui:Destroy() end
+    gui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+    gui.Name="AimlockFOV"
+    gui.IgnoreGuiInset=true
+    gui.ResetOnSpawn=false
+
+    local function mk(parent,pos,size)
+        local f=Instance.new("Frame",parent)
+        f.AnchorPoint=Vector2.new(.5,.5)
+        f.Position=pos
+        f.Size=size
+        f.BackgroundColor3=Color3.new(1,1,1)
+        f.BorderSizePixel=0
+        return f
+    end
+
+    crossV = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,2,0,14))
+    crossH = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,14,0,2))
+
+    fovCircle = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,fovSize,0,fovSize))
+    fovCircle.BackgroundTransparency=1
+    Instance.new("UICorner",fovCircle).CornerRadius = UDim.new(1,0)
+
+    local s = Instance.new("UIStroke",fovCircle)
+    s.Thickness = 2
+    task.spawn(function()
+        local h=0
+        while task.wait(.03) do
+            if fovCircle.Visible then
+                h=(h+3)%360
+                s.Color = Color3.fromHSV(h/360,1,1)
+            end
+        end
+    end)
+end
+createFOV()
+
+-- ===== mobile toggle button ===== --
+local AimGui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+AimGui.Name="AimlockToggleGui"
+AimGui.IgnoreGuiInset=true
+AimGui.ResetOnSpawn=false
+
+local btn = Instance.new("TextButton",AimGui)
+btn.Size=UDim2.new(0,140,0,40)
+btn.Position=UDim2.new(.875,0,.125,0)
+btn.Text="Aimlock : OFF"
+btn.TextColor3=Color3.new(1,1,1)
+btn.BackgroundColor3=Color3.new(0,0,0)
+btn.TextScaled=true
+btn.Font=Enum.Font.SourceSansBold
+btn.Draggable=true
+Instance.new("UICorner",btn).CornerRadius=UDim.new(0,10)
+
+local function updateBtn()
+    if aimEnabled then
+        btn.Text="Aimlock : ON"
+        btn.BackgroundColor3=Color3.fromRGB(255,128,0)
+        crossH.Visible=true
+        crossV.Visible=true
+        fovCircle.Visible=true
+    else
+        btn.Text="Aimlock : OFF"
+        btn.BackgroundColor3=Color3.new(0,0,0)
+        crossH.Visible=false
+        crossV.Visible=false
+        fovCircle.Visible=false
+    end
+end
+
+local function toggleAim(v)
+    aimEnabled=v
+    Toggles.EnableAimlock:SetValue(v)
+    updateBtn()
+end
+
+btn.MouseButton1Click:Connect(function() toggleAim(not aimEnabled) end)
+game:GetService("UserInputService").InputBegan:Connect(function(i,g)
+    if g then return end
+    if i.KeyCode.Name == aimKey then toggleAim(not aimEnabled) end
+end)
+Toggles.EnableAimlock:OnChanged(function(v) task.spawn(function() toggleAim(v) end) end)
+updateBtn()
+
+-- ===== aimlock loop ===== --
+task.spawn(function()
+    local processedModels = {}
+    local pendingCollection = {}
+
+    while task.wait(0.03) do
+        if not aimEnabled then
+            processedModels = {}
+            pendingCollection = {}
+            continue
+        end
+
+        local char = LocalPlayer.Character
+        if not char then continue end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        local lpTeam = LocalPlayer.Team
+        local lpTeamName = lpTeam and lpTeam.Name
+        if lpTeamName ~= "Blue" and lpTeamName ~= "Red" then continue end
+
+        local camPos = cam.CFrame.Position
+
+        local structuresFolder = workspace:FindFirstChild("teamStructures")
+        local newModels = {}
+        if structuresFolder then
+            local enemyFolder = lpTeamName == "Blue" and structuresFolder:FindFirstChild("Red") or structuresFolder:FindFirstChild("Blue")
+            if enemyFolder then
+                local foldersToScan = {}
+                if targetBoats then table.insert(foldersToScan, "boat") end
+                if targetBuildings then table.insert(foldersToScan, "building") end
+                if targetPlanes then table.insert(foldersToScan, "plane") end
+
+                for _, folderName in ipairs(foldersToScan) do
+                    local folder = enemyFolder:FindFirstChild(folderName)
+                    if folder then
+                        for _, model in ipairs(folder:GetChildren()) do
+                            if not model:IsA("Model") then continue end
+                            if processedModels[model] or pendingCollection[model] then continue end
+
+                            local destroyed = model:FindFirstChild("destroyed")
+                            if destroyed and destroyed:IsA("BoolValue") and destroyed.Value == true then continue end
+
+                            local pivot = model:GetPivot().Position
+                            if (pivot - camPos).Magnitude <= 1500 then
+                                table.insert(newModels, model)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if #newModels > 0 then
+            table.sort(newModels, function(a, b)
+                return (a:GetPivot().Position - camPos).Magnitude < (b:GetPivot().Position - camPos).Magnitude
+            end)
+            local model = newModels[1]
+
+            local allParts = {}
+            local function addPartsFromFolder(folder)
+                if not folder then return end
+                for _, part in ipairs(folder:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        table.insert(allParts, part)
+                    end
+                end
+            end
+
+            addPartsFromFolder(model:FindFirstChild("hitBox"))
+            if #allParts == 0 then
+                local body = model:FindFirstChild("body")
+                if body then
+                    local core = body:FindFirstChild("core")
+                    if core and core:IsA("BasePart") then
+                        table.insert(allParts, core)
+                    else
+                        addPartsFromFolder(body)
+                    end
+                end
+            end
+
+            if #allParts > 0 then
+                pendingCollection[model] = {
+                    allParts = allParts,
+                    collected = 0,
+                    model = model
+                }
+            end
+        end
+
+        for model, pending in pairs(pendingCollection) do
+            if not model.Parent then
+                pendingCollection[model] = nil
+                continue
+            end
+            local destroyed = model:FindFirstChild("destroyed")
+            if destroyed and destroyed:IsA("BoolValue") and destroyed.Value == true then
+                pendingCollection[model] = nil
+                processedModels[model] = nil
+                continue
+            end
+
+            local remaining = #pending.allParts - pending.collected
+            if remaining <= 0 then
+                pendingCollection[model] = nil
+                continue
+            end
+            local take = math.min(5, remaining)
+            local newParts = {}
+            for i = pending.collected + 1, pending.collected + take do
+                table.insert(newParts, pending.allParts[i])
+            end
+            pending.collected = pending.collected + take
+
+            if not processedModels[model] then
+                processedModels[model] = { parts = newParts }
+            else
+                for _, p in ipairs(newParts) do
+                    table.insert(processedModels[model].parts, p)
+                end
+            end
+        end
+
+        for model, data in pairs(processedModels) do
+            if not model.Parent then
+                processedModels[model] = nil
+            else
+                local destroyed = model:FindFirstChild("destroyed")
+                if destroyed and destroyed:IsA("BoolValue") and destroyed.Value == true then
+                    processedModels[model] = nil
+                    pendingCollection[model] = nil
+                end
+            end
+        end
+
+        local bestTargetPos = nil
+        local bestDist = math.huge
+
+        if targetPlayers then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr == LocalPlayer then continue end
+                if table.find(WhitelistPlayers, plr.Name) then continue end
+                if not plr.Team or (plr.Team.Name ~= "Blue" and plr.Team.Name ~= "Red") then continue end
+                if plr.Team.Name == lpTeamName then continue end
+
+                local character = plr.Character
+                if not character then continue end
+
+                local humanoid = character:FindFirstChild("Humanoid")
+                if not humanoid or humanoid.Health <= 0 then continue end
+
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                local head = character:FindFirstChild("Head")
+                if not rootPart or not head then continue end
+                if head.Transparency == 1 then continue end
+
+                local speed = humanoid.WalkSpeed
+                local direction = rootPart.Velocity.Magnitude > 0.5 and rootPart.Velocity.Unit or rootPart.CFrame.LookVector
+                local predicted = head.Position + (0.25 * speed) * direction
+                local dist = (predicted - camPos).Magnitude
+                if dist > 1000 then continue end
+
+                local ray = Ray.new(camPos, (predicted - camPos).Unit * dist)
+                local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
+                if hit and hit:IsDescendantOf(character) then
+                    if lockAnywhere then
+                        if dist < bestDist then
+                            bestTargetPos = predicted
+                            bestDist = dist
+                        end
+                    else
+                        local screenPos, onScreen = cam:WorldToViewportPoint(predicted)
+                        if onScreen then
+                            local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+                            local dx = screenPos.X - fPos.X
+                            local dy = screenPos.Y - fPos.Y
+                            local screenDist = math.sqrt(dx*dx + dy*dy)
+                            if screenDist <= fovSize/2 and screenDist < bestDist then
+                                bestTargetPos = predicted
+                                bestDist = dist
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        for model, data in pairs(processedModels) do
+            if bestTargetPos then break end
+            if not model.Parent then continue end
+            local destroyed = model:FindFirstChild("destroyed")
+            if destroyed and destroyed:IsA("BoolValue") and destroyed.Value == true then continue end
+
+            local modelDist = (model:GetPivot().Position - camPos).Magnitude
+            if modelDist > 1000 then continue end
+
+            local speedVal = 0
+            local speedObj = model:FindFirstChild("speed", true)
+            if speedObj and speedObj:IsA("IntValue") then
+                speedVal = speedObj.Value
+            end
+
+            for _, part in ipairs(data.parts) do
+                local partPos = part.Position
+                if (partPos - camPos).Magnitude > 1000 then continue end
+
+                local forward = part.CFrame.LookVector
+                local predicted = partPos + (0.25 * speedVal) * forward
+                local dist = (predicted - camPos).Magnitude
+                if dist > 1000 then continue end
+
+                local ray = Ray.new(camPos, (predicted - camPos).Unit * dist)
+                local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
+                if hit and hit:IsDescendantOf(model) then
+                    if lockAnywhere then
+                        if dist < bestDist then
+                            bestTargetPos = predicted
+                            bestDist = dist
+                        end
+                    else
+                        local screenPos, onScreen = cam:WorldToViewportPoint(predicted)
+                        if onScreen then
+                            local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+                            local dx = screenPos.X - fPos.X
+                            local dy = screenPos.Y - fPos.Y
+                            local screenDist = math.sqrt(dx*dx + dy*dy)
+                            if screenDist <= fovSize/2 and screenDist < bestDist then
+                                bestTargetPos = predicted
+                                bestDist = dist
+                            end
+                        end
+                    end
+                    break
+                end
+            end
+        end
+
+        if bestTargetPos then
+            cam.CFrame = CFrame.lookAt(camPos, bestTargetPos)
+        end
+    end
+end)
+
+-- ===== ESP ===== --
+local ESPGroup = Tabs.Main:AddRightGroupbox("ESP", "eye")
+
+local playersESP = false
+local structuresESP = false
+local teamESP = false
+
+ESPGroup:AddToggle("PlayersESP", {Text="Players ESP", Default=false, Callback=function(v) playersESP=v end})
+ESPGroup:AddToggle("StructuresESP", {Text="Structures ESP", Default=false, Callback=function(v) structuresESP=v end})
+ESPGroup:AddCheckbox("TeamESP", {Text="Team ESP", Default=false, Callback=function(v) teamESP=v end})
+
+local espObjects = {}
+
+local function createESPBillboard(color, offset)
+    local gui = Instance.new("BillboardGui")
+    gui.Size = UDim2.fromOffset(300, 50)
+    gui.AlwaysOnTop = true
+    gui.Enabled = false
+    gui.StudsOffset = offset
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.ClipsDescendants = false
+
+    local txt = Instance.new("TextLabel", gui)
+    txt.Size = UDim2.fromScale(1, 1)
+    txt.BackgroundTransparency = 1
+    txt.TextColor3 = color
+    txt.TextStrokeColor3 = Color3.new(0,0,0)
+    txt.TextStrokeTransparency = 0.3
+    txt.Font = Enum.Font.SourceSansBold
+    txt.TextSize = 20
+    txt.TextWrapped = false
+    txt.RichText = true
+    return gui, txt
+end
+
+local function getPlayerColor(teamName)
+    if teamName == "Blue" then
+        return Color3.fromRGB(80, 150, 255)   -- brighter blue
+    elseif teamName == "Red" then
+        return Color3.fromRGB(255, 110, 110)  -- brighter red
+    else
+        return Color3.new(1, 1, 1)
+    end
+end
+
+local function getStructureColor(teamName)
+    if teamName == "Blue" then
+        return Color3.fromRGB(0, 0, 255)      -- standard blue
+    elseif teamName == "Red" then
+        return Color3.fromRGB(255, 0, 0)      -- standard red
+    else
+        return Color3.new(0.8, 0.8, 0.8)
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.03) do
+        local localChar = LocalPlayer.Character
+        local hrp = localChar and localChar:FindFirstChild("HumanoidRootPart")
+        local hrpPos = hrp and hrp.Position or cam.CFrame.Position
+
+        local lpTeam = LocalPlayer.Team
+        local lpTeamName = lpTeam and lpTeam.Name
+        if lpTeamName ~= "Blue" and lpTeamName ~= "Red" then continue end
+
+        for model, data in pairs(espObjects) do
+            if not model.Parent then
+                data.billboard:Destroy()
+                espObjects[model] = nil
+            end
+        end
+
+        for model, data in pairs(espObjects) do
+            if data.type == "Player" then
+                local plr = Players:GetPlayerFromCharacter(model)
+                if plr then
+                    local isTeammate = (plr.Team and plr.Team.Name == lpTeamName)
+                    if not playersESP or (not teamESP and isTeammate) then
+                        data.billboard:Destroy()
+                        espObjects[model] = nil
+                    end
+                else
+                    data.billboard:Destroy()
+                    espObjects[model] = nil
+                end
+            elseif data.type == "Structure" then
+                if not structuresESP then
+                    data.billboard:Destroy()
+                    espObjects[model] = nil
+                end
+            end
+        end
+
+        if playersESP then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr == LocalPlayer then continue end
+                if not plr.Team or (plr.Team.Name ~= "Blue" and plr.Team.Name ~= "Red") then continue end
+
+                local character = plr.Character
+                if not character then continue end
+
+                local isTeammate = (plr.Team.Name == lpTeamName)
+                if not teamESP and isTeammate then continue end
+
+                local hum = character:FindFirstChildOfClass("Humanoid")
+                if not hum or hum.Health <= 0 then continue end
+
+                local head = character:FindFirstChild("Head")
+                local adornee = head or character:FindFirstChild("HumanoidRootPart") or character:FindFirstChildWhichIsA("BasePart")
+                if not adornee then continue end
+
+                local modelKey = character
+                if not espObjects[modelKey] then
+                    local color = getPlayerColor(plr.Team.Name)
+                    local gui, txt = createESPBillboard(color, Vector3.new(0, 2.5, 0))
+                    gui.Name = plr.Name .. "_ESP"
+                    gui.Parent = game:GetService("CoreGui")
+                    espObjects[modelKey] = {billboard = gui, text = txt, type = "Player"}
+                end
+
+                local data = espObjects[modelKey]
+                data.billboard.Adornee = adornee
+                data.billboard.Enabled = true
+                local dist = (hrpPos - adornee.Position).Magnitude
+                local health = math.floor(hum.Health)
+                data.text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", plr.Name, health, math.floor(dist))
+            end
+        end
+
+        if structuresESP then
+            local structuresFolder = workspace:FindFirstChild("teamStructures")
+            if structuresFolder then
+                local enemyFolder = lpTeamName == "Blue" and structuresFolder:FindFirstChild("Red") or structuresFolder:FindFirstChild("Blue")
+                if enemyFolder then
+                    for _, child in ipairs(enemyFolder:GetChildren()) do
+                        if child:IsA("Model") then
+                            local adornee = child.PrimaryPart or child:FindFirstChildWhichIsA("BasePart")
+                            if adornee then
+                                local modelKey = child
+                                if not espObjects[modelKey] then
+                                    local color = getStructureColor(enemyFolder.Name)
+                                    local gui, txt = createESPBillboard(color, Vector3.new(0, 0, 0))
+                                    gui.Name = child.Name .. "_ESP"
+                                    gui.Parent = game:GetService("CoreGui")
+                                    espObjects[modelKey] = {billboard = gui, text = txt, type = "Structure"}
+                                end
+                                local data = espObjects[modelKey]
+                                data.billboard.Adornee = adornee
+                                data.billboard.Enabled = true
+                                local dist = (hrpPos - adornee.Position).Magnitude
+                                local healthVal = nil
+                                local healthNumVal = child:FindFirstChild("health", true)
+                                if healthNumVal and healthNumVal:IsA("NumberValue") then healthVal = healthNumVal.Value end
+                                local healthText = healthVal and math.floor(healthVal) or "N/A"
+                                data.text.Text = string.format("<b>Name: %s | Health: %s | Studs: %d</b>", child.Name, healthText, math.floor(dist))
+                            end
+                        elseif child:IsA("Folder") then
+                            for _, sub in ipairs(child:GetChildren()) do
+                                if sub:IsA("Model") then
+                                    local adornee = sub.PrimaryPart or sub:FindFirstChildWhichIsA("BasePart")
+                                    if adornee then
+                                        local modelKey = sub
+                                        if not espObjects[modelKey] then
+                                            local color = getStructureColor(enemyFolder.Name)
+                                            local gui, txt = createESPBillboard(color, Vector3.new(0, 0, 0))
+                                            gui.Name = sub.Name .. "_ESP"
+                                            gui.Parent = game:GetService("CoreGui")
+                                            espObjects[modelKey] = {billboard = gui, text = txt, type = "Structure"}
+                                        end
+                                        local data = espObjects[modelKey]
+                                        data.billboard.Adornee = adornee
+                                        data.billboard.Enabled = true
+                                        local dist = (hrpPos - adornee.Position).Magnitude
+                                        local healthVal = nil
+                                        local healthNumVal = sub:FindFirstChild("health", true)
+                                        if healthNumVal and healthNumVal:IsA("NumberValue") then healthVal = healthNumVal.Value end
+                                        local healthText = healthVal and math.floor(healthVal) or "N/A"
+                                        data.text.Text = string.format("<b>Name: %s | Health: %s | Studs: %d</b>", sub.Name, healthText, math.floor(dist))
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ===== ui settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Harbor-Havoc")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
