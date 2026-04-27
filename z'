@@ -57,6 +57,8 @@ local Games = {
 
 { name="Gun Grounds FFA", universeIds={4281211770}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Gun%20Grounds%20FFA" },
 
+{ name="Harbor Havoc", universeIds={1325411718}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Harbor%20Havoc" },
+
 { name="Hide and Seek Extreme", universeIds={93740418}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Hide%20and%20Seek%20Extreme" },
 
 { name="LUCKY BLOCKS Battlegrounds", universeIds={279565647}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/LUCKY%20BLOCKS%20Battlegrounds" },
