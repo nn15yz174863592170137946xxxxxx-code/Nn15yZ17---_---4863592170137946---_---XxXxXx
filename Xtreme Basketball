@@ -1,0 +1,190 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local shootRemote = game:GetService("ReplicatedStorage").Events.PlayerEvents.Shoot
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info", "info"),
+    Main = Window:AddTab("Main", "user"),
+    ["UI Settings"] = Window:AddTab("UI Settings", "settings"),
+}
+
+-- ===== INFO TAB ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info", "help")
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== Auto Release ===== --
+local AutoReleaseGroup = Tabs.Main:AddLeftGroupbox("Auto Release", "boxes")
+local autoReleaseEnabled = false
+local threshold = -0.9231
+local activeHooks = {}
+
+local function cleanupIndicator(indicator)
+    local hooks = activeHooks[indicator]
+    if not hooks then return end
+    for _, conn in pairs(hooks) do
+        if conn then conn:Disconnect() end
+    end
+    activeHooks[indicator] = nil
+end
+
+local function hookGradient(gradient, indicator)
+    local fired = false
+    local conn = gradient:GetPropertyChangedSignal("Offset"):Connect(function()
+        if not autoReleaseEnabled then return end
+        local y = gradient.Offset.Y
+        if y <= threshold and not fired then
+            fired = true
+            shootRemote:FireServer("Stop", false)
+        elseif y > threshold then
+            fired = false
+        end
+    end)
+    activeHooks[indicator] = activeHooks[indicator] or {}
+    table.insert(activeHooks[indicator], conn)
+end
+
+local function onPillAppear(pill, indicator)
+    if not pill then return end
+    local bar = pill:FindFirstChild("MeterUI") and pill.MeterUI:FindFirstChild("Meter") and pill.MeterUI.Meter:FindFirstChild("Bar")
+    if bar then
+        local grad = bar:FindFirstChild("UIGradient")
+        if grad and grad:IsA("UIGradient") then
+            hookGradient(grad, indicator)
+        else
+            local c = bar.ChildAdded:Connect(function(child)
+                if child.Name == "UIGradient" and child:IsA("UIGradient") then
+                    c:Disconnect()
+                    hookGradient(child, indicator)
+                end
+            end)
+            activeHooks[indicator] = activeHooks[indicator] or {}
+            table.insert(activeHooks[indicator], c)
+        end
+    end
+end
+
+local function setupIndicator(indicator)
+    cleanupIndicator(indicator)
+    local meterPart = indicator:FindFirstChild("MeterPart")
+    if not meterPart then
+        local c = indicator.ChildAdded:Connect(function(child)
+            if child.Name == "MeterPart" then
+                c:Disconnect()
+                setupIndicator(indicator)
+            end
+        end)
+        activeHooks[indicator] = {c}
+        return
+    end
+    local pill = meterPart:FindFirstChild("Pill")
+    if pill then onPillAppear(pill, indicator) end
+    local c = meterPart.ChildAdded:Connect(function(child)
+        if child.Name == "Pill" then
+            onPillAppear(child, indicator)
+        end
+    end)
+    activeHooks[indicator] = activeHooks[indicator] or {}
+    table.insert(activeHooks[indicator], c)
+
+    local destroyConn = indicator.Destroying:Connect(function()
+        destroyConn:Disconnect()
+        cleanupIndicator(indicator)
+    end)
+    table.insert(activeHooks[indicator], destroyConn)
+end
+
+local function scanAndHookAll()
+    local folder = workspace:FindFirstChild("Local")
+    if not folder then return end
+    for _, child in ipairs(folder:GetChildren()) do
+        if child.Name:find(LocalPlayer.Name) and child.Name:find("CharacterIndicator") then
+            if not activeHooks[child] then
+                setupIndicator(child)
+            end
+        end
+    end
+end
+
+local function fullCleanup()
+    for indicator, _ in pairs(activeHooks) do
+        cleanupIndicator(indicator)
+    end
+    activeHooks = {}
+end
+
+AutoReleaseGroup:AddToggle("AutoPerfectRelease", {
+    Text = "Auto Perfect Release",
+    Default = false,
+    Callback = function(value)
+        autoReleaseEnabled = value
+        if value then
+            scanAndHookAll()
+        else
+            fullCleanup()
+        end
+    end
+})
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if autoReleaseEnabled then
+            scanAndHookAll()
+        end
+    end
+end)
+
+-- ===== UI Settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Xtreme-Basketball")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
