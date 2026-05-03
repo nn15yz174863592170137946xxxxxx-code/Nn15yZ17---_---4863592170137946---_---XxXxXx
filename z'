@@ -105,6 +105,8 @@ local Games = {
 
 { name="Wrath of Nature", universeIds={9592026646}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Wrath%20of%20Nature" },
 
+{ name="Xtreme Basketball", universeIds={9201754887}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Xtreme%20Basketball" },
+
 { name="bLockerman's Minesweeper", universeIds={3047037061}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/bLockermans%20Minesweeper" },
 
 }
