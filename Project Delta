@@ -1045,6 +1045,7 @@ if bestTarget then
     end
     cam.CFrame = CFrame.lookAt(camPos, predPos)
 end
+end
 end)
 
 -- ===== UI SETTINGS ===== --
