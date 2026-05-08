@@ -1037,7 +1037,7 @@ if bestTarget then
     if currentMuzzleVelocity and currentProjectileDrop and distance > 0 then
         local time = distance
         local moveOffset = targetVel * time
-        local dropOffset = Vector3.new(0, currentProjectileDrop * time * time, 0)
+        local dropOffset = Vector3.new(0, -0.5 * currentProjectileDrop * time * time, 0)
         predPos = aimPoint + moveOffset + dropOffset
     else
         local vel = bestTarget.Velocity or Vector3.new(0,0,0)
