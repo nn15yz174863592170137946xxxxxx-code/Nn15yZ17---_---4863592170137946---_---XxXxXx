@@ -1029,23 +1029,22 @@ for _, character in ipairs(onScreenTargets) do
             end
         end
 
-        if bestTarget then
-            local aimPoint = bestTargetPoint or bestTarget.Position
-            local targetVel = bestTarget.Velocity or Vector3.new(0,0,0)
-            local distance = (camPos - aimPoint).Magnitude
-            local predPos = aimPoint
-            if currentMuzzleVelocity and currentProjectileDrop and distance > 0 then
-                local time = distance / currentMuzzleVelocity
-                local moveOffset = targetVel * time
-                local dropOffset = Vector3.new(0, -0.5 * currentProjectileDrop * time * time, 0)
-                predPos = aimPoint + moveOffset + dropOffset
-            else
-                local vel = bestTarget.Velocity or Vector3.new(0,0,0)
-                predPos = aimPoint + Vector3.new(vel.X * 0.05, vel.Y * 0.01, vel.Z * 0.05)
-            end
-            cam.CFrame = CFrame.lookAt(camPos, predPos)
-        end
+if bestTarget then
+    local aimPoint = bestTargetPoint or bestTarget.Position
+    local targetVel = bestTarget.Velocity or Vector3.new(0,0,0)
+    local distance = (camPos - aimPoint).Magnitude
+    local predPos = aimPoint
+    if currentMuzzleVelocity and currentProjectileDrop and distance > 0 then
+        local time = distance
+        local moveOffset = targetVel * time
+        local dropOffset = Vector3.new(0, currentProjectileDrop * time * time, 0)
+        predPos = aimPoint + moveOffset + dropOffset
+    else
+        local vel = bestTarget.Velocity or Vector3.new(0,0,0)
+        predPos = aimPoint + Vector3.new(vel.X * 0.05, vel.Y * 0.01, vel.Z * 0.05)
     end
+    cam.CFrame = CFrame.lookAt(camPos, predPos)
+end
 end)
 
 -- ===== UI SETTINGS ===== --
