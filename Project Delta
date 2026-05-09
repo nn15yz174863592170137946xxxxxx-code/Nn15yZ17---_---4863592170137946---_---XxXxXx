@@ -808,7 +808,6 @@ local currentProjectileDrop = nil
 local lastWeaponName = nil
 
 local function getWeaponDataFromInventory(weaponName)
-    -- Navigate to the player's inventory in ReplicatedStorage
     local playersFolder = game:GetService("ReplicatedStorage"):FindFirstChild("Players")
     if not playersFolder then return nil, nil end
     local playerData = playersFolder:FindFirstChild(LocalPlayer.Name)
@@ -820,7 +819,6 @@ local function getWeaponDataFromInventory(weaponName)
     local loadedAmmo = weapon:FindFirstChild("LoadedAmmo")
     if not loadedAmmo then return nil, nil end
     
-    -- Loop through all ammo slots (children of LoadedAmmo)
     local ammoType = nil
     for _, slot in ipairs(loadedAmmo:GetChildren()) do
         if slot:IsA("Folder") or slot:IsA("Instance") then  -- slots are typically folders or instances
@@ -833,7 +831,6 @@ local function getWeaponDataFromInventory(weaponName)
     end
     if not ammoType then return nil, nil end
     
-    -- Now look up the ammo type in ReplicatedStorage.AmmoTypes
     local ammoTypes = game:GetService("ReplicatedStorage"):FindFirstChild("AmmoTypes")
     if not ammoTypes then return nil, nil end
     local ammo = ammoTypes:FindFirstChild(ammoType)
@@ -844,7 +841,6 @@ local function getWeaponDataFromInventory(weaponName)
     return muzzleVel, drop
 end
 
--- Fallback to the old RangedWeapons method (keep it if you still have it)
 local function getWeaponDataOld(weaponName)
     local rangedWeapons = game:GetService("ReplicatedStorage"):FindFirstChild("RangedWeapons")
     if not rangedWeapons then return nil, nil end
@@ -871,14 +867,11 @@ task.spawn(function()
         local char = LocalPlayer.Character
         if char then
             local currentWeapon = nil
-            -- Detect the currently equipped ranged weapon (tool in character)
             for _, child in ipairs(char:GetChildren()) do
-                -- Check if the child is a tool that exists in RangedWeapons (optional check)
                 if game:GetService("ReplicatedStorage"):FindFirstChild("RangedWeapons") and game.ReplicatedStorage.RangedWeapons:FindFirstChild(child.Name) then
                     currentWeapon = child
                     break
                 elseif child:IsA("Tool") then
-                    -- Fallback: assume any tool is a weapon if it has a name
                     currentWeapon = child
                     break
                 end
@@ -921,25 +914,27 @@ local function getClosestVisiblePoint(part, targetChar)
     raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
     raycastParams.FilterDescendantsInstances = {char}
     raycastParams.IgnoreWater = true
-    
-    -- First, try the center point (fast path)
+
+    local function shouldIgnoreHit(hit)
+        return hit and (hit:GetAttribute("PassThrough") ~= nil or not hit.CanCollide)
+    end
+
     local centerPoint = part.Position
     local centerDir = (centerPoint - camPos).Unit
     local centerDist = (centerPoint - camPos).Magnitude
     local centerResult = workspace:Raycast(camPos, centerDir * centerDist, raycastParams)
     local centerHit = centerResult and centerResult.Instance
-    
-    while centerHit and hasPassThrough(centerHit) do
+
+    while centerHit and shouldIgnoreHit(centerHit) do
         raycastParams.FilterDescendantsInstances = {char, centerHit}
         centerResult = workspace:Raycast(camPos, centerDir * centerDist, raycastParams)
         centerHit = centerResult and centerResult.Instance
     end
-    
+
     if centerHit and (centerHit == part or centerHit:IsDescendantOf(targetChar)) then
         return centerPoint, centerDist
     end
-    
-    -- If center is blocked, check the 8 corners
+
     local corners = {
         Vector3.new( size.X/2,  size.Y/2,  size.Z/2),
         Vector3.new( size.X/2,  size.Y/2, -size.Z/2),
@@ -950,23 +945,23 @@ local function getClosestVisiblePoint(part, targetChar)
         Vector3.new(-size.X/2, -size.Y/2,  size.Z/2),
         Vector3.new(-size.X/2, -size.Y/2, -size.Z/2)
     }
-    
+
     local closestPoint = nil
     local closestDist = math.huge
-    
+
     for _, corner in ipairs(corners) do
         local checkPoint = part.Position + corner
         local direction = (checkPoint - camPos).Unit
         local distance = (checkPoint - camPos).Magnitude
         local raycastResult = workspace:Raycast(camPos, direction * distance, raycastParams)
         local hit = raycastResult and raycastResult.Instance
-        
-        while hit and hasPassThrough(hit) do
+
+        while hit and shouldIgnoreHit(hit) do
             raycastParams.FilterDescendantsInstances = {char, hit}
             raycastResult = workspace:Raycast(camPos, direction * distance, raycastParams)
             hit = raycastResult and raycastResult.Instance
         end
-        
+
         if hit and (hit == part or hit:IsDescendantOf(targetChar)) then
             if distance < closestDist then
                 closestDist = distance
@@ -1107,19 +1102,16 @@ if bestTarget then
     local distance = (camPos - aimPoint).Magnitude
     local predPos = aimPoint
 
-    if currentMuzzleVelocity and distance > 0 then
-        local time = distance / currentMuzzleVelocity           -- flight time
-        local moveOffset = targetVel * time                     -- leading
-        
-        -- Use actual game gravity for drop (adjustable)
-        local gravity = workspace.Gravity or 80
-        local dropOffset = Vector3.new(0, 0.5 * gravity * time * time, 0)   -- positive = aim up
-        
+    if currentMuzzleVelocity and currentProjectileDrop and distance > 0 then
+        local time = distance / currentMuzzleVelocity
+        local moveOffset = targetVel * time
+        local dropOffset = Vector3.new(0, currentProjectileDrop * time * time, 0)
         predPos = aimPoint + moveOffset + dropOffset
     else
         local vel = bestTarget.Velocity or Vector3.new(0,0,0)
         predPos = aimPoint + Vector3.new(vel.X * 0.05, vel.Y * 0.01, vel.Z * 0.05)
     end
+    
     cam.CFrame = CFrame.lookAt(camPos, predPos)
 end
 end
