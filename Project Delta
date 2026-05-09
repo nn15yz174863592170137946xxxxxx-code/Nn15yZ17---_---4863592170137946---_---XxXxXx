@@ -234,7 +234,6 @@ updateBtn()
 
 -- ===== MISC GROUP ===== --
 local MiscGroup = Tabs.Main:AddRightGroupbox("Misc","boxes")
-MiscGroup:AddLabel("Yellow = Behind walls", true)
 
 -- FullBright
 local fullBrightEnabled = false
@@ -394,9 +393,6 @@ local function createESPBillboard(color, textSize)
     txt.RichText = true
     return gui, txt
 end
-
-local playerBoxes = {}
-local enemyBoxes = {}
 
 local function getCharacterSize(char)
     local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -623,7 +619,7 @@ task.spawn(function()
 
         local camPos = cam.CFrame.Position
 
-        if playerESP then
+if playerESP then
     local validPlayers = {}
     for plr, data in pairs(ESPObjects.Players) do
         local char = plr.Character
@@ -632,23 +628,18 @@ task.spawn(function()
             local hum = char:FindFirstChildOfClass("Humanoid")
             if head and hum and hum.Health > 0 then
                 local dist = (camPos - head.Position).Magnitude
-
                 table.insert(validPlayers, {
                     plr = plr,
                     data = data,
                     head = head,
                     dist = dist,
-                    hum = hum,
-                    char = char,
-                    hrp = char:FindFirstChild("HumanoidRootPart")
+                    hum = hum
                 })
             else
                 data.Gui.Enabled = false
-                if playerBoxes[plr] then playerBoxes[plr].Visible = false end
             end
         else
             data.Gui.Enabled = false
-            if playerBoxes[plr] then playerBoxes[plr].Visible = false end
         end
     end
     table.sort(validPlayers, function(a,b) return a.dist < b.dist end)
@@ -659,44 +650,18 @@ task.spawn(function()
             data.Gui.StudsOffset = Vector3.new(0, offset, 0)
             data.Gui.Adornee = entry.head
             data.Gui.Enabled = true
-            local visibleText = entry.visible and " | Visible" or ""
-            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.plr.Name, math.floor(entry.hum.Health), math.floor(entry.dist), visibleText)
-
-            if not playerBoxes[entry.plr] then
-                local box = Drawing.new("Square")
-                box.Thickness = 1
-                box.Transparency = 0.8
-                box.Filled = false
-                box.Color = Color3.new(1,1,1)
-                playerBoxes[entry.plr] = box
-            end
-            local box = playerBoxes[entry.plr]
-            local screenPos, onScreen = cam:WorldToViewportPoint(entry.hrp.Position)
-            if onScreen then
-                local width, height = getCharacterSize(entry.char)
-                local screenWidth = worldToScreenSize(width, entry.dist)
-                local screenHeight = worldToScreenSize(height, entry.dist)
-                box.Size = Vector2.new(screenWidth, screenHeight)
-                box.Position = Vector2.new(screenPos.X - screenWidth/2, screenPos.Y - screenHeight/2)
-                box.Visible = true
-            else
-                box.Visible = false
-            end
+            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.plr.Name, math.floor(entry.hum.Health), math.floor(entry.dist))
         else
             entry.data.Gui.Enabled = false
-            if playerBoxes[entry.plr] then playerBoxes[entry.plr].Visible = false end
         end
     end
 else
     for _, data in pairs(ESPObjects.Players) do
         data.Gui.Enabled = false
     end
-    for _, box in pairs(playerBoxes) do
-        box.Visible = false
-    end
 end
 
-        if enemiesESP then
+if enemiesESP then
     local validEnemies = {}
     for obj, data in pairs(ESPObjects.Enemies) do
         local head = obj:FindFirstChild("Head")
@@ -704,20 +669,16 @@ end
         local hum = obj:FindFirstChildOfClass("Humanoid")
         if hrp and hum and hum.Health > 0 then
             local dist = (camPos - hrp.Position).Magnitude
-
             table.insert(validEnemies, {
                 obj = obj,
                 data = data,
                 head = head,
                 hrp = hrp,
                 hum = hum,
-                dist = dist,
-                hasHealth = true,
-                char = obj
+                dist = dist
             })
         else
             data.Gui.Enabled = false
-            if enemyBoxes[obj] then enemyBoxes[obj].Visible = false end
         end
     end
     table.sort(validEnemies, function(a,b) return a.dist < b.dist end)
@@ -729,40 +690,14 @@ end
             data.Gui.StudsOffset = Vector3.new(0, offset, 0)
             data.Gui.Adornee = adornee
             data.Gui.Enabled = true
-            local visibleText = entry.visible and " | Visible" or ""
-            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.obj.Name, math.floor(entry.hum.Health), math.floor(entry.dist), visibleText)
-
-            if not enemyBoxes[entry.obj] then
-                local box = Drawing.new("Square")
-                box.Thickness = 1
-                box.Transparency = 0.8
-                box.Filled = false
-                box.Color = Color3.new(1,0,0)
-                enemyBoxes[entry.obj] = box
-            end
-            local box = enemyBoxes[entry.obj]
-            local screenPos, onScreen = cam:WorldToViewportPoint(entry.hrp.Position)
-            if onScreen then
-                local width, height = getCharacterSize(entry.char)
-                local screenWidth = worldToScreenSize(width, entry.dist)
-                local screenHeight = worldToScreenSize(height, entry.dist)
-                box.Size = Vector2.new(screenWidth, screenHeight)
-                box.Position = Vector2.new(screenPos.X - screenWidth/2, screenPos.Y - screenHeight/2)
-                box.Visible = true
-            else
-                box.Visible = false
-            end
+            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.obj.Name, math.floor(entry.hum.Health), math.floor(entry.dist))
         else
             entry.data.Gui.Enabled = false
-            if enemyBoxes[entry.obj] then enemyBoxes[entry.obj].Visible = false end
         end
     end
 else
     for _, data in pairs(ESPObjects.Enemies) do
         data.Gui.Enabled = false
-    end
-    for _, box in pairs(enemyBoxes) do
-        box.Visible = false
     end
 end
 
@@ -867,13 +802,46 @@ end
     end
 end)
 
-
--- ===== WEAPON DATA TRACKER ===== --
+-- ===== WEAPON DATA TRACKER (inventory-based) ===== --
 local currentMuzzleVelocity = nil
 local currentProjectileDrop = nil
 local lastWeaponName = nil
 
-local function getWeaponData(weaponName)
+local function getWeaponDataFromInventory(weaponName)
+    local playersFolder = game:GetService("ReplicatedStorage"):FindFirstChild("Players")
+    if not playersFolder then return nil, nil end
+    local playerData = playersFolder:FindFirstChild(LocalPlayer.Name)
+    if not playerData then return nil, nil end
+    local inventory = playerData:FindFirstChild("Inventory")
+    if not inventory then return nil, nil end
+    local weapon = inventory:FindFirstChild(weaponName)
+    if not weapon then return nil, nil end
+    local loadedAmmo = weapon:FindFirstChild("LoadedAmmo")
+    if not loadedAmmo then return nil, nil end
+    
+    local ammoType = nil
+    for _, slot in ipairs(loadedAmmo:GetChildren()) do
+        if slot:IsA("Folder") or slot:IsA("Instance") then  -- slots are typically folders or instances
+            local at = slot:GetAttribute("AmmoType")
+            if at and at ~= "" then
+                ammoType = at
+                break
+            end
+        end
+    end
+    if not ammoType then return nil, nil end
+    
+    local ammoTypes = game:GetService("ReplicatedStorage"):FindFirstChild("AmmoTypes")
+    if not ammoTypes then return nil, nil end
+    local ammo = ammoTypes:FindFirstChild(ammoType)
+    if not ammo then return nil, nil end
+    
+    local muzzleVel = ammo:GetAttribute("MuzzleVelocity")
+    local drop = ammo:GetAttribute("ProjectileDrop")
+    return muzzleVel, drop
+end
+
+local function getWeaponDataOld(weaponName)
     local rangedWeapons = game:GetService("ReplicatedStorage"):FindFirstChild("RangedWeapons")
     if not rangedWeapons then return nil, nil end
     local weapon = rangedWeapons:FindFirstChild(weaponName)
@@ -903,11 +871,18 @@ task.spawn(function()
                 if game:GetService("ReplicatedStorage"):FindFirstChild("RangedWeapons") and game.ReplicatedStorage.RangedWeapons:FindFirstChild(child.Name) then
                     currentWeapon = child
                     break
+                elseif child:IsA("Tool") then
+                    currentWeapon = child
+                    break
                 end
             end
             if currentWeapon and currentWeapon.Name ~= lastWeaponName then
                 lastWeaponName = currentWeapon.Name
-                currentMuzzleVelocity, currentProjectileDrop = getWeaponData(currentWeapon.Name)
+                local mv, drop = getWeaponDataFromInventory(currentWeapon.Name)
+                if not mv then
+                    mv, drop = getWeaponDataOld(currentWeapon.Name)
+                end
+                currentMuzzleVelocity, currentProjectileDrop = mv, drop
             end
         end
         task.wait(0.5)
@@ -932,43 +907,70 @@ task.spawn(function()
             return part and part:IsA("BasePart") and part:GetAttribute("PassThrough") ~= nil
         end
 
-        local function getClosestVisiblePoint(part, targetChar)
-            if not part or not part:IsA("BasePart") then return nil, math.huge end
-            local size = part.Size
-            local raycastParams = RaycastParams.new()
-            raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-            raycastParams.FilterDescendantsInstances = {char}
-            raycastParams.IgnoreWater = true
-            local closestPoint = nil
-            local closestDist = math.huge
+local function getClosestVisiblePoint(part, targetChar)
+    if not part or not part:IsA("BasePart") then return nil, math.huge end
+    local size = part.Size
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {char}
+    raycastParams.IgnoreWater = true
 
-            for x = -1, 1 do
-                for y = -1, 1 do
-                    for z = -1, 1 do
-                        local offset = Vector3.new(x * size.X/2, y * size.Y/2, z * size.Z/2)
-                        local checkPoint = part.Position + offset
-                        local direction = (checkPoint - camPos).Unit
-                        local distance = (checkPoint - camPos).Magnitude
-                        local raycastResult = workspace:Raycast(camPos, direction * distance, raycastParams)
-                        local hit = raycastResult and raycastResult.Instance
+    local function shouldIgnoreHit(hit)
+        return hit and (hit:GetAttribute("PassThrough") ~= nil or not hit.CanCollide)
+    end
 
-                        while hit and hasPassThrough(hit) do
-                            raycastParams.FilterDescendantsInstances = {char, hit}
-                            raycastResult = workspace:Raycast(camPos, direction * distance, raycastParams)
-                            hit = raycastResult and raycastResult.Instance
-                        end
+    local centerPoint = part.Position
+    local centerDir = (centerPoint - camPos).Unit
+    local centerDist = (centerPoint - camPos).Magnitude
+    local centerResult = workspace:Raycast(camPos, centerDir * centerDist, raycastParams)
+    local centerHit = centerResult and centerResult.Instance
 
-                        if hit and (hit == part or hit:IsDescendantOf(targetChar)) then
-                            if distance < closestDist then
-                                closestDist = distance
-                                closestPoint = checkPoint
-                            end
-                        end
-                    end
-                end
-            end
-            return closestPoint, closestDist
+    while centerHit and shouldIgnoreHit(centerHit) do
+        raycastParams.FilterDescendantsInstances = {char, centerHit}
+        centerResult = workspace:Raycast(camPos, centerDir * centerDist, raycastParams)
+        centerHit = centerResult and centerResult.Instance
+    end
+
+    if centerHit and (centerHit == part or centerHit:IsDescendantOf(targetChar)) then
+        return centerPoint, centerDist
+    end
+
+    local corners = {
+        Vector3.new( size.X/2,  size.Y/2,  size.Z/2),
+        Vector3.new( size.X/2,  size.Y/2, -size.Z/2),
+        Vector3.new( size.X/2, -size.Y/2,  size.Z/2),
+        Vector3.new( size.X/2, -size.Y/2, -size.Z/2),
+        Vector3.new(-size.X/2,  size.Y/2,  size.Z/2),
+        Vector3.new(-size.X/2,  size.Y/2, -size.Z/2),
+        Vector3.new(-size.X/2, -size.Y/2,  size.Z/2),
+        Vector3.new(-size.X/2, -size.Y/2, -size.Z/2)
+    }
+
+    local closestPoint = nil
+    local closestDist = math.huge
+
+    for _, corner in ipairs(corners) do
+        local checkPoint = part.Position + corner
+        local direction = (checkPoint - camPos).Unit
+        local distance = (checkPoint - camPos).Magnitude
+        local raycastResult = workspace:Raycast(camPos, direction * distance, raycastParams)
+        local hit = raycastResult and raycastResult.Instance
+
+        while hit and shouldIgnoreHit(hit) do
+            raycastParams.FilterDescendantsInstances = {char, hit}
+            raycastResult = workspace:Raycast(camPos, direction * distance, raycastParams)
+            hit = raycastResult and raycastResult.Instance
         end
+
+        if hit and (hit == part or hit:IsDescendantOf(targetChar)) then
+            if distance < closestDist then
+                closestDist = distance
+                closestPoint = checkPoint
+            end
+        end
+    end
+    return closestPoint, closestDist
+end
 
         local onScreenTargets = {}
         if targetPlayers then
@@ -1094,23 +1096,26 @@ for _, character in ipairs(onScreenTargets) do
             end
         end
 
-        if bestTarget then
-            local aimPoint = bestTargetPoint or bestTarget.Position
-            local targetVel = bestTarget.Velocity or Vector3.new(0,0,0)
-            local distance = (camPos - aimPoint).Magnitude
-            local predPos = aimPoint
-            if currentMuzzleVelocity and currentProjectileDrop and distance > 0 then
-                local time = distance / currentMuzzleVelocity
-                local moveOffset = targetVel * time
-                local dropOffset = Vector3.new(0, -0.5 * currentProjectileDrop * time * time, 0)
-                predPos = aimPoint + moveOffset + dropOffset
-            else
-                local vel = bestTarget.Velocity or Vector3.new(0,0,0)
-                predPos = aimPoint + Vector3.new(vel.X * 0.05, vel.Y * 0.01, vel.Z * 0.05)
-            end
-            cam.CFrame = CFrame.lookAt(camPos, predPos)
-        end
+if bestTarget then
+    local aimPoint = bestTargetPoint or bestTarget.Position
+    local targetVel = bestTarget.Velocity or Vector3.new(0,0,0)
+    local distance = (camPos - aimPoint).Magnitude
+    local predPos = aimPoint
+
+    if currentMuzzleVelocity and distance > 0 then
+        local time = distance / currentMuzzleVelocity
+        local moveOffset = targetVel * time
+        local gravity = workspace.Gravity or 80
+        local dropOffset = Vector3.new(0, 0.5 * gravity * time * time, 0)   -- positive = aim up
+        
+        predPos = aimPoint + moveOffset + dropOffset
+    else
+        local vel = bestTarget.Velocity or Vector3.new(0,0,0)
+        predPos = aimPoint + Vector3.new(vel.X * 0.05, vel.Y * 0.01, vel.Z * 0.05)
     end
+    cam.CFrame = CFrame.lookAt(camPos, predPos)
+end
+end
 end)
 
 -- ===== UI SETTINGS ===== --
