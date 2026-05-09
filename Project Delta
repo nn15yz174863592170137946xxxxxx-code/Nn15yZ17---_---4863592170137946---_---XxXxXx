@@ -234,6 +234,7 @@ updateBtn()
 
 -- ===== MISC GROUP ===== --
 local MiscGroup = Tabs.Main:AddRightGroupbox("Misc","boxes")
+MiscGroup:AddLabel("Yellow = Behind walls", true)
 
 -- FullBright
 local fullBrightEnabled = false
@@ -393,6 +394,9 @@ local function createESPBillboard(color, textSize)
     txt.RichText = true
     return gui, txt
 end
+
+local playerBoxes = {}
+local enemyBoxes = {}
 
 local function getCharacterSize(char)
     local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -619,7 +623,7 @@ task.spawn(function()
 
         local camPos = cam.CFrame.Position
 
-if playerESP then
+        if playerESP then
     local validPlayers = {}
     for plr, data in pairs(ESPObjects.Players) do
         local char = plr.Character
@@ -628,18 +632,23 @@ if playerESP then
             local hum = char:FindFirstChildOfClass("Humanoid")
             if head and hum and hum.Health > 0 then
                 local dist = (camPos - head.Position).Magnitude
+
                 table.insert(validPlayers, {
                     plr = plr,
                     data = data,
                     head = head,
                     dist = dist,
-                    hum = hum
+                    hum = hum,
+                    char = char,
+                    hrp = char:FindFirstChild("HumanoidRootPart")
                 })
             else
                 data.Gui.Enabled = false
+                if playerBoxes[plr] then playerBoxes[plr].Visible = false end
             end
         else
             data.Gui.Enabled = false
+            if playerBoxes[plr] then playerBoxes[plr].Visible = false end
         end
     end
     table.sort(validPlayers, function(a,b) return a.dist < b.dist end)
@@ -650,18 +659,44 @@ if playerESP then
             data.Gui.StudsOffset = Vector3.new(0, offset, 0)
             data.Gui.Adornee = entry.head
             data.Gui.Enabled = true
-            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.plr.Name, math.floor(entry.hum.Health), math.floor(entry.dist))
+            local visibleText = entry.visible and " | Visible" or ""
+            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.plr.Name, math.floor(entry.hum.Health), math.floor(entry.dist), visibleText)
+
+            if not playerBoxes[entry.plr] then
+                local box = Drawing.new("Square")
+                box.Thickness = 1
+                box.Transparency = 0.8
+                box.Filled = false
+                box.Color = Color3.new(1,1,1)
+                playerBoxes[entry.plr] = box
+            end
+            local box = playerBoxes[entry.plr]
+            local screenPos, onScreen = cam:WorldToViewportPoint(entry.hrp.Position)
+            if onScreen then
+                local width, height = getCharacterSize(entry.char)
+                local screenWidth = worldToScreenSize(width, entry.dist)
+                local screenHeight = worldToScreenSize(height, entry.dist)
+                box.Size = Vector2.new(screenWidth, screenHeight)
+                box.Position = Vector2.new(screenPos.X - screenWidth/2, screenPos.Y - screenHeight/2)
+                box.Visible = true
+            else
+                box.Visible = false
+            end
         else
             entry.data.Gui.Enabled = false
+            if playerBoxes[entry.plr] then playerBoxes[entry.plr].Visible = false end
         end
     end
 else
     for _, data in pairs(ESPObjects.Players) do
         data.Gui.Enabled = false
     end
+    for _, box in pairs(playerBoxes) do
+        box.Visible = false
+    end
 end
 
-if enemiesESP then
+        if enemiesESP then
     local validEnemies = {}
     for obj, data in pairs(ESPObjects.Enemies) do
         local head = obj:FindFirstChild("Head")
@@ -669,16 +704,20 @@ if enemiesESP then
         local hum = obj:FindFirstChildOfClass("Humanoid")
         if hrp and hum and hum.Health > 0 then
             local dist = (camPos - hrp.Position).Magnitude
+
             table.insert(validEnemies, {
                 obj = obj,
                 data = data,
                 head = head,
                 hrp = hrp,
                 hum = hum,
-                dist = dist
+                dist = dist,
+                hasHealth = true,
+                char = obj
             })
         else
             data.Gui.Enabled = false
+            if enemyBoxes[obj] then enemyBoxes[obj].Visible = false end
         end
     end
     table.sort(validEnemies, function(a,b) return a.dist < b.dist end)
@@ -690,14 +729,40 @@ if enemiesESP then
             data.Gui.StudsOffset = Vector3.new(0, offset, 0)
             data.Gui.Adornee = adornee
             data.Gui.Enabled = true
-            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.obj.Name, math.floor(entry.hum.Health), math.floor(entry.dist))
+            local visibleText = entry.visible and " | Visible" or ""
+            data.Text.Text = string.format("<b>Name: %s | Health: %d | Studs: %d</b>", entry.obj.Name, math.floor(entry.hum.Health), math.floor(entry.dist), visibleText)
+
+            if not enemyBoxes[entry.obj] then
+                local box = Drawing.new("Square")
+                box.Thickness = 1
+                box.Transparency = 0.8
+                box.Filled = false
+                box.Color = Color3.new(1,0,0)
+                enemyBoxes[entry.obj] = box
+            end
+            local box = enemyBoxes[entry.obj]
+            local screenPos, onScreen = cam:WorldToViewportPoint(entry.hrp.Position)
+            if onScreen then
+                local width, height = getCharacterSize(entry.char)
+                local screenWidth = worldToScreenSize(width, entry.dist)
+                local screenHeight = worldToScreenSize(height, entry.dist)
+                box.Size = Vector2.new(screenWidth, screenHeight)
+                box.Position = Vector2.new(screenPos.X - screenWidth/2, screenPos.Y - screenHeight/2)
+                box.Visible = true
+            else
+                box.Visible = false
+            end
         else
             entry.data.Gui.Enabled = false
+            if enemyBoxes[entry.obj] then enemyBoxes[entry.obj].Visible = false end
         end
     end
 else
     for _, data in pairs(ESPObjects.Enemies) do
         data.Gui.Enabled = false
+    end
+    for _, box in pairs(enemyBoxes) do
+        box.Visible = false
     end
 end
 
@@ -1029,23 +1094,23 @@ for _, character in ipairs(onScreenTargets) do
             end
         end
 
-if bestTarget then
-    local aimPoint = bestTargetPoint or bestTarget.Position
-    local targetVel = bestTarget.Velocity or Vector3.new(0,0,0)
-    local distance = (camPos - aimPoint).Magnitude
-    local predPos = aimPoint
-    if currentMuzzleVelocity and currentProjectileDrop and distance > 0 then
-        local time = distance
-        local moveOffset = targetVel * time
-        local dropOffset = Vector3.new(0, -0.5 * currentProjectileDrop * time * time, 0)
-        predPos = aimPoint + moveOffset + dropOffset
-    else
-        local vel = bestTarget.Velocity or Vector3.new(0,0,0)
-        predPos = aimPoint + Vector3.new(vel.X * 0.05, vel.Y * 0.01, vel.Z * 0.05)
+        if bestTarget then
+            local aimPoint = bestTargetPoint or bestTarget.Position
+            local targetVel = bestTarget.Velocity or Vector3.new(0,0,0)
+            local distance = (camPos - aimPoint).Magnitude
+            local predPos = aimPoint
+            if currentMuzzleVelocity and currentProjectileDrop and distance > 0 then
+                local time = distance / currentMuzzleVelocity
+                local moveOffset = targetVel * time
+                local dropOffset = Vector3.new(0, -0.5 * currentProjectileDrop * time * time, 0)
+                predPos = aimPoint + moveOffset + dropOffset
+            else
+                local vel = bestTarget.Velocity or Vector3.new(0,0,0)
+                predPos = aimPoint + Vector3.new(vel.X * 0.05, vel.Y * 0.01, vel.Z * 0.05)
+            end
+            cam.CFrame = CFrame.lookAt(camPos, predPos)
+        end
     end
-    cam.CFrame = CFrame.lookAt(camPos, predPos)
-end
-end
 end)
 
 -- ===== UI SETTINGS ===== --
