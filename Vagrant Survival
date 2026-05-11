@@ -471,7 +471,7 @@ task.spawn(function()
         local hrpPos = hrp and hrp.Position or cam.CFrame.Position
 
         if playersESP then
-            local charsFolder = workspace:FindFirstChild("Spawned") and workspace.Spawned:FindFirstChild("Characters")
+            local charsFolder = game:GetService("Players")
             if charsFolder then
                 for _, char in ipairs(charsFolder:GetChildren()) do
                     if char:IsA("Model") and char ~= LocalPlayer.Character then
@@ -638,7 +638,7 @@ task.spawn(function()
         end
 
         if playersCham then
-            local charsFolder = workspace:FindFirstChild("Spawned") and workspace.Spawned:FindFirstChild("Characters")
+            local charsFolder = game:GetService("Players")
             if charsFolder then
                 for _, char in ipairs(charsFolder:GetChildren()) do
                     if char:IsA("Model") and char ~= LocalPlayer.Character then
