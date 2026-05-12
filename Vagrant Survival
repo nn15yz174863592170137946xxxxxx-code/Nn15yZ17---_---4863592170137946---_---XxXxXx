@@ -470,45 +470,44 @@ task.spawn(function()
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         local hrpPos = hrp and hrp.Position or cam.CFrame.Position
 
-        if playersESP then
-            local charsFolder = game:GetService("Players")
-            if charsFolder then
-                for _, char in ipairs(charsFolder:GetChildren()) do
-                    if char:IsA("Model") and char ~= LocalPlayer.Character then
-                        if not ESPObjects.Players[char] then
-                            local color = Color3.new(1,1,1)
-                            local gui, txt = createESPBillboard(color,20)
-                            gui.Name = "PlayerESP_"..char.Name
-                            gui.Parent = game:GetService("CoreGui")
-                            ESPObjects.Players[char] = {Gui=gui, Text=txt}
-                        end
-                    end
-                end
-            end
-            for char, data in pairs(ESPObjects.Players) do
-                if not char.Parent then
-                    if data.Gui then data.Gui:Destroy() end
-                    ESPObjects.Players[char] = nil
-                    continue
-                end
-                local head = char:FindFirstChild("Head")
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if not head or not hum or hum.Health <= 0 then
-                    data.Gui.Enabled = false
-                    continue
-                end
-                local dist = (hrpPos - head.Position).Magnitude
-                data.Gui.Adornee = head
-                data.Gui.Enabled = true
-                local offset = 1 + (dist * 0.075)
-                data.Gui.StudsOffset = Vector3.new(0,offset,0)
-                data.Text.Text = string.format("<b>%s | Health: %d | %d studs</b>", char.Name, math.floor(hum.Health), math.floor(dist))
-            end
-        else
-            for _, data in pairs(ESPObjects.Players) do
-                if data.Gui then data.Gui.Enabled = false end
-            end
+if playersESP then
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local char = plr.Character
+        if not char then continue end
+
+        if not ESPObjects.Players[char] then
+            local color = Color3.new(1,1,1)
+            local gui, txt = createESPBillboard(color,20)
+            gui.Name = "PlayerESP_"..char.Name
+            gui.Parent = game:GetService("CoreGui")
+            ESPObjects.Players[char] = {Gui=gui, Text=txt}
         end
+    end
+    for char, data in pairs(ESPObjects.Players) do
+        if not char.Parent then
+            if data.Gui then data.Gui:Destroy() end
+            ESPObjects.Players[char] = nil
+            continue
+        end
+        local head = char:FindFirstChild("Head")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not head or not hum or hum.Health <= 0 then
+            data.Gui.Enabled = false
+            continue
+        end
+        local dist = (hrpPos - head.Position).Magnitude
+        data.Gui.Adornee = head
+        data.Gui.Enabled = true
+        local offset = 1 + (dist * 0.075)
+        data.Gui.StudsOffset = Vector3.new(0,offset,0)
+        data.Text.Text = string.format("<b>%s | Health: %d | %d studs</b>", char.Name, math.floor(hum.Health), math.floor(dist))
+    end
+else
+    for _, data in pairs(ESPObjects.Players) do
+        if data.Gui then data.Gui.Enabled = false end
+    end
+end
 
         if enemiesESP then
             local enemiesFolder = workspace:FindFirstChild("Spawned") and workspace.Spawned:FindFirstChild("Enemies")
@@ -637,36 +636,35 @@ task.spawn(function()
             end
         end
 
-        if playersCham then
-            local charsFolder = game:GetService("Players")
-            if charsFolder then
-                for _, char in ipairs(charsFolder:GetChildren()) do
-                    if char:IsA("Model") and char ~= LocalPlayer.Character then
-                        if not ChamObjects.Players[char] then
-                            ChamObjects.Players[char] = createChamBox(Color3.new(1,1,1))
-                        end
-                    end
-                end
-            end
-            for char, box in pairs(ChamObjects.Players) do
-                if not char.Parent then
-                    box:Remove()
-                    ChamObjects.Players[char] = nil
-                    continue
-                end
-                local hrpPart = char:FindFirstChild("HumanoidRootPart")
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if not hrpPart or not hum or hum.Health <= 0 then
-                    box.Visible = false
-                    continue
-                end
-                updateChamBox(box, hrpPart)
-            end
-        else
-            for _, box in pairs(ChamObjects.Players) do
-                if box then box.Visible = false end
-            end
+if playersCham then
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local char = plr.Character
+        if not char then continue end
+
+        if not ChamObjects.Players[char] then
+            ChamObjects.Players[char] = createChamBox(Color3.new(1,1,1))
         end
+    end
+    for char, box in pairs(ChamObjects.Players) do
+        if not char.Parent then
+            box:Remove()
+            ChamObjects.Players[char] = nil
+            continue
+        end
+        local hrpPart = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrpPart or not hum or hum.Health <= 0 then
+            box.Visible = false
+            continue
+        end
+        updateChamBox(box, hrpPart)
+    end
+else
+    for _, box in pairs(ChamObjects.Players) do
+        if box then box.Visible = false end
+    end
+end
 
         if enemiesCham then
             local enemiesFolder = workspace:FindFirstChild("Spawned") and workspace.Spawned:FindFirstChild("Enemies")
@@ -860,7 +858,7 @@ local jumpPowerToggle = PlayerGroup:AddToggle("ApplyJumpPower", {Text="Apply", D
     end
 end})
 
--- ===== Hitbox Group =====
+--[[ ===== Hitbox Group =====
 local HitboxGroup = Tabs.BlatantTab:AddRightGroupbox("Hitbox", "skull")
 HitboxGroup:AddLabel("made it least obvious", true)
 HitboxGroup:AddDivider()
@@ -1011,7 +1009,7 @@ local hitboxToggle = HitboxGroup:AddToggle("ApplyHitbox", {Text="Apply", Default
         end
         targetCurrentPart = {}
     end
-end})
+end})]]
 
 -- ===== ui settings ===== --
 local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
