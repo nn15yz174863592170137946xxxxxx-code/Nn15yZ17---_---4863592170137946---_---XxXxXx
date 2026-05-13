@@ -93,6 +93,8 @@ local Games = {
 
 { name="Survive LAVA for Brainrots", universeIds={9649298941}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Survive%20LAVA%20for%20Brainrots" },
 
+{ name="Survive Zombie Arena", universeIds={9348272796}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Survive%20Zombie%20Arena" },
+
 { name="T-Titans Battlegrounds", universeIds={1111698561}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/T-Titans%20Battlegrounds" },
 
 { name="The storage", universeIds={4756005135}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/The%20Storage" },
