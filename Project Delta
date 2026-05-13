@@ -319,6 +319,7 @@ local enemiesESP = false
 local containersESP = false
 local itemsESP = false
 local questItemsESP = false
+local exitESP = false
 local maxESPCount = 50
 
 local playerColor = Color3.new(1,1,1)
@@ -332,7 +333,7 @@ MiscGroup:AddToggle("EnemiesESP", {Text="AI ESP", Default=false, Callback=functi
 MiscGroup:AddToggle("ContainersESP", {Text="Containers ESP", Default=false, Callback=function(v) containersESP=v end})
 MiscGroup:AddToggle("ItemsESP", {Text="Items ESP", Default=false, Callback=function(v) itemsESP=v end})
 MiscGroup:AddToggle("QuestItemsESP", {Text="QuestItems ESP", Default=false, Callback=function(v) questItemsESP=v end})
-MiscGroup:AddToggle("ExitESP", {Text="Exit Locations ESP", Default=false, Callback=function(v) exitESP=v end})
+MiscGroup:AddToggle("ExitESP", {Text="Exit Locations ESP", Default = false, Callback=function(v) exitESP=v end})
 
 local function getPlayerCount()
     local count = 0
@@ -531,7 +532,6 @@ local function updateQuestItemsESP()
     end
 end
 
-local exitESP = false
 local exitColor = Color3.new(0,1,0)
 local ExitESPObjects = {}
 local function updateExitESP()
@@ -802,7 +802,7 @@ end
     end
 end)
 
--- ===== Box =====
+-- ===== Cham =====
 local PlayersChamEnabled = true
 local EnemiesChamEnabled = true
 local PlayersChamCache = {}
