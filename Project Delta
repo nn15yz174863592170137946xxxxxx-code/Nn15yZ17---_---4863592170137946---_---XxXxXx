@@ -1,12 +1,35 @@
 -- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
 
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
     Main = Window:AddTab("Main","user"),
     ["UI Settings"] = Window:AddTab("UI Settings","settings"),
 }
 
 -- ===== INFO TAB ===== --
 local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
-InfoGroup:AddButton("ction()
+InfoGroup:AddButton("Join Discord", function()
     setclipboard("https://discord.gg/3NjyJjjXxF")
     Library:Notify("Discord link copied!", 3)
 end)
@@ -22,8 +45,8 @@ local torsoChance = 20
 
 AimGroup:AddToggle("EnableAimlock",{Text="Enable Aimlock",Default=false,Callback=function(v) aimEnabled=v end})
 AimGroup:AddToggle("LockAnywhere",{Text="Lock Anywhere",Default=false,Callback=function(v) lockAnywhere=v end})
-AimGroup:AddToggle("TargetPlayers",{Text="Target ault=true,Callback=function(v) targetPlayers=v end})
-AimGroup:AddToggle("TargetEnemies",{Text="Target AIs",Default=true,Callback=function(v) targetEnemies=v end})
+AimGroup:AddToggle("TargetPlayers",{Text="Target Players",Default=true,Callback=function(v) targetPlayers=v end})
+AimGroup:AddToggle("TargetEnemies",{Text="Target AI",Default=true,Callback=function(v) targetEnemies=v end})
 
 local aimKey = "E"
 AimGroup:AddLabel("Aimlock Keybind"):AddKeyPicker("AimlockKey",{
@@ -35,7 +58,7 @@ AimGroup:AddLabel("Aimlock Keybind"):AddKeyPicker("AimlockKey",{
 
 AimGroup:AddSlider("HeadChance",{
     Text = "Head %",
-    Default = 80,b
+    Default = 80,
     Min = 0,
     Max = 100,
     Callback = function(v)
@@ -81,7 +104,7 @@ end)
 -- ===== WHITELIST ===== --
 local WhitelistGroup = Tabs.Main:AddLeftGroupbox("Whitelist","boxes")
 local WhitelistPlayers = {}
-WhitelistGroup:AddInput("WhitelistInput",{Textlaceholder="(Partial username)"})
+WhitelistGroup:AddInput("WhitelistInput",{Text="Input",Placeholder="(Partial username)"})
 
 local function getClosestPlayer(txt)
     local s = txt:lower()
@@ -136,7 +159,7 @@ local function createFOV()
         f.AnchorPoint=Vector2.new(.5,.5)
         f.Position=pos
         f.Size=size
-        f.BackgroundColor3=Color3.new(1,
+        f.BackgroundColor3=Color3.new(1,1,1)
         f.BorderSizePixel=0
         return f
     end
@@ -204,7 +227,8 @@ end
 btn.MouseButton1Click:Connect(function() toggleAim(not aimEnabled) end)
 game:GetService("UserInputService").InputBegan:Connect(function(i,g)
     if g then return end
-    if i.KeyCode.Name == aimKey then toggleAim(not aimEnabled) 
+    if i.KeyCode.Name == aimKey then toggleAim(not aimEnabled) end
+end)
 Toggles.EnableAimlock:OnChanged(function(v) task.spawn(function() toggleAim(v) end) end)
 updateBtn()
 
@@ -304,7 +328,7 @@ local itemsColor = Color3.new(0.5,0.5,0.5)
 local questItemsColor = Color3.new(0,1,0)
 
 MiscGroup:AddToggle("PlayerESP", {Text="Players ESP", Default=false, Callback=function(v) playerESP=v end})
-MiscGroup:AddToggle("EnemiesESP", {Text="AIs ESP", Default=false, Callback=function(v) enemiesESP=v end})
+MiscGroup:AddToggle("EnemiesESP", {Text="AI ESP", Default=false, Callback=function(v) enemiesESP=v end})
 MiscGroup:AddToggle("ContainersESP", {Text="Containers ESP", Default=false, Callback=function(v) containersESP=v end})
 MiscGroup:AddToggle("ItemsESP", {Text="Items ESP", Default=false, Callback=function(v) itemsESP=v end})
 MiscGroup:AddToggle("QuestItemsESP", {Text="QuestItems ESP", Default=false, Callback=function(v) questItemsESP=v end})
@@ -778,7 +802,7 @@ end
     end
 end)
 
--- ===== Cham =====
+-- ===== Box =====
 local PlayersChamEnabled = true
 local EnemiesChamEnabled = true
 local PlayersChamCache = {}
@@ -813,8 +837,8 @@ local function updateBox(box, hrp)
 end
 
 MiscGroup:AddDivider()
-MiscGroup:AddToggle("PlayersCham", {Text="Players Cham", Default=true, Callback=function(v) PlayersChamEnabled = v end})
-MiscGroup:AddToggle("EnemiesCham", {Text="AIs Cham", Default=true, Callback=function(v) EnemiesChamEnabled = v end})
+MiscGroup:AddToggle("PlayersCham", {Text="Players Box", Default=true, Callback=function(v) PlayersChamEnabled = v end})
+MiscGroup:AddToggle("EnemiesCham", {Text="AI Box", Default=true, Callback=function(v) EnemiesChamEnabled = v end})
 
 RunService.RenderStepped:Connect(function()
 if PlayersChamEnabled and playerESP then
