@@ -1,28 +1,5 @@
 -- ===== libs ===== --
-local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
-local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
-local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
-local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
 
-local Options, Toggles = Library.Options, Library.Toggles
-Library.ShowToggleFrameInKeybinds = true
-
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local cam = workspace.CurrentCamera
-local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
-
--- ===== window ===== --
-local Window = Library:CreateWindow({
-    Title = "DON's Script",
-    Icon = 95816097006870,
-    NotifySide = "Right",
-    ShowCustomCursor = true,
-})
-
-local Tabs = {
-    Info = Window:AddTab("Info","info"),
     Main = Window:AddTab("Main","user"),
     ["UI Settings"] = Window:AddTab("UI Settings","settings"),
 }
