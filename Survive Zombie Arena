@@ -137,7 +137,7 @@ MainGroup:AddToggle("AutoSkip", {
 })
 
 -- ===== Auto Buy Landmine ===== --
-local buyThreshold = 10
+local buyThreshold = 25
 local buyDelay = 0.5
 local buyLandmineEnabled = false
 local buyLoop = nil
@@ -148,7 +148,7 @@ MainGroup:AddSlider("BuyThreshold", {
     Text = "Buy Threshold",
     Min = 1,
     Max = 50,
-    Default = 10,
+    Default = 25,
     Rounding = 0,
     Suffix = "",
     Callback = function(value)
@@ -200,25 +200,21 @@ MainGroup:AddToggle("AutoBuyLandmine", {
     end
 })
 
--- ===== UI Settings ===== --
+-- ===== ui settings ===== --
 local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
 
 MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
     Library.KeybindFrame.Visible=v
 end})
-
 MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
     Library.ShowCustomCursor=v
 end})
-
 MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
     Library:SetNotifySide(v)
 end})
-
 MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
     Library:SetDPIScale(tonumber(v:gsub("%%","")))
 end})
-
 MenuGroup:AddDivider()
 MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
 MenuGroup:AddButton("Unload",function() Library:Unload() end)
@@ -229,7 +225,7 @@ SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({"MenuKeybind"})
 ThemeManager:SetFolder("DONs-Theme")
 SaveManager:SetFolder("DONs-Script")
-SaveManager:SetSubFolder("Survive-Zombie-Arena")
+SaveManager:SetSubFolder("Survive Zombie Arena")
 SaveManager:BuildConfigSection(Tabs["UI Settings"])
 ThemeManager:ApplyToTab(Tabs["UI Settings"])
 SaveManager:LoadAutoloadConfig()
