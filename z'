@@ -87,6 +87,8 @@ local Games = {
 
 { name="Project Delta", universeIds={2862098693}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Project%20Delta" },
 
+{ name="Reign Fall", universeIds={4165264097}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Reign%20Fall" },
+
 { name="SNIPER DUELS", universeIds={7264587281}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/SNIPER%20DUELS" },
 
 { name="Slap DUELS", universeIds={8080863905}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Slap%20DUELS" },
