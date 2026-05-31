@@ -37,60 +37,49 @@ end)
 -- ===== MAIN ===== --
 local MainGroup = Tabs.Main:AddLeftGroupbox("Main", "boxes")
 
--- ===== God Mode ===== --
-local godEnabled = false
-local godConn = nil
+-- ===== TP Safe Spot ===== --
+local tpSafeEnabled = false
+local tpSafeLoop = nil
+local oceanPos = Vector3.new(-163, 10, -454)
+local originalPos = Vector3.new(-186, 467, -412)
 
-MainGroup:AddToggle("GodMode", {
-    Text = "God Mode",
+MainGroup:AddToggle("TPSafe", {
+    Text = "TP Safe Spot",
     Default = false,
     Callback = function(value)
-        godEnabled = value
+        tpSafeEnabled = value
         if value then
-            local character = LocalPlayer.Character
-            if character then
-                local hum = character:FindFirstChild("Humanoid")
-                if hum then hum.HipHeight = 15 end
-            end
-            godConn = LocalPlayer.CharacterAdded:Connect(function(char)
-                local hum = char:FindFirstChild("Humanoid")
-                if hum then hum.HipHeight = 10 end
+            tpSafeLoop = task.spawn(function()
+                while tpSafeEnabled do
+                    local char = LocalPlayer.Character
+                    if char then
+                        for _, part in ipairs(char:GetChildren()) do
+                            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                                part.CanCollide = false
+                            end
+                        end
+                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            local targetPos = workspace:FindFirstChild("Ambient") and workspace.Ambient:FindFirstChild("OceanLoop") and oceanPos or originalPos
+                            hrp.CFrame = CFrame.new(targetPos)
+                        end
+                    end
+                    task.wait(0.03)
+                end
             end)
         else
-            if godConn then godConn:Disconnect() godConn = nil end
-            local character = LocalPlayer.Character
-            if character then
-                local hum = character:FindFirstChild("Humanoid")
-                if hum then hum.HipHeight = 0 end
+            tpSafeLoop = nil
+            local char = LocalPlayer.Character
+            if char then
+                for _, part in ipairs(char:GetChildren()) do
+                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                        part.CanCollide = true
+                    end
+                end
             end
         end
     end
 })
-
-local function getToolName()
-    local character = LocalPlayer.Character
-    if character then
-        local tool = character:FindFirstChildOfClass("Tool")
-        if tool then return tool.Name end
-    end
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if backpack then
-        local tool = backpack:FindFirstChildOfClass("Tool")
-        if tool then return tool.Name end
-    end
-    return nil
-end
-
-local function equipTool()
-    local character = LocalPlayer.Character
-    if not character then return end
-    local hum = character:FindFirstChild("Humanoid")
-    if not hum then return end
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if not backpack then return end
-    local tool = backpack:FindFirstChildOfClass("Tool")
-    if tool then hum:EquipTool(tool) end
-end
 
 -- ===== Auto Upgrade Weapon ===== --
 local upgradeEnabled = false
@@ -137,18 +126,18 @@ MainGroup:AddToggle("AutoSkip", {
 })
 
 -- ===== Auto Buy Landmine ===== --
-local buyThreshold = 25
+local buyThreshold = 20
 local buyDelay = 0.5
 local buyLandmineEnabled = false
 local buyLoop = nil
-local buyRange = 22
+local buyRange = 14
 
-MainGroup:AddLabel("(Amount of Zombies in 22 studs)", true)
+MainGroup:AddLabel("(Amount of Zombies in 14 studs)", true)
 MainGroup:AddSlider("BuyThreshold", {
     Text = "Buy Threshold",
     Min = 1,
-    Max = 50,
-    Default = 25,
+    Max = 30,
+    Default = 20,
     Rounding = 0,
     Suffix = "",
     Callback = function(value)
@@ -206,15 +195,19 @@ local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
 MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
     Library.KeybindFrame.Visible=v
 end})
+
 MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
     Library.ShowCustomCursor=v
 end})
+
 MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
     Library:SetNotifySide(v)
 end})
+
 MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
     Library:SetDPIScale(tonumber(v:gsub("%%","")))
 end})
+
 MenuGroup:AddDivider()
 MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
 MenuGroup:AddButton("Unload",function() Library:Unload() end)
@@ -225,7 +218,7 @@ SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({"MenuKeybind"})
 ThemeManager:SetFolder("DONs-Theme")
 SaveManager:SetFolder("DONs-Script")
-SaveManager:SetSubFolder("Survive Zombie Arena")
+SaveManager:SetSubFolder("Survive-Zombie-Arena")
 SaveManager:BuildConfigSection(Tabs["UI Settings"])
 ThemeManager:ApplyToTab(Tabs["UI Settings"])
 SaveManager:LoadAutoloadConfig()
