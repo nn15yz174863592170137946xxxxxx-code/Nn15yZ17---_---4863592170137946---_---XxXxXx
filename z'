@@ -65,6 +65,8 @@ local Games = {
 
 { name="Left 4 Blox", universeIds={6077405865}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Left%204%20Blox" },
 
+{ name="Murder Duels", universeIds={9561553764}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Murder%20Duels" },
+
 { name="Murderers VS Sheriffs DUELS", universeIds={4348829796}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Murderers%20VS%20Sheriffs%20DUELS" },
 
 { name="Murder Mystery 2", universeIds={66654135}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Murder%20Mystery%202" },
