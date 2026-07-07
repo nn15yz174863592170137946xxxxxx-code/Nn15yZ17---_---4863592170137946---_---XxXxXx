@@ -37,6 +37,8 @@ local Games = {
 
 { name="Aura Craft", universeIds={5918399007}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Aura%20Craft" },
 
+{ name="Backrooms: Survival", universeIds={8111911783}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Backrooms%3A%20Survival" },
+
 { name="Basketball Legends", universeIds={4931927012}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/Basketball%20Legends" },
 
 { name="CRAB ROYALE", universeIds={5837827057}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/CRAB%20ROYALE" },
