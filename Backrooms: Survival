@@ -1,0 +1,884 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+
+local WhitelistPlayers = {}
+local aimEnabled = false
+local lockAnywhere = false
+local aimKey = "E"
+
+local gui, fovCircle, crossV, crossH
+local fovSize = 500
+local crossOffset = Vector2.new(0,0)
+
+local fullBrightEnabled = false
+local heartbeatConnection
+local originalBrightness = Lighting.Brightness
+local originalClockTime = Lighting.ClockTime
+local originalTimeOfDay = Lighting.TimeOfDay
+
+local staminaConnection
+local instantKillEnabled = false
+local meleeConnection
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "DON's Script",
+    Icon = 95816097006870,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
+    ESP = Window:AddTab("ESP","eye"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+-- ===== INFO TAB ===== --
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/3NjyJjjXxF")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== aimlock ===== --
+local AimGroup = Tabs.Main:AddLeftGroupbox("Aimlock","boxes")
+
+AimGroup:AddToggle("EnableAimlock",{Text="Enable Aimlock",Default=false,Callback=function(v) aimEnabled=v end})
+AimGroup:AddToggle("LockAnywhere",{Text="Lock Anywhere",Default=false,Callback=function(v) lockAnywhere=v end})
+
+AimGroup:AddLabel("Aimlock Keybind"):AddKeyPicker("AimlockKey",{
+    Default = aimKey,
+    Mode = "Toggle",
+    Callback = function() aimEnabled = not aimEnabled ; Toggles.EnableAimlock:SetValue(aimEnabled) end,
+    ChangedCallback = function(k) aimKey = k end
+})
+
+local fovInput = AimGroup:AddInput("FOVSize", {
+    Text = "FOV Size",
+    Default = tostring(fovSize),
+    Finished = true,
+    Placeholder = "500",
+})
+
+fovInput:OnChanged(function(v)
+    local n = tonumber(v)
+    if n and fovCircle then
+        fovSize = n
+        fovCircle.Size = UDim2.new(0,fovSize,0,fovSize)
+        fovCircle.Position = UDim2.new(0.5,crossOffset.X,0.5,crossOffset.Y)
+    end
+end)
+
+-- ===== whitelist ===== --
+local WhitelistGroup = Tabs.Main:AddLeftGroupbox("Whitelist","boxes")
+WhitelistGroup:AddInput("WhitelistInput",{Text="Input",Placeholder="(Partial username)"})
+
+local function getClosestPlayer(txt)
+    local s = txt:lower()
+    local best,dist=nil,999
+    for _,plr in pairs(Players:GetPlayers()) do
+        local u = plr.Name:lower()
+        local d = plr.DisplayName:lower()
+        if u:find(s,1,true) or d:find(s,1,true) then
+            local pick = (#u < #d) and u or d
+            local diff = math.abs(#pick - #s)
+            if diff < dist then best,dist = plr,diff end
+        end
+    end
+    return best
+end
+
+WhitelistGroup:AddButton("Add",function()
+    local t = Options.WhitelistInput.Value
+    if t=="" then return Library:Notify("Player not found!",3) end
+    local p = getClosestPlayer(t)
+    if p and not table.find(WhitelistPlayers,p.Name) then
+        table.insert(WhitelistPlayers,p.Name)
+        Library:Notify(p.Name.." added!",3)
+    else
+        Library:Notify("Player not found!",3)
+    end
+end)
+
+WhitelistGroup:AddButton("Remove",function()
+    local t = Options.WhitelistInput.Value
+    if t=="" then return Library:Notify("Player not found!",3) end
+    local p = getClosestPlayer(t)
+    if not p then return Library:Notify("Player not found!",3) end
+    for i=#WhitelistPlayers,1,-1 do
+        if WhitelistPlayers[i]==p.Name then
+            table.remove(WhitelistPlayers,i)
+            Library:Notify(p.Name.." removed!",3)
+        end
+    end
+end)
+
+-- ===== combat ===== --
+local CombatGroup = Tabs.Main:AddRightGroupbox("Combat","swords")
+CombatGroup:AddLabel("Works while blocking", true)
+CombatGroup:AddToggle("FastAutoHit",{
+    Text = "Fast Auto Hit",
+    Default = false,
+    Callback = function(v)
+        fastAutoHitEnabled = v
+        if v then
+            meleeConnection = RunService.Heartbeat:Connect(function()
+                local char = LocalPlayer.Character
+                if not char then return end
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if not root then return end
+
+                local tool = char:FindFirstChildOfClass("Tool")
+                if not tool then return end
+                local remote = tool:FindFirstChild("Remotes")
+                if remote then remote = remote:FindFirstChild("OnHit") end
+                if not remote then return end
+
+                for _, plr in ipairs(Players:GetPlayers()) do
+                    if plr == LocalPlayer then continue end
+                    if table.find(WhitelistPlayers, plr.Name) then continue end
+                    local otherChar = plr.Character
+                    if not otherChar then continue end
+                    local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
+                    if not otherRoot then continue end
+                    local humanoid = otherChar:FindFirstChildOfClass("Humanoid")
+                    if not humanoid or humanoid.Health <= 0 then continue end
+                    local dist = (otherRoot.Position - root.Position).Magnitude
+                    if dist <= 20 then
+                        remote:FireServer(humanoid, "M2")
+                    end
+                end
+
+                local npcsFolder = workspace:FindFirstChild("NPCs")
+                if npcsFolder then
+                    for _, model in ipairs(npcsFolder:GetDescendants()) do
+                        if model:IsA("Model") then
+                            local humanoid = model:FindFirstChildOfClass("Humanoid")
+                            if humanoid and humanoid.Health > 0 then
+                                local npcRoot = model:FindFirstChild("HumanoidRootPart")
+                                if npcRoot then
+                                    local dist = (npcRoot.Position - root.Position).Magnitude
+                                    if dist <= 20 then
+                                        remote:FireServer(humanoid, "M2")
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        else
+            if meleeConnection then
+                meleeConnection:Disconnect()
+                meleeConnection = nil
+            end
+        end
+    end
+})
+
+-- ===== misc ===== --
+local MiscGroup = Tabs.Main:AddRightGroupbox("Misc","wrench")
+
+local function forceFullBright()
+    Lighting.Brightness = 2
+    Lighting.ClockTime = 14
+    Lighting.TimeOfDay = "14:00:00"
+end
+
+local function startFullBright()
+    if heartbeatConnection then return end
+    forceFullBright()
+    heartbeatConnection = RunService.Heartbeat:Connect(function()
+        if fullBrightEnabled then
+            forceFullBright()
+        end
+    end)
+end
+
+local function stopFullBright()
+    if heartbeatConnection then
+        heartbeatConnection:Disconnect()
+        heartbeatConnection = nil
+    end
+    Lighting.Brightness = originalBrightness
+    Lighting.ClockTime = originalClockTime
+    Lighting.TimeOfDay = originalTimeOfDay
+end
+
+MiscGroup:AddToggle("FullBright", {
+    Text = "Full Bright",
+    Default = false,
+    Callback = function(v)
+        fullBrightEnabled = v
+        if v then
+            startFullBright()
+        else
+            stopFullBright()
+        end
+    end
+})
+
+MiscGroup:AddToggle("InfStamina", {
+    Text = "Inf Stamina",
+    Default = false,
+    Callback = function(v)
+        if v then
+            staminaConnection = RunService.Heartbeat:Connect(function()
+                local plrTable = workspace:FindFirstChild("Game")
+                if plrTable then
+                    plrTable = plrTable:FindFirstChild("Players")
+                    if plrTable then
+                        local myData = plrTable:FindFirstChild(LocalPlayer.Name)
+                        if myData then
+                            local values = myData:FindFirstChild("Values")
+                            if values then
+                                local stm = values:FindFirstChild("STM")
+                                if stm and stm.Value ~= 1000 then
+                                    stm.Value = 1000
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        else
+            if staminaConnection then
+                staminaConnection:Disconnect()
+                staminaConnection = nil
+            end
+        end
+    end
+})
+
+-- ===== esp ===== --
+local createESPBillboard = function(color, textSize)
+    textSize = textSize or 20
+    local gui = Instance.new("BillboardGui")
+    gui.Size = UDim2.fromOffset(400, 60)
+    gui.AlwaysOnTop = true
+    gui.Enabled = false
+    gui.StudsOffset = Vector3.new(0, 3, 0)
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.ClipsDescendants = false
+    local txt = Instance.new("TextLabel", gui)
+    txt.Size = UDim2.fromScale(1, 1)
+    txt.BackgroundTransparency = 1
+    txt.TextColor3 = color
+    txt.TextStrokeColor3 = Color3.new(0,0,0)
+    txt.TextStrokeTransparency = 0.3
+    txt.Font = Enum.Font.SourceSansBold
+    txt.TextSize = textSize
+    txt.TextWrapped = true
+    txt.TextTruncate = Enum.TextTruncate.None
+    txt.RichText = true
+    return gui, txt
+end
+
+local getDistance = function(part)
+    local char = LocalPlayer.Character
+    if not char then return "?" end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return "?" end
+    return math.floor((part.Position - hrp.Position).Magnitude)
+end
+
+local espPlayersEnabled = false
+local espNPCsEnabled = false
+local espItemsEnabled = false
+local espCommonBoxesEnabled = false
+local espSpecialBoxesEnabled = false
+local espCachesEnabled = false
+local espLockpickCratesEnabled = false
+
+local espGroup = Tabs.ESP:AddLeftGroupbox("ESP", "eye")
+espGroup:AddToggle("ESPPlayers", {Text = "Players ESP", Default = false, Callback = function(v) espPlayersEnabled = v end})
+espGroup:AddToggle("ESPNPCs", {Text = "NPCs ESP", Default = false, Callback = function(v) espNPCsEnabled = v end})
+espGroup:AddDivider()
+espGroup:AddToggle("ESPItems", {Text = "Items ESP", Default = false, Callback = function(v) espItemsEnabled = v end})
+espGroup:AddToggle("ESPCommonBoxes", {Text = "Common Boxes ESP", Default = false, Callback = function(v) espCommonBoxesEnabled = v end})
+espGroup:AddToggle("ESPSpecialBoxes", {Text = "Special Boxes ESP", Default = false, Callback = function(v) espSpecialBoxesEnabled = v end})
+espGroup:AddToggle("ESPCaches", {Text = "Caches ESP", Default = false, Callback = function(v) espCachesEnabled = v end})
+espGroup:AddToggle("ESPLockpickCrates", {Text = "Lockpick Crates ESP", Default = false, Callback = function(v) espLockpickCratesEnabled = v end})
+
+local espBillboards = {
+    Players = {},
+    NPCs = {},
+    Items = {},
+    CommonBoxes = {},
+    SpecialBoxes = {},
+    Caches = {},
+    LockpickCrates = {}
+}
+
+local function getFirstPart(obj)
+    if obj:IsA("BasePart") then return obj end
+    local part = obj:FindFirstChildWhichIsA("BasePart")
+    return part
+end
+
+local function clearCategoryBillboards(category)
+    for _, data in pairs(espBillboards[category]) do
+        data.gui:Destroy()
+    end
+    table.clear(espBillboards[category])
+end
+
+task.spawn(function()
+    while task.wait() do
+        -- ===== Players ===== --
+        if espPlayersEnabled then
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr == LocalPlayer then continue end
+                local char = plr.Character
+                if not char then
+                    if espBillboards.Players[plr] then
+                        espBillboards.Players[plr].gui:Destroy()
+                        espBillboards.Players[plr] = nil
+                    end
+                    continue
+                end
+                local head = char:FindFirstChild("Head")
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if not head or not humanoid or humanoid.Health <= 0 then
+                    if espBillboards.Players[plr] then
+                        espBillboards.Players[plr].gui:Destroy()
+                        espBillboards.Players[plr] = nil
+                    end
+                    continue
+                end
+
+                local dist = getDistance(head)
+                local health = math.floor(humanoid.Health)
+                local text = "Name: " .. plr.Name .. " | Health: " .. health .. " | Studs: " .. dist
+                local offset = 1 + (dist * 0.075)
+
+                if not espBillboards.Players[plr] then
+                    local gui, txt = createESPBillboard(Color3.new(1,1,1), 20)
+                    gui.Parent = head
+                    espBillboards.Players[plr] = {gui = gui, txt = txt}
+                end
+                local data = espBillboards.Players[plr]
+                data.gui.Enabled = true
+                data.gui.StudsOffset = Vector3.new(0, offset, 0)
+                data.txt.Text = text
+            end
+            for plr, data in pairs(espBillboards.Players) do
+                if not plr.Parent or not plr.Character or not plr.Character:FindFirstChild("Head") then
+                    data.gui:Destroy()
+                    espBillboards.Players[plr] = nil
+                end
+            end
+        else
+            clearCategoryBillboards("Players")
+        end
+
+        -- ===== NPCs ===== --
+        if espNPCsEnabled then
+            local npcsFolder = workspace:FindFirstChild("NPCs")
+            if npcsFolder then
+                local descendants = npcsFolder:GetDescendants()
+                local seen = {}
+                for _, obj in ipairs(descendants) do
+                    if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
+                        local humanoid = obj:FindFirstChildOfClass("Humanoid")
+                        local part = obj:FindFirstChild("Head") or obj:FindFirstChild("HumanoidRootPart") or getFirstPart(obj)
+                        if part and humanoid and humanoid.Health > 0 then
+                            local dist = getDistance(part)
+                            local health = math.floor(humanoid.Health)
+                            local text = "Name: " .. obj.Name .. " | Health: " .. health .. " | Studs: " .. dist
+                            local offset = 1 + (dist * 0.075)
+
+                            if not espBillboards.NPCs[obj] then
+                                local gui, txt = createESPBillboard(Color3.new(1,0,0), 20)
+                                gui.Parent = part
+                                espBillboards.NPCs[obj] = {gui = gui, txt = txt, part = part}
+                            end
+                            local data = espBillboards.NPCs[obj]
+                            data.gui.Enabled = true
+                            data.gui.StudsOffset = Vector3.new(0, offset, 0)
+                            data.txt.Text = text
+                            if data.part ~= part then
+                                data.gui.Parent = part
+                                data.part = part
+                            end
+                            seen[obj] = true
+                        end
+                    end
+                end
+                for obj, data in pairs(espBillboards.NPCs) do
+                    if not seen[obj] then
+                        data.gui:Destroy()
+                        espBillboards.NPCs[obj] = nil
+                    end
+                end
+            end
+        else
+            clearCategoryBillboards("NPCs")
+        end
+
+        -- ===== Items ===== --
+        if espItemsEnabled then
+            local itemsFolder = workspace:FindFirstChild("Game")
+            if itemsFolder then
+                itemsFolder = itemsFolder:FindFirstChild("Cache")
+                if itemsFolder then
+                    itemsFolder = itemsFolder:FindFirstChild("Items")
+                    if itemsFolder then
+                        local children = itemsFolder:GetChildren()
+                        local seen = {}
+                        for _, item in ipairs(children) do
+                            local part = getFirstPart(item)
+                            if part then
+                                local toolName = item:GetAttribute("ToolName")
+                                local displayName = toolName or item.Name
+                                local dist = getDistance(part)
+                                local text = displayName .. " | Studs: " .. dist
+
+                                if not espBillboards.Items[item] then
+                                    local gui, txt = createESPBillboard(Color3.new(1,1,1), 15)
+                                    gui.StudsOffset = Vector3.new(0, 3, 0)
+                                    gui.Parent = part
+                                    espBillboards.Items[item] = {gui = gui, txt = txt, part = part}
+                                end
+                                local data = espBillboards.Items[item]
+                                data.gui.Enabled = true
+                                data.txt.Text = text
+                                if data.part ~= part then
+                                    data.gui.Parent = part
+                                    data.part = part
+                                end
+                                seen[item] = true
+                            end
+                        end
+                        for item, data in pairs(espBillboards.Items) do
+                            if not seen[item] then
+                                data.gui:Destroy()
+                                espBillboards.Items[item] = nil
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            clearCategoryBillboards("Items")
+        end
+
+        -- ===== Common Boxes ===== --
+        if espCommonBoxesEnabled then
+            local boxesFolder = workspace:FindFirstChild("Game")
+            if boxesFolder then
+                boxesFolder = boxesFolder:FindFirstChild("Items")
+                if boxesFolder then
+                    boxesFolder = boxesFolder:FindFirstChild("Boxes")
+                    if boxesFolder then
+                        local common = boxesFolder:FindFirstChild("Common")
+                        if common then
+                            local children = common:GetChildren()
+                            local seen = {}
+                            for _, box in ipairs(children) do
+                                local part = getFirstPart(box)
+                                if part then
+                                    local dist = getDistance(part)
+                                    local text = "Common Boxes | Studs: " .. dist
+                                    if not espBillboards.CommonBoxes[box] then
+                                        local gui, txt = createESPBillboard(Color3.new(0,1,1), 15)
+                                        gui.StudsOffset = Vector3.new(0, 3, 0)
+                                        gui.Parent = part
+                                        espBillboards.CommonBoxes[box] = {gui = gui, txt = txt, part = part}
+                                    end
+                                    local data = espBillboards.CommonBoxes[box]
+                                    data.gui.Enabled = true
+                                    data.txt.Text = text
+                                    if data.part ~= part then
+                                        data.gui.Parent = part
+                                        data.part = part
+                                    end
+                                    seen[box] = true
+                                end
+                            end
+                            for box, data in pairs(espBillboards.CommonBoxes) do
+                                if not seen[box] then
+                                    data.gui:Destroy()
+                                    espBillboards.CommonBoxes[box] = nil
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            clearCategoryBillboards("CommonBoxes")
+        end
+
+        -- ===== Special Boxes ===== --
+        if espSpecialBoxesEnabled then
+            local boxesFolder = workspace:FindFirstChild("Game")
+            if boxesFolder then
+                boxesFolder = boxesFolder:FindFirstChild("Items")
+                if boxesFolder then
+                    boxesFolder = boxesFolder:FindFirstChild("Boxes")
+                    if boxesFolder then
+                        local special = boxesFolder:FindFirstChild("Special")
+                        if special then
+                            local children = special:GetChildren()
+                            local seen = {}
+                            for _, box in ipairs(children) do
+                                local body = box:FindFirstChild("Body")
+                                local rarity = body and body:FindFirstChild("Rarity")
+                                local rarityValue = rarity and rarity.Value
+                                local part = getFirstPart(box)
+                                if part then
+                                    local dist = getDistance(part)
+                                    local text = "Box Rarity: " .. (rarityValue or "?") .. " | Studs: " .. dist
+                                    if not espBillboards.SpecialBoxes[box] then
+                                        local gui, txt = createESPBillboard(Color3.new(0,1,0), 15)
+                                        gui.StudsOffset = Vector3.new(0, 3, 0)
+                                        gui.Parent = part
+                                        espBillboards.SpecialBoxes[box] = {gui = gui, txt = txt, part = part}
+                                    end
+                                    local data = espBillboards.SpecialBoxes[box]
+                                    data.gui.Enabled = true
+                                    data.txt.Text = text
+                                    if data.part ~= part then
+                                        data.gui.Parent = part
+                                        data.part = part
+                                    end
+                                    seen[box] = true
+                                end
+                            end
+                            for box, data in pairs(espBillboards.SpecialBoxes) do
+                                if not seen[box] then
+                                    data.gui:Destroy()
+                                    espBillboards.SpecialBoxes[box] = nil
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            clearCategoryBillboards("SpecialBoxes")
+        end
+
+        -- ===== Caches ===== --
+        if espCachesEnabled then
+            local cachesFolder = workspace:FindFirstChild("Game")
+            if cachesFolder then
+                cachesFolder = cachesFolder:FindFirstChild("Items")
+                if cachesFolder then
+                    cachesFolder = cachesFolder:FindFirstChild("Cache")
+                    if cachesFolder then
+                        local children = cachesFolder:GetChildren()
+                        local seen = {}
+                        for _, obj in ipairs(children) do
+                            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
+                            if prompt and obj:IsA("BasePart") then
+                                local toolName = obj:GetAttribute("ToolName")
+                                local displayName = toolName or obj.Name
+                                local dist = getDistance(obj)
+                                local text = displayName .. " | Studs: " .. dist
+                                if not espBillboards.Caches[obj] then
+                                    local gui, txt = createESPBillboard(Color3.new(1,1,0), 15)
+                                    gui.StudsOffset = Vector3.new(0, 3, 0)
+                                    gui.Parent = obj
+                                    espBillboards.Caches[obj] = {gui = gui, txt = txt, part = obj}
+                                end
+                                local data = espBillboards.Caches[obj]
+                                data.gui.Enabled = true
+                                data.txt.Text = text
+                                if data.part ~= obj then
+                                    data.gui.Parent = obj
+                                    data.part = obj
+                                end
+                                seen[obj] = true
+                            end
+                        end
+                        for obj, data in pairs(espBillboards.Caches) do
+                            if not seen[obj] then
+                                data.gui:Destroy()
+                                espBillboards.Caches[obj] = nil
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            clearCategoryBillboards("Caches")
+        end
+
+        -- ===== Lockpick Crates ===== --
+        if espLockpickCratesEnabled then
+            local cratesFolder = workspace:FindFirstChild("Game")
+            if cratesFolder then
+                cratesFolder = cratesFolder:FindFirstChild("Items")
+                if cratesFolder then
+                    cratesFolder = cratesFolder:FindFirstChild("LockpickCrates")
+                    if cratesFolder then
+                        local children = cratesFolder:GetChildren()
+                        local seen = {}
+                        for _, crate in ipairs(children) do
+                            local part = getFirstPart(crate)
+                            if part then
+                                local dist = getDistance(part)
+                                local text = "Lockpick Crate | Studs: " .. dist
+                                if not espBillboards.LockpickCrates[crate] then
+                                    local gui, txt = createESPBillboard(Color3.new(0.5,0.5,0.5), 15)
+                                    gui.StudsOffset = Vector3.new(0, 3, 0)
+                                    gui.Parent = part
+                                    espBillboards.LockpickCrates[crate] = {gui = gui, txt = txt, part = part}
+                                end
+                                local data = espBillboards.LockpickCrates[crate]
+                                data.gui.Enabled = true
+                                data.txt.Text = text
+                                if data.part ~= part then
+                                    data.gui.Parent = part
+                                    data.part = part
+                                end
+                                seen[crate] = true
+                            end
+                        end
+                        for crate, data in pairs(espBillboards.LockpickCrates) do
+                            if not seen[crate] then
+                                data.gui:Destroy()
+                                espBillboards.LockpickCrates[crate] = nil
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            clearCategoryBillboards("LockpickCrates")
+        end
+
+        task.wait()
+    end
+end)
+
+-- ===== fov ui ===== --
+local function createFOV()
+    if gui then gui:Destroy() end
+    gui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+    gui.Name="AimlockFOV"
+    gui.IgnoreGuiInset=true
+    gui.ResetOnSpawn=false
+
+    local function mk(parent,pos,size)
+        local f=Instance.new("Frame",parent)
+        f.AnchorPoint=Vector2.new(.5,.5)
+        f.Position=pos
+        f.Size=size
+        f.BackgroundColor3=Color3.new(1,1,1)
+        f.BorderSizePixel=0
+        return f
+    end
+
+    crossV = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,2,0,14))
+    crossH = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,14,0,2))
+
+    fovCircle = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,fovSize,0,fovSize))
+    fovCircle.BackgroundTransparency=1
+    Instance.new("UICorner",fovCircle).CornerRadius = UDim.new(1,0)
+
+    local s = Instance.new("UIStroke",fovCircle)
+    s.Thickness = 2
+    task.spawn(function()
+        local h=0
+        while task.wait(.03) do
+            if fovCircle.Visible then
+                h=(h+3)%360
+                s.Color = Color3.fromHSV(h/360,1,1)
+            end
+        end
+    end)
+end
+createFOV()
+
+-- ===== mobile toggle button ===== --
+local AimGui = Instance.new("ScreenGui",LocalPlayer.PlayerGui)
+AimGui.Name="AimlockToggleGui"
+AimGui.IgnoreGuiInset=true
+AimGui.ResetOnSpawn=false
+
+local btn = Instance.new("TextButton",AimGui)
+btn.Size=UDim2.new(0,140,0,40)
+btn.Position=UDim2.new(.875,0,.125,0)
+btn.Text="Aimlock : OFF"
+btn.TextColor3=Color3.new(1,1,1)
+btn.BackgroundColor3=Color3.new(0,0,0)
+btn.TextScaled=true
+btn.Font=Enum.Font.SourceSansBold
+btn.Draggable=true
+Instance.new("UICorner",btn).CornerRadius=UDim.new(0,10)
+
+local function updateBtn()
+    if aimEnabled then
+        btn.Text="Aimlock : ON"
+        btn.BackgroundColor3=Color3.fromRGB(255,128,0)
+        crossH.Visible=true
+        crossV.Visible=true
+        fovCircle.Visible=true
+    else
+        btn.Text="Aimlock : OFF"
+        btn.BackgroundColor3=Color3.new(0,0,0)
+        crossH.Visible=false
+        crossV.Visible=false
+        fovCircle.Visible=false
+    end
+end
+
+local function toggleAim(v)
+    aimEnabled=v
+    Toggles.EnableAimlock:SetValue(v)
+    updateBtn()
+end
+
+btn.MouseButton1Click:Connect(function() toggleAim(not aimEnabled) end)
+game:GetService("UserInputService").InputBegan:Connect(function(i,g)
+    if g then return end
+    if i.KeyCode.Name == aimKey then toggleAim(not aimEnabled) end
+end)
+Toggles.EnableAimlock:OnChanged(function(v) task.spawn(function() toggleAim(v) end) end)
+updateBtn()
+
+-- ===== aimlock loop ===== --
+task.spawn(function()
+    while task.wait(0.03) do
+        if not aimEnabled then continue end
+        local char = LocalPlayer.Character
+        if not char then continue end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        local camPos = cam.CFrame.Position
+        local bestTarget = nil
+        local bestDist = math.huge
+
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr == LocalPlayer then continue end
+            if table.find(WhitelistPlayers, plr.Name) then continue end
+
+            local character = plr.Character
+            if not character then continue end
+
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then continue end
+
+            local head = character:FindFirstChild("Head")
+            if not head then continue end
+
+            local ray = Ray.new(camPos, (head.Position - camPos).Unit * (head.Position - camPos).Magnitude)
+            local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
+            if hit and hit:IsDescendantOf(character) then
+                if lockAnywhere then
+                    local dist = (head.Position - camPos).Magnitude
+                    if dist < bestDist then
+                        bestTarget = head
+                        bestDist = dist
+                    end
+                else
+                    local screenPos, onScreen = cam:WorldToViewportPoint(head.Position)
+                    if onScreen then
+                        local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+                        local dx = screenPos.X - fPos.X
+                        local dy = screenPos.Y - fPos.Y
+                        local screenDist = math.sqrt(dx*dx + dy*dy)
+                        if screenDist <= fovSize/2 and screenDist < bestDist then
+                            bestTarget = head
+                            bestDist = screenDist
+                        end
+                    end
+                end
+            end
+        end
+
+        local npcsFolder = workspace:FindFirstChild("NPCs")
+        if npcsFolder then
+            for _, model in ipairs(npcsFolder:GetDescendants()) do
+                if model:IsA("Model") then
+                    local humanoid = model:FindFirstChildOfClass("Humanoid")
+                    if humanoid and humanoid.Health > 0 then
+                        local head = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+                        if head then
+                            local ray = Ray.new(camPos, (head.Position - camPos).Unit * (head.Position - camPos).Magnitude)
+                            local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
+                            if hit and (hit:IsDescendantOf(model) or hit == head) then
+                                if lockAnywhere then
+                                    local dist = (head.Position - camPos).Magnitude
+                                    if dist < bestDist then
+                                        bestTarget = head
+                                        bestDist = dist
+                                    end
+                                else
+                                    local screenPos, onScreen = cam:WorldToViewportPoint(head.Position)
+                                    if onScreen then
+                                        local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+                                        local dx = screenPos.X - fPos.X
+                                        local dy = screenPos.Y - fPos.Y
+                                        local screenDist = math.sqrt(dx*dx + dy*dy)
+                                        if screenDist <= fovSize/2 and screenDist < bestDist then
+                                            bestTarget = head
+                                            bestDist = screenDist
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if bestTarget then
+            cam.CFrame = CFrame.lookAt(camPos, bestTarget.Position)
+        end
+    end
+end)
+
+-- ===== ui settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v)
+    Library.KeybindFrame.Visible=v
+end})
+
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v)
+    Library.ShowCustomCursor=v
+end})
+
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v)
+    Library:SetNotifySide(v)
+end})
+
+MenuGroup:AddDropdown("DPIDropdown",{Text="DPI Scale",Values={"50%","75%","100%","125%","150%","175%","200%"},Default="100%",Callback=function(v)
+    Library:SetDPIScale(tonumber(v:gsub("%%","")))
+end})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Backrooms Survival")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
