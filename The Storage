@@ -21,24 +21,22 @@ local Window = Library:CreateWindow({
 
 local Tabs = {
     Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","user"),
     Autofarm = Window:AddTab("Autofarm","repeat"),
     Sell = Window:AddTab("Sell","dollar-sign"),
     Bank = Window:AddTab("Bank","landmark"),
-    Main = Window:AddTab("Main","user"),
+    Blatant = Window:AddTab("Blatant","skull"),
     ["UI Settings"] = Window:AddTab("UI Settings","settings"),
 }
 
 -- ===== INFO ===== --
 local InfoGroup = Tabs.Autofarm:AddLeftGroupbox("Info","info")
 
-InfoGroup:AddLabel("Work best in priv/small server.", true)
-InfoGroup:AddLabel('Type "platform" before starting.', true)
-InfoGroup:AddLabel("Safe = no one within that studs.", true)
+InfoGroup:AddLabel("!!Should test on alt first, in case of new anti cheats.!!", true)
+InfoGroup:AddLabel('TP anticheat only kills you. You dont lose items if not in combat. Use "Safe Radius" to avoid combat.', true)
+InfoGroup:AddLabel("Safer in priv/small server.", true)
+InfoGroup:AddLabel("Safe Radius = no one within that studs.", true)
 InfoGroup:AddLabel("Re-enable toggles if bug.", true)
-
-InfoGroup:AddButton("Infinite yield", function()
-    loadstring(game:HttpGet('https://raw.githubusercontent.com/DarkNetworks/Infinite-Yield/main/latest.lua'))()
-end)
 
 -- ===== AUTOFARM ===== --
 local FarmGroup = Tabs.Autofarm:AddLeftGroupbox("Autofarm","boxes")
@@ -46,6 +44,7 @@ local FarmGroup = Tabs.Autofarm:AddLeftGroupbox("Autofarm","boxes")
 local autoStorage = false
 local autoBasement = false
 local isBuying = false
+local isSelling = false
 local SAFE_RADIUS = 150
 
 local isStoring = false
@@ -74,7 +73,6 @@ FarmGroup:AddSlider("SafeRadius",{
 })
 
 -- ===== ALWAYS SAFETY TP ===== --
-
 local safetyTP_Pos = nil
 local safetyTP_Enabled = false
 
@@ -98,7 +96,7 @@ FarmGroup:AddToggle("AutoSafetyTP", {
 
 task.spawn(function()
     while task.wait(1) do
-        if safetyTP_Enabled and safetyTP_Pos then
+        if safetyTP_Enabled and safetyTP_Pos and not isBuying and not isSelling then
             local char = LocalPlayer.Character
             if char and char:FindFirstChild("HumanoidRootPart") then
                 char.HumanoidRootPart.CFrame = safetyTP_Pos
@@ -133,81 +131,95 @@ end
 -- ===== AUTOFARM LOGIC ===== --
 local LOOK_DOWN = CFrame.Angles(math.rad(-90),0,0)
 
-local function runAutofarm(getStorages)
-    if isBuying or isStoring then return end
+local function isStorageValid(storage)
+    if not storage or not storage.Parent then return false end
+    if storage:FindFirstChild("Contents") then return false end
+    local door = storage:FindFirstChild("Door")
+    if door and door:FindFirstChild("Lock") then return false end
+    if door and door:FindFirstChild("Handle") then
+        return not isUnsafe(door.Handle.Position)
+    end
+    return false
+end
 
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local hrp = char:WaitForChild("HumanoidRootPart")
-    local startCF = hrp.CFrame
-    local storages = getStorages()
-    local lastStorage
-
-    local function getNearest()
-        local best,dist=nil,math.huge
-        for _,v in ipairs(storages) do
-            if v~=lastStorage
-            and not v:FindFirstChild("Contents")
-            and not (v:FindFirstChild("Door") and v.Door:FindFirstChild("Lock")) then
-                local handle = v.Door and v.Door:FindFirstChild("Handle")
-                if handle and not isUnsafe(handle.Position) then
-                    local d = (hrp.Position-handle.Position).Magnitude
-                    if d<dist then dist,best=d,v end
-                end
-            end
+local function processStorage(storage, startCF)
+    local function waitForAliveChar()
+        local char = LocalPlayer.Character
+        while not char or not char:FindFirstChild("HumanoidRootPart")
+            or not char:FindFirstChildOfClass("Humanoid")
+            or char:FindFirstChildOfClass("Humanoid").Health <= 0 do
+            LocalPlayer.CharacterAdded:Wait()
+            char = LocalPlayer.Character
         end
-        return best
+        return char
     end
 
-    local storage = getNearest()
-    if not storage then hrp.CFrame=startCF return end
-    lastStorage = storage
+    local char = waitForAliveChar()
+    local hrp = char:WaitForChild("HumanoidRootPart")
 
-    local handle = storage.Door.Handle
+    local door = storage:FindFirstChild("Door")
+    if not door or not door:FindFirstChild("Handle") then return false end
+    local handle = door.Handle
+
     hrp.CFrame = handle.CFrame * CFrame.new(0,2.5,-1.5)
-    task.wait()
-
+    task.wait(0.1)
     cam.CFrame = CFrame.new(cam.CFrame.Position, handle.Position)
     task.wait(0.1)
 
     for i = 1, 10 do
-    for _,pp in ipairs(handle:GetDescendants()) do
-        if pp:IsA("ProximityPrompt") then
-            pp.HoldDuration = 0
-            fireproximityprompt(pp)
+        for _,pp in ipairs(handle:GetDescendants()) do
+            if pp:IsA("ProximityPrompt") then
+                pp.HoldDuration = 0
+                fireproximityprompt(pp)
+            end
         end
+        task.wait()
     end
-    task.wait()
-end
 
     local contents
-    local t=os.clock()
-    while os.clock()-t<1 do
+    local t = os.clock()
+    while os.clock() - t < 1 do
         contents = storage:FindFirstChild("Contents")
         if contents then break end
         task.wait()
     end
-    if not contents then hrp.CFrame=startCF return end
+    if not contents then
+        if startCF then hrp.CFrame = startCF end
+        return true  -- no loot, consider done
+    end
 
     local loot = contents:FindFirstChild("Loot")
-    if not loot then hrp.CFrame=startCF return end
+    if not loot then
+        if startCF then hrp.CFrame = startCF end
+        return true
+    end
 
-    while #loot:GetChildren()>0 do
-        for _,item in ipairs(loot:GetChildren()) do
+    while #loot:GetChildren() > 0 do
+        for _, item in ipairs(loot:GetChildren()) do
+            if not char or not char:FindFirstChild("HumanoidRootPart")
+                or not char:FindFirstChildOfClass("Humanoid")
+                or char:FindFirstChildOfClass("Humanoid").Health <= 0 then
+                return false
+            end
+
             local pos
-            if item:IsA("BasePart") then pos=item.Position
+            if item:IsA("BasePart") then
+                pos = item.Position
             elseif item:IsA("Model") then
-                local p=item:FindFirstChildWhichIsA("BasePart")
-                if p then pos=p.Position end
-            elseif item:IsA("Attachment") then pos=item.WorldPosition end
+                local p = item:FindFirstChildWhichIsA("BasePart")
+                if p then pos = p.Position end
+            elseif item:IsA("Attachment") then
+                pos = item.WorldPosition
+            end
 
             if pos then
                 hrp.CFrame = CFrame.new(pos + Vector3.new(0,2.5,0))
-                task.wait()
+                task.wait(0.05)
                 cam.CFrame = CFrame.new(cam.CFrame.Position) * LOOK_DOWN
-                task.wait(0.1)
+                task.wait(0.05)
                 for _,pp in ipairs(item:GetDescendants()) do
                     if pp:IsA("ProximityPrompt") then
-                        pp.HoldDuration=0
+                        pp.HoldDuration = 0
                         fireproximityprompt(pp)
                     end
                 end
@@ -216,96 +228,50 @@ end
         task.wait()
     end
 
-    hrp.CFrame = startCF
+    if startCF then
+        hrp.CFrame = startCF
+    end
+
+    return true
 end
+
+local activeStorage = nil
+local activeBasement = nil
 
 -- ===== AUTOFARM LOOPS ===== --
 task.spawn(function()
     while task.wait() do
-        if autoStorage then
-            runAutofarm(function()
-                return workspace.Storages:GetChildren()
-            end)
-        end
-    end
-end)
-
-task.spawn(function()
-    while task.wait() do
-        if autoBasement then
-            runAutofarm(function()
-                return workspace.BasementStorages:GetChildren()
-            end)
-        end
-    end
-end)
-
--- ===== AUTOBUY ===== --
-local RS = game:GetService("ReplicatedStorage")
-local Remote = RS.Remotes.RemoteEvent
-
-local autoBuy = {}
-local bought = {}
-
-local NPC_NAME_ORDER = {
-    "Priest Jonathan","Coleman","Teuchi",
-    "Gunner Jayce","The Leader","Fighter Dave"
-}
-
-local NPC_ORDER = {
-    ["Priest Jonathan"]={"Health Blessing","Speed Blessing","Defense Blessing","Super Human Blessing"},
-    ["Coleman"]={"The Stuff"},
-    ["Teuchi"]={"Ramen"},
-    ["Gunner Jayce"]={"Revolver","AK47","SMG","Light Ammo","Medium Ammo","Light Ammo Pack","Medium Ammo Pack","Armor Pad"},
-    ["The Leader"]={"Shotgun Ammo","Shotgun Ammo Pack","Armor Pad","Grenade","Bear Trap"},
-    ["Fighter Dave"]={"Knife","Baseball Bat","Katana","Fire Axe"}
-}
-
-local function getAllNPCs()
-    local t={}
-    for _,room in ipairs(workspace.Storages:GetChildren()) do
-        local npcFolder = room:FindFirstChild("Contents") and room.Contents:FindFirstChild("NPC")
-        if npcFolder then
-            for _,npc in ipairs(npcFolder:GetChildren()) do
-                table.insert(t,npc)
-            end
-        end
-    end
-    return t
-end
-
-local function buyFromNPC(npc,npcName,item)
-    isBuying=true
-    bought[npc]=bought[npc] or {}
-    if bought[npc][item] then isBuying=false return end
-
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local hrp = char:WaitForChild("HumanoidRootPart")
-    hrp.CFrame = npc:GetPivot() * CFrame.new(0,-10,0)
-
-    local t=os.clock()
-    while os.clock()-t<1 do
-        Remote:FireServer("BuyItem",{item,npcName,npc})
-        task.wait()
-    end
-
-    bought[npc][item]=true
-    isBuying=false
-end
-
-task.spawn(function()
-    while task.wait(0.5) do
-        if isBuying then continue end
-        for key,v in pairs(autoBuy) do
-            if v then
-                for _,npc in ipairs(getAllNPCs()) do
-                    local items = NPC_ORDER[npc.Name]
-                    if items then
-                        for _,item in ipairs(items) do
-                            if key == npc.Name..item then
-                                buyFromNPC(npc,npc.Name,item)
+        if autoStorage and not isBuying and not isSelling then
+            if activeStorage then
+                if not isStorageValid(activeStorage) then
+                    activeStorage = nil
+                else
+                    local success = processStorage(activeStorage)
+                    if success then
+                        activeStorage = nil
+                    end
+                end
+            else
+                local storages = workspace.Storages:GetChildren()
+                local best, bestDist = nil, math.huge
+                for _, v in ipairs(storages) do
+                    if isStorageValid(v) then
+                        local handle = v.Door.Handle
+                        local char = LocalPlayer.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            local hrp = char.HumanoidRootPart
+                            local d = (hrp.Position - handle.Position).Magnitude
+                            if d < bestDist then
+                                best, bestDist = v, d
                             end
                         end
+                    end
+                end
+                if best then
+                    activeStorage = best
+                    local success = processStorage(best)
+                    if success then
+                        activeStorage = nil
                     end
                 end
             end
@@ -313,57 +279,265 @@ task.spawn(function()
     end
 end)
 
+task.spawn(function()
+    while task.wait() do
+        if autoBasement and not isBuying and not isSelling then
+            if activeBasement then
+                if not isStorageValid(activeBasement) then
+                    activeBasement = nil
+                else
+                    local success = processStorage(activeBasement)
+                    if success then
+                        activeBasement = nil
+                    end
+                end
+            else
+                local storages = workspace.BasementStorages:GetChildren()
+                local best, bestDist = nil, math.huge
+                for _, v in ipairs(storages) do
+                    if isStorageValid(v) then
+                        local handle = v.Door.Handle
+                        local char = LocalPlayer.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            local hrp = char.HumanoidRootPart
+                            local d = (hrp.Position - handle.Position).Magnitude
+                            if d < bestDist then
+                                best, bestDist = v, d
+                            end
+                        end
+                    end
+                end
+                if best then
+                    activeBasement = best
+                    local success = processStorage(best)
+                    if success then
+                        activeBasement = nil
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ===== AUTOBUY ===== --
+local NPC_DIALOGUES = {
+    ["Agent 3"] = {"Why?", "Buy Grenades"},
+    ["Coleman"] = {"Yes!"},
+    ["Fighter Dave"] = {"What you got?"},
+    ["Gunner Jayce"] = {"Let me see."},
+    ["Priest Jonathan"] = {"Yes!"},
+    ["Teuchi"] = {"Sure!"},
+    ["The Leader"] = {"Any tips?", "Trade?"}
+}
+
+local NPC_NAME_ORDER = {
+    "Agent 3","Coleman","Fighter Dave",
+    "Gunner Jayce","Priest Jonathan","Teuchi","The Leader"
+}
+
+local NPC_ORDER = {
+    ["Agent 3"] = {"Grenade", "EMP Grenade", "Crowbar"},
+    ["Coleman"] = {"The Stuff"},
+    ["Fighter Dave"] = {"Knife", "Baseball Bat", "Katana", "Fire Axe"},
+    ["Gunner Jayce"] = {"Revolver", "AK47", "SMG", "Light Ammo", "Medium Ammo", "Light Ammo Pack", "Medium Ammo Pack", "Armor Pad"},
+    ["Priest Jonathan"] = {"Health Blessing", "Speed Blessing", "Defense Blessing", "Super Human Blessing"},
+    ["Teuchi"] = {"Ramen"},
+    ["The Leader"] = {"Shotgun Ammo", "Shotgun Ammo Pack", "Armor Pad", "Grenade", "Bear Trap"}
+}
+
+local autoBuySelections = {}
+local autoBuyNPCEnabled = {}
+local npcMaxedItems = {}
+
+local function getAllNPCs()
+    local t = {}
+    for _, room in ipairs(workspace.Storages:GetChildren()) do
+        local npcFolder = room:FindFirstChild("Contents") and room.Contents:FindFirstChild("NPC")
+        if npcFolder then
+            for _, npc in ipairs(npcFolder:GetChildren()) do
+                table.insert(t, npc)
+            end
+        end
+    end
+    return t
+end
+
 local AutoBuyGroup = Tabs.Autofarm:AddRightGroupbox("Autobuy","shopping-cart")
 
-for _,npcName in ipairs(NPC_NAME_ORDER) do
+for _, npcName in ipairs(NPC_NAME_ORDER) do
     AutoBuyGroup:AddLabel(npcName)
-    for _,item in ipairs(NPC_ORDER[npcName]) do
-        AutoBuyGroup:AddToggle(npcName..item,{
-            Text=item,
-            Default=false,
-            Callback=function(v)
-                autoBuy[npcName..item]=v
-            end
-        })
+    local items = NPC_ORDER[npcName]
+
+    local dropdownValues = {"None"}
+    for _, v in ipairs(items) do
+        table.insert(dropdownValues, v)
     end
+
+    local dropdown = AutoBuyGroup:AddDropdown(npcName.."_Items", {
+        Text = "Select Items",
+        Values = dropdownValues,
+        Multi = true,
+        Default = {},
+        Searchable = true,
+        Callback = function(selection)
+            if selection["None"] then
+                Options[npcName.."_Items"]:SetValue({})
+                return
+            end
+            local chosen = {}
+            for k, v in pairs(selection) do
+                if type(k) == "string" and k ~= "None" and table.find(items, k) then
+                    chosen[k] = true
+                elseif type(v) == "string" and v ~= "None" and table.find(items, v) then
+                    chosen[v] = true
+                end
+            end
+            autoBuySelections[npcName] = chosen
+        end
+    })
+
+    AutoBuyGroup:AddToggle("Enable_" .. npcName, {
+        Text = "Enable Auto Buy",
+        Default = false,
+        Callback = function(v)
+            autoBuyNPCEnabled[npcName] = v
+        end
+    })
+    AutoBuyGroup:AddDivider()
 end
+
+task.spawn(function()
+    while task.wait(0.5) do
+        for npc, _ in pairs(npcMaxedItems) do
+            if not npc or not npc.Parent then
+                npcMaxedItems[npc] = nil
+            end
+        end
+
+        local anyEnabled = false
+        for _, v in pairs(autoBuyNPCEnabled) do if v then anyEnabled = true break end end
+        if not anyEnabled then
+            isBuying = false
+            continue
+        end
+
+        isBuying = true
+
+        local noclipWasOn = Toggles.Noclip.Value
+        if not noclipWasOn then Toggles.Noclip:SetValue(true) end
+
+        local npcs = getAllNPCs()
+        for _, npc in ipairs(npcs) do
+            if not npc or not npc.Parent then continue end
+            local npcName = npc.Name
+            if not autoBuyNPCEnabled[npcName] then continue end
+
+            local selected = autoBuySelections[npcName]
+            if not selected or next(selected) == nil then continue end
+
+            local dialogues = NPC_DIALOGUES[npcName]
+            local Event = game:GetService("ReplicatedStorage").Remotes.RemoteEvent
+
+            for item, _ in pairs(selected) do
+                if npcMaxedItems[npc] and npcMaxedItems[npc][item] then continue end
+
+                for _, pp in ipairs(npc:GetDescendants()) do
+                    if pp:IsA("ProximityPrompt") then
+                        fireproximityprompt(pp)
+                    end
+                end
+                if dialogues then
+                    for _, d in ipairs(dialogues) do
+                        Event:FireServer("DialogueChoice", d)
+                    end
+                end
+
+                local limitFolder = npc:FindFirstChild("Limit")
+                local limitVal = limitFolder and limitFolder:FindFirstChild(item)
+                local oldVal = limitVal and limitVal.Value
+
+                local start = os.clock()
+                while (os.clock() - start) < 3 do
+                    local char = LocalPlayer.Character
+                    if not char or not char:FindFirstChild("HumanoidRootPart")
+                        or not char:FindFirstChildOfClass("Humanoid")
+                        or char:FindFirstChildOfClass("Humanoid").Health <= 0 then
+                        LocalPlayer.CharacterAdded:Wait()
+                        char = LocalPlayer.Character
+                    end
+
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp and npc and npc.Parent then
+                        hrp.CFrame = npc:GetPivot() * CFrame.new(0, -5, 0)
+                    end
+
+                    Event:FireServer("BuyItem", {item, npcName, npc})
+                    task.wait(0.05)
+                end
+
+                limitVal = limitFolder and limitFolder:FindFirstChild(item)
+                if limitVal and oldVal and limitVal.Value <= oldVal then
+                    if not npcMaxedItems[npc] then npcMaxedItems[npc] = {} end
+                    npcMaxedItems[npc][item] = true
+                elseif not limitVal then
+                    if not npcMaxedItems[npc] then npcMaxedItems[npc] = {} end
+                    npcMaxedItems[npc][item] = true
+                end
+            end
+        end
+
+        if not noclipWasOn then Toggles.Noclip:SetValue(false) end
+        isBuying = false
+    end
+end)
 
 -- ===== SELL TAB ===== --
 local SellGroup = Tabs.Sell:AddLeftGroupbox("AutoSell","dollar-sign")
 
 local sellToolNames = {
-    "Mysterious Man Painting", "Last Supper Painting", "Revolver", "AK47", "Katana", "Shotgun", "Sledgehammer", "Knife",
-    "Water Bottle", "Empty Bottle", "Flashlight", "Gas Can", "Living Eye", "Baby Venus Guytrap", "Cartoon Painting",
-    "Christ Painting", "Dark Anime Painting", "Pain Painting", "The Stuff", "Baseball Bat", "SMG", "Radio", "Fire Axe",
-    "Claymore", "Frying Pan", "Dark Scythe", "Double Barrel Shotgun", "LMG", "Turret", "EMP Grenade", "Pickaxe",
-    "Grenade", "Crowbar", "Pumpkin Key", "Bear Trap", "Flamethrower", "Chaos Potion", "Failed Potion", "Harpoon Gun",
-    "False Trident", "Basic Rod", "Trout", "Amberjack", "Salmon", "Shrimp", "Bluefin Tuna", "Yellowfin Tuna",
-    "Pufferfish", "Crystal Fish", "Fish Chunk", "Metal Pipe", "Worm", "Scythe", "Chainsaw", "Deagle", "Hallow's Scythe",
-    "Hallow's Saw", "Portable Safe", "Medium Ammo Pack", "Shotgun Ammo Pack", "Light Ammo Pack", "Medium Ammo",
-    "Shotgun Ammo", "Light Ammo", "Apple", "Banana", "Canned Peaches", "Canned Chicken", "Armor Pad", "Gold Bar",
-    "Diamond", "Blue Book", "Brown Book", "Black Book", "Purple Book", "Red Book", "Green Book", "Yellow Book",
-    "White Book", "Pink Book", "Pepper Spray", "Ancient Knife", "Components", "Mug", "Skeleton Key", "Health Blessing",
-    "Speed Blessing", "Defense Blessing", "Super Human Blessing", "Prangles", "Green Key", "Agent 1 Key", "Screwdriver",
-    "Wrench", "Golden Skull", "King's Crown", "Holy Cross", "Ramen", "Red Key", "Gold Ore", "Silver Ore", "Iron Ore",
-    "Coal Ore", "Diamond Ore", "Bronze Ore", "Chocolate Bar", "Burger", "Fried Chicken", "Milk", "Storage Flakes",
-    "Waffles", "Soda", "Speed Juice", "Pizza", "Medkit", "Hatch Event Radar", "Sea Urchin", "Silver Bar", "Wallet"
+    "AK47","Agent 1 Key","Amberjack","Ancient Knife","Apple","Armor Pad","Baby Venus Guytrap","Banana",
+    "Baseball Bat","Basic Rod","Bear Trap","Black Book","Blue Book","Bluefin Tuna","Bronze Ore","Brown Book",
+    "Burger","Canned Chicken","Canned Peaches","Cartoon Painting","Chainsaw","Chaos Potion","Chocolate Bar",
+    "Christ Painting","Claymore","Coal Ore","Components","Crowbar","Crystal Fish","Dark Anime Painting",
+    "Dark Scythe","Deagle","Defense Blessing","Diamond","Diamond Ore","Double Barrel Shotgun","EMP Grenade",
+    "Empty Bottle","Failed Potion","False Trident","Fire Axe","Fish Chunk","Flamethrower","Flashlight",
+    "Fried Chicken","Frying Pan","Gas Can","Gold Bar","Gold Ore","Golden Skull","Green Book","Green Key",
+    "Grenade","Grenade Launcher","Hallow's Saw","Hallow's Scythe","Harpoon Gun","Hatch Event Radar",
+    "Health Blessing","Holy Cross","Iron Ore","Katana","King's Crown","Knife","LMG","Last Supper Painting",
+    "Light Ammo","Light Ammo Pack","Living Eye","Medium Ammo","Medium Ammo Pack","Medkit","Megalodon Tooth",
+    "Metal Pipe","Milk","Mug","Mysterious Man Painting","Pain Painting","Pepper Spray","Pickaxe","Pink Book",
+    "Pizza","Portable Safe","Prangles","Pufferfish","Pumpkin Key","Purple Book","Radio","Ramen","Red Book",
+    "Red Key","Revolver","SMG","Salmon","Screwdriver","Scythe","Sea Urchin","Shark Tooth","Shotgun",
+    "Shotgun Ammo","Shotgun Ammo Pack","Shrimp","Silver Bar","Silver Ore","Skeleton Key","Sledgehammer",
+    "Soda","Speed Blessing","Speed Juice","Storage Flakes","Super Human Blessing","The Stuff","Trout",
+    "Turret","Waffles","Wallet","Water Bottle","White Book","Worm","Wrench","Yellow Book","Yellowfin Tuna"
 }
 table.sort(sellToolNames, function(a, b) return a:lower() < b:lower() end)
+
+local sellDropdownValues = {"None"}
+for _, v in ipairs(sellToolNames) do
+    table.insert(sellDropdownValues, v)
+end
 
 local excludedItems = {}
 local excludeDropdown = SellGroup:AddDropdown("ExcludedItems", {
     Text = "Exclude Item",
-    Values = sellToolNames,
+    Values = sellDropdownValues,
     Multi = true,
     Default = {},
+    Searchable = true,
     Callback = function(selection)
+        if selection["None"] then
+            Options.ExcludedItems:SetValue({})
+            return
+        end
         local new = {}
         for key, val in pairs(selection) do
-            if type(key) == "string" then
+            if type(key) == "string" and key ~= "None" then
                 new[key] = true
             elseif type(key) == "Instance" and key.Name then
                 new[key.Name] = true
-            elseif type(val) == "string" then
+            elseif type(val) == "string" and val ~= "None" then
                 new[val] = true
             end
         end
@@ -397,6 +571,36 @@ SellGroup:AddToggle("AutoSellAll", {
     Callback = function(v) autoSellAll = v end
 })
 
+local safePositions = {
+    Vector3.new(-666, 25, 0),
+    Vector3.new(666, 25, 0)
+}
+
+local function getClosestSafePos()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local closest, closestDist = nil, math.huge
+    for _, pos in ipairs(safePositions) do
+        local dist = (hrp.Position - pos).Magnitude
+        if dist < closestDist then
+            closest, closestDist = pos, dist
+        end
+    end
+    return closest
+end
+
+local function teleportToClosestSafePos()
+    local pos = getClosestSafePos()
+    if not pos then return false end
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    hrp.CFrame = CFrame.new(pos)
+    return true
+end
+
 local function getInventoryItemNames()
     local items = {}
     local backpack = LocalPlayer.Backpack
@@ -418,47 +622,62 @@ local function getInventoryItemNames()
     return items
 end
 
-local function sellItemsBatch(itemNames, npc)
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local startPos = hrp and hrp.CFrame or nil
-
-    if hrp then
-        hrp.CFrame = npc:GetPivot() + Vector3.new(0, 5, 0)
-        task.wait(0.1)
-    end
-
-    local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("RemoteEvent")
-    for itemName, _ in pairs(itemNames) do
-        remote:FireServer("SellItem", itemName, npc)
-        task.wait(0.05)
-    end
-
-    if startPos and hrp then
-        hrp.CFrame = startPos
-    end
-end
-
 task.spawn(function()
     while true do
         if autoSellAll then
+            isSelling = true
+            local noclipWasOn = Toggles.Noclip.Value
+            if not noclipWasOn then Toggles.Noclip:SetValue(true) end
+
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local startPos = hrp and hrp.CFrame
+
+            teleportToClosestSafePos()
             local npc = workspace:FindFirstChild("NPC") and workspace.NPC:FindFirstChild("Storage Collector")
             if npc then
-                local items = getInventoryItemNames()
-                sellItemsBatch(items, npc)
+                local Event = game:GetService("ReplicatedStorage").Remotes.RemoteEvent
+                local start = os.clock()
+                while (os.clock() - start) < 1 do
+                    local char = LocalPlayer.Character
+                    if not char or not char:FindFirstChild("HumanoidRootPart")
+                        or not char:FindFirstChildOfClass("Humanoid")
+                        or char:FindFirstChildOfClass("Humanoid").Health <= 0 then
+                        LocalPlayer.CharacterAdded:Wait()
+                    end
+                    char = LocalPlayer.Character
+                    if char and char:FindFirstChild("HumanoidRootPart") and npc and npc.Parent then
+                        char.HumanoidRootPart.CFrame = npc:GetPivot() * CFrame.new(0, -5, 0)
+                    end
+                    Event:FireServer("SellAllItems", npc, {})
+                    task.wait(0.05)
+                end
             end
-        end
-        if not autoSellAll then
-            task.wait(0.1)
+
+            if startPos and hrp then
+                hrp.CFrame = startPos
+            end
+            if not noclipWasOn then Toggles.Noclip:SetValue(false) end
+            isSelling = false
         else
-            task.wait(sellDelay)
+            isSelling = false
         end
+        task.wait(autoSellAll and sellDelay or 0.1)
     end
 end)
 
 task.spawn(function()
     while true do
         if autoSellExclude then
+            isSelling = true
+            local noclipWasOn = Toggles.Noclip.Value
+            if not noclipWasOn then Toggles.Noclip:SetValue(true) end
+
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local startPos = hrp and hrp.CFrame
+
+            teleportToClosestSafePos()
             local npc = workspace:FindFirstChild("NPC") and workspace.NPC:FindFirstChild("Storage Collector")
             if npc then
                 local allItems = getInventoryItemNames()
@@ -468,14 +687,35 @@ task.spawn(function()
                         itemsToSell[itemName] = true
                     end
                 end
-                sellItemsBatch(itemsToSell, npc)
+                local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("RemoteEvent")
+                local start = os.clock()
+                while (os.clock() - start) < 3 do
+                    local char = LocalPlayer.Character
+                    if not char or not char:FindFirstChild("HumanoidRootPart")
+                        or not char:FindFirstChildOfClass("Humanoid")
+                        or char:FindFirstChildOfClass("Humanoid").Health <= 0 then
+                        LocalPlayer.CharacterAdded:Wait()
+                    end
+                    char = LocalPlayer.Character
+                    if char and char:FindFirstChild("HumanoidRootPart") and npc and npc.Parent then
+                        char.HumanoidRootPart.CFrame = npc:GetPivot() * CFrame.new(0, -5, 0)
+                    end
+                    for itemName, _ in pairs(itemsToSell) do
+                        remote:FireServer("SellItem", itemName, npc)
+                    end
+                    task.wait(0.05)
+                end
             end
-        end
-        if not autoSellExclude then
-            task.wait(0.1)
+
+            if startPos and hrp then
+                hrp.CFrame = startPos
+            end
+            if not noclipWasOn then Toggles.Noclip:SetValue(false) end
+            isSelling = false
         else
-            task.wait(sellDelay)
+            isSelling = false
         end
+        task.wait(autoSellExclude and sellDelay or 0.1)
     end
 end)
 
@@ -508,7 +748,7 @@ AimGroup:AddLabel("Aimlock Keybind"):AddKeyPicker("AimlockKey",{
 -- ===== FOV Size Input ===== --
 local gui,fovCircle,crossV,crossH
 local fovSize = 500
-local crossOffset = Vector2.new(0,0)
+local crossOffset = Vector2.new(0,-25)
 
 local fovInput = AimGroup:AddInput("FOVSize", {
     Text = "FOV Size",
@@ -631,10 +871,10 @@ local function createFOV()
         return f
     end
 
-    crossV = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,2,0,14))
-    crossH = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,14,0,2))
+    crossV = mk(gui,UDim2.new(0.5,0,0.5,-25),UDim2.new(0,2,0,14))
+    crossH = mk(gui,UDim2.new(0.5,0,0.5,-25),UDim2.new(0,14,0,2))
 
-    fovCircle = mk(gui,UDim2.new(0.5,0,0.5,0),UDim2.new(0,fovSize,0,fovSize))
+    fovCircle = mk(gui,UDim2.new(0.5,0,0.5,-25),UDim2.new(0,fovSize,0,fovSize))
     fovCircle.BackgroundTransparency=1
     Instance.new("UICorner",fovCircle).CornerRadius = UDim.new(1,0)
 
@@ -700,6 +940,24 @@ Toggles.EnableAimlock:OnChanged(function(v) task.spawn(function() toggleAim(v) e
 updateBtn()
 
 -- ===== aimlock loop ===== --
+local function offsetLookAt(camPos, targetPos)
+    local lookAt = CFrame.lookAt(camPos, targetPos)
+    local fovRad = math.rad(cam.FieldOfView)
+    local screenHeight = cam.ViewportSize.Y
+    local anglePerPixel = fovRad / screenHeight
+    local pitchOffset = 25 * anglePerPixel
+    return lookAt * CFrame.Angles(-pitchOffset, 0, 0)
+end
+
+local function getPredictedPos(part)
+    local vel = part.Velocity
+    return part.Position + Vector3.new(
+        vel.X * 0.25,
+        vel.Y * 0.025,
+        vel.Z * 0.25
+    )
+end
+
 task.spawn(function()
     while task.wait(0.03) do
         if not aimEnabled then continue end
@@ -714,9 +972,16 @@ task.spawn(function()
         local priorityTarget = nil
 
         local function isVisible(part)
-            local ray = Ray.new(camPos, (part.Position - camPos).Unit * (part.Position - camPos).Magnitude)
+            local dir = (part.Position - camPos).Unit
+            local dist = (part.Position - camPos).Magnitude
+            local ray = Ray.new(camPos, dir * dist)
             local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char}, false, true)
-            return hit and hit:IsDescendantOf(part.Parent)
+            if not hit then return false end
+            local character = part
+            while character and not character:IsA("Model") do
+                character = character.Parent
+            end
+            return character and hit:IsDescendantOf(character)
         end
 
         local function getAimPart(entity)
@@ -728,14 +993,15 @@ task.spawn(function()
 
         local function evaluateTarget(aimPart, isPlayer)
             if not aimPart then return nil, nil end
-            local screenPos, onScreen = cam:WorldToViewportPoint(aimPart.Position)
+            local predictedPos = getPredictedPos(aimPart)
+            local screenPos, onScreen = cam:WorldToViewportPoint(predictedPos)
             if not onScreen then return nil, nil end
-            local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+            local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2 - 25)
             local dx = screenPos.X - fPos.X
             local dy = screenPos.Y - fPos.Y
             local screenDist = math.sqrt(dx*dx + dy*dy)
             if screenDist <= fovSize/2 and isVisible(aimPart) then
-                return aimPart, screenDist
+                return aimPart, screenDist, predictedPos
             end
             return nil, nil
         end
@@ -748,9 +1014,9 @@ task.spawn(function()
                 if not hasShield then
                     local aimPart = getAimPart(character)
                     if aimPart then
-                        local _, dist = evaluateTarget(aimPart, true)
+                        local _, dist, predictedPos = evaluateTarget(aimPart, true)
                         if dist then
-                            priorityTarget = aimPart
+                            priorityTarget = predictedPos
                             bestDist = dist
                         end
                     end
@@ -759,7 +1025,7 @@ task.spawn(function()
         end
 
         if priorityTarget then
-            cam.CFrame = CFrame.lookAt(camPos, priorityTarget.Position)
+            cam.CFrame = offsetLookAt(camPos, priorityTarget)
             continue
         end
 
@@ -776,9 +1042,9 @@ task.spawn(function()
 
                 local aimPart = getAimPart(character)
                 if aimPart then
-                    local part, dist = evaluateTarget(aimPart, true)
-                    if part and dist < bestDist then
-                        bestTarget = part
+                    local _, dist, predictedPos = evaluateTarget(aimPart, true)
+                    if predictedPos and dist < bestDist then
+                        bestTarget = predictedPos
                         bestDist = dist
                     end
                 end
@@ -792,9 +1058,9 @@ task.spawn(function()
                     if humanoid and humanoid.Health > 0 then
                         local aimPart = getAimPart(mob)
                         if aimPart then
-                            local part, dist = evaluateTarget(aimPart, false)
-                            if part and dist < bestDist then
-                                bestTarget = part
+                            local _, dist, predictedPos = evaluateTarget(aimPart, false)
+                            if predictedPos and dist < bestDist then
+                                bestTarget = predictedPos
                                 bestDist = dist
                             end
                         end
@@ -804,7 +1070,7 @@ task.spawn(function()
         end
 
         if bestTarget then
-            cam.CFrame = CFrame.lookAt(camPos, bestTarget.Position)
+            cam.CFrame = offsetLookAt(camPos, bestTarget)
         end
     end
 end)
@@ -860,319 +1126,797 @@ task.spawn(function()
     end
 end)
 
+-- ===== esp ===== --
+local COREGUI = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+
+local function round(num, numDecimalPlaces)
+    local mult = 10 ^ (numDecimalPlaces or 0)
+    return math.floor(num * mult + 0.5) / mult
+end
+
+local function getRoot(character)
+    return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("Head")
+end
+
+local espPlayersEnabled = false
+local espMobsEnabled = false
+
+local ESPGroup = Tabs.Main:AddRightGroupbox("ESP", "eye")
+ESPGroup:AddToggle("ESPPlayers", {Text = "Players ESP", Default = false, Saved = false, Callback = function(v) espPlayersEnabled = v end})
+ESPGroup:AddToggle("ESPMobs", {Text = "Mobs ESP", Default = false, Saved = false, Callback = function(v) espMobsEnabled = v end})
+
+local playerBillboards = {}
+local mobBillboards = {}
+
+local function createBillboard(parentPart, color)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Adornee = parentPart
+    billboard.Size = UDim2.new(0, 100, 0, 150)
+    billboard.StudsOffset = Vector3.new(0, 1, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = COREGUI
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.new(0, 0, 0, -50)
+    label.Size = UDim2.new(0, 100, 0, 100)
+    label.Font = Enum.Font.SourceSansSemibold
+    label.TextSize = 20
+    label.TextColor3 = color
+    label.TextStrokeTransparency = 0
+    label.TextYAlignment = Enum.TextYAlignment.Bottom
+    label.ZIndex = 10
+    label.Parent = billboard
+
+    return billboard, label
+end
+
+local function updatePlayerBillboards()
+    for plr, data in pairs(playerBillboards) do
+        if not plr.Parent or not plr.Character then
+            data.billboard:Destroy()
+            playerBillboards[plr] = nil
+        end
+    end
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local char = plr.Character
+        if not char then
+            if playerBillboards[plr] then
+                playerBillboards[plr].billboard:Destroy()
+                playerBillboards[plr] = nil
+            end
+            continue
+        end
+
+        local head = char:FindFirstChild("Head")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not head or not hum or hum.Health <= 0 then
+            if playerBillboards[plr] then
+                playerBillboards[plr].billboard:Destroy()
+                playerBillboards[plr] = nil
+            end
+            continue
+        end
+
+        if not playerBillboards[plr] then
+            local billboard, label = createBillboard(head, Color3.new(1, 1, 1))
+            playerBillboards[plr] = {billboard = billboard, label = label}
+        end
+
+        local data = playerBillboards[plr]
+        local dist = getRoot(LocalPlayer.Character) and getRoot(char) and math.floor((getRoot(LocalPlayer.Character).Position - getRoot(char).Position).Magnitude) or 0
+        local health = round(hum.Health, 1)
+        data.label.Text = "Name: " .. plr.Name .. " | Health: " .. health .. " | Studs: " .. dist
+        data.billboard.Adornee = head
+    end
+end
+
+local function updateMobBillboards()
+    for mob, data in pairs(mobBillboards) do
+        if not mob.Parent or not mob:FindFirstChildOfClass("Humanoid") or mob:FindFirstChildOfClass("Humanoid").Health <= 0 then
+            data.billboard:Destroy()
+            mobBillboards[mob] = nil
+        end
+    end
+
+    local mobsFolder = workspace:FindFirstChild("Mobs")
+    if mobsFolder then
+        for _, mob in ipairs(mobsFolder:GetChildren()) do
+            if not mob:IsA("Model") then continue end
+            local hum = mob:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+            local head = mob:FindFirstChild("Head") or mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChildWhichIsA("BasePart")
+            if not head then continue end
+
+            if not mobBillboards[mob] then
+                local billboard, label = createBillboard(head, Color3.new(1, 0, 0))
+                mobBillboards[mob] = {billboard = billboard, label = label}
+            end
+
+            local data = mobBillboards[mob]
+            local dist = getRoot(LocalPlayer.Character) and math.floor((getRoot(LocalPlayer.Character).Position - head.Position).Magnitude) or 0
+            local health = round(hum.Health, 1)
+            data.label.Text = "Name: " .. mob.Name .. " | Health: " .. health .. " | Studs: " .. dist
+            data.billboard.Adornee = head
+        end
+    end
+end
+
+local espLoop = nil
+local function startESPLoop()
+    if espLoop then return end
+    espLoop = RunService.RenderStepped:Connect(function()
+        if espPlayersEnabled then
+            updatePlayerBillboards()
+        else
+            for _, data in pairs(playerBillboards) do
+                data.billboard:Destroy()
+            end
+            table.clear(playerBillboards)
+        end
+
+        if espMobsEnabled then
+            updateMobBillboards()
+        else
+            for _, data in pairs(mobBillboards) do
+                data.billboard:Destroy()
+            end
+            table.clear(mobBillboards)
+        end
+    end)
+end
+
+local function stopESPLoop()
+    if espLoop then
+        espLoop:Disconnect()
+        espLoop = nil
+    end
+    for _, data in pairs(playerBillboards) do data.billboard:Destroy() end
+    table.clear(playerBillboards)
+    for _, data in pairs(mobBillboards) do data.billboard:Destroy() end
+    table.clear(mobBillboards)
+end
+
+Toggles.ESPPlayers:OnChanged(function(v)
+    if v then
+        startESPLoop()
+    else
+        if not espMobsEnabled then
+            stopESPLoop()
+        end
+    end
+end)
+
+Toggles.ESPMobs:OnChanged(function(v)
+    if v then
+        startESPLoop()
+    else
+        if not espPlayersEnabled then
+            stopESPLoop()
+        end
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+    if playerBillboards[plr] then
+        playerBillboards[plr].billboard:Destroy()
+        playerBillboards[plr] = nil
+    end
+end)
+
+startESPLoop()
+
+-- ===== misc ===== --
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+
+local MiscGroup = Tabs.Main:AddRightGroupbox("Misc","wrench")
+
+-- Instant Interact
+local instantInteractEnabled = false
+local instantInteractConnection
+
+MiscGroup:AddToggle("InstantInteract", {
+    Text = "Instant Interact",
+    Default = false,
+    Saved = false,
+    Callback = function(v)
+        instantInteractEnabled = v
+        if v then
+            if instantInteractConnection then instantInteractConnection:Disconnect() end
+            instantInteractConnection = workspace.DescendantAdded:Connect(function(desc)
+                if desc:IsA("ProximityPrompt") then
+                    desc.HoldDuration = 0
+                end
+            end)
+            for _, pp in ipairs(workspace:GetDescendants()) do
+                if pp:IsA("ProximityPrompt") then pp.HoldDuration = 0 end
+            end
+        else
+            if instantInteractConnection then
+                instantInteractConnection:Disconnect()
+                instantInteractConnection = nil
+            end
+        end
+    end
+})
+
+-- Full Bright
+local fullBrightEnabled = false
+local fullBrightLoop
+local savedBrightness, savedClockTime, savedFogEnd, savedGlobalShadows, savedOutdoorAmbient
+
+MiscGroup:AddToggle("FullBright", {
+    Text = "Full Bright",
+    Default = false,
+    Saved = false,
+    Callback = function(v)
+        fullBrightEnabled = v
+        if v then
+            savedBrightness = Lighting.Brightness
+            savedClockTime = Lighting.ClockTime
+            savedFogEnd = Lighting.FogEnd
+            savedGlobalShadows = Lighting.GlobalShadows
+            savedOutdoorAmbient = Lighting.OutdoorAmbient
+
+            if fullBrightLoop then fullBrightLoop:Disconnect() end
+            fullBrightLoop = RunService.RenderStepped:Connect(function()
+                Lighting.Brightness = 2
+                Lighting.ClockTime = 14
+                Lighting.FogEnd = 100000
+                Lighting.GlobalShadows = false
+                Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+            end)
+        else
+            if fullBrightLoop then
+                fullBrightLoop:Disconnect()
+                fullBrightLoop = nil
+            end
+            if savedBrightness then Lighting.Brightness = savedBrightness end
+            if savedClockTime then Lighting.ClockTime = savedClockTime end
+            if savedFogEnd then Lighting.FogEnd = savedFogEnd end
+            if savedGlobalShadows ~= nil then Lighting.GlobalShadows = savedGlobalShadows end
+            if savedOutdoorAmbient then Lighting.OutdoorAmbient = savedOutdoorAmbient end
+        end
+    end
+})
+
+-- No fog
+local noFogEnabled = false
+local noFogLoop
+local savedFogEndNoFog, savedFogStart, savedFogColor, savedAtmoDensity
+
+MiscGroup:AddToggle("NoFog", {
+    Text = "No Fog",
+    Default = false,
+    Saved = false,
+    Callback = function(v)
+        noFogEnabled = v
+        if v then
+            savedFogEndNoFog = Lighting.FogEnd
+            savedFogStart = Lighting.FogStart
+            savedFogColor = Lighting.FogColor
+            local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
+            savedAtmoDensity = atmo and atmo.Density
+
+            if noFogLoop then noFogLoop:Disconnect() end
+            noFogLoop = RunService.RenderStepped:Connect(function()
+                Lighting.FogEnd = 100000
+                local a = Lighting:FindFirstChildOfClass("Atmosphere")
+                if a then a.Density = 0 end
+            end)
+        else
+            if noFogLoop then
+                noFogLoop:Disconnect()
+                noFogLoop = nil
+            end
+            if savedFogEndNoFog then Lighting.FogEnd = savedFogEndNoFog end
+            if savedFogStart then Lighting.FogStart = savedFogStart end
+            if savedFogColor then Lighting.FogColor = savedFogColor end
+            local a = Lighting:FindFirstChildOfClass("Atmosphere")
+            if a and savedAtmoDensity then
+                a.Density = savedAtmoDensity
+            end
+        end
+    end
+})
+
+-- No Underwater Blur
+local noUnderwaterBlurEnabled = false
+local noUnderwaterBlurLoop
+
+MiscGroup:AddToggle("NoUnderwaterBlur", {
+    Text = "No Underwater Blur",
+    Default = false,
+    Saved = false,
+    Callback = function(v)
+        noUnderwaterBlurEnabled = v
+        if v then
+            if noUnderwaterBlurLoop then noUnderwaterBlurLoop:Disconnect() end
+            noUnderwaterBlurLoop = RunService.RenderStepped:Connect(function()
+                local blur = Lighting:FindFirstChild("UnderwaterBlur")
+                if blur then blur.Enabled = false end
+            end)
+        else
+            if noUnderwaterBlurLoop then
+                noUnderwaterBlurLoop:Disconnect()
+                noUnderwaterBlurLoop = nil
+            end
+            local blur = Lighting:FindFirstChild("UnderwaterBlur")
+            if blur then blur.Enabled = true end
+        end
+    end
+})
+
+-- No Underwater Filter
+local noUnderwaterFilterEnabled = false
+local noUnderwaterFilterLoop
+
+MiscGroup:AddToggle("NoUnderwaterFilter", {
+    Text = "No Underwater Filter",
+    Default = false,
+    Saved = false,
+    Callback = function(v)
+        noUnderwaterFilterEnabled = v
+        if v then
+            if noUnderwaterFilterLoop then noUnderwaterFilterLoop:Disconnect() end
+            noUnderwaterFilterLoop = RunService.RenderStepped:Connect(function()
+                local filter = Lighting:FindFirstChild("UnderwaterFilter")
+                if filter then filter.Enabled = false end
+            end)
+        else
+            if noUnderwaterFilterLoop then
+                noUnderwaterFilterLoop:Disconnect()
+                noUnderwaterFilterLoop = nil
+            end
+            local filter = Lighting:FindFirstChild("UnderwaterFilter")
+            if filter then filter.Enabled = true end
+        end
+    end
+})
+
 -- ===== BANK TAB ===== --
 local BankGroup = Tabs.Bank:AddLeftGroupbox("AutoStore","landmark")
 
 local toolNames = {
-"Mysterious Man Painting", "Last Supper Painting", "Revolver", "AK47", "Katana", "Shotgun", "Sledgehammer", "Knife",
-"Water Bottle", "Empty Bottle", "Flashlight", "Gas Can", "Living Eye", "Baby Venus Guytrap", "Cartoon Painting",
-"Christ Painting", "Dark Anime Painting", "Pain Painting", "The Stuff", "Baseball Bat", "SMG", "Radio", "Fire Axe",
-"Claymore", "Frying Pan", "Dark Scythe", "Double Barrel Shotgun", "LMG", "Turret", "EMP Grenade", "Pickaxe",
-"Grenade", "Crowbar", "Pumpkin Key", "Bear Trap", "Flamethrower", "Chaos Potion", "Failed Potion", "Harpoon Gun",
-"False Trident", "Basic Rod", "Trout", "Amberjack", "Salmon", "Shrimp", "Bluefin Tuna", "Yellowfin Tuna",
-"Pufferfish", "Crystal Fish", "Fish Chunk", "Metal Pipe", "Worm", "Scythe", "Chainsaw", "Deagle", "Hallow's Scythe",
-"Hallow's Saw", "Portable Safe", "Medium Ammo Pack", "Shotgun Ammo Pack", "Light Ammo Pack", "Medium Ammo",
-"Shotgun Ammo", "Light Ammo", "Apple", "Banana", "Canned Peaches", "Canned Chicken", "Armor Pad", "Gold Bar",
-"Diamond", "Blue Book", "Brown Book", "Black Book", "Purple Book", "Red Book", "Green Book", "Yellow Book",
-"White Book", "Pink Book", "Pepper Spray", "Ancient Knife", "Components", "Mug", "Skeleton Key", "Health Blessing",
-"Speed Blessing", "Defense Blessing", "Super Human Blessing", "Prangles", "Green Key", "Agent 1 Key", "Screwdriver",
-"Wrench", "Golden Skull", "King's Crown", "Holy Cross", "Ramen", "Red Key", "Gold Ore", "Silver Ore", "Iron Ore",
-"Coal Ore", "Diamond Ore", "Bronze Ore", "Chocolate Bar", "Burger", "Fried Chicken", "Milk", "Storage Flakes",
-"Waffles", "Soda", "Speed Juice", "Pizza", "Medkit", "Hatch Event Radar", "Sea Urchin", "Silver Bar", "Wallet"
+    "AK47","Agent 1 Key","Amberjack","Ancient Knife","Apple","Armor Pad","Baby Venus Guytrap","Banana",
+    "Baseball Bat","Basic Rod","Bear Trap","Black Book","Blue Book","Bluefin Tuna","Bronze Ore","Brown Book",
+    "Burger","Canned Chicken","Canned Peaches","Cartoon Painting","Chainsaw","Chaos Potion","Chocolate Bar",
+    "Christ Painting","Claymore","Coal Ore","Components","Crowbar","Crystal Fish","Dark Anime Painting",
+    "Dark Scythe","Deagle","Defense Blessing","Diamond","Diamond Ore","Double Barrel Shotgun","EMP Grenade",
+    "Empty Bottle","Failed Potion","False Trident","Fire Axe","Fish Chunk","Flamethrower","Flashlight",
+    "Fried Chicken","Frying Pan","Gas Can","Gold Bar","Gold Ore","Golden Skull","Green Book","Green Key",
+    "Grenade","Grenade Launcher","Hallow's Saw","Hallow's Scythe","Harpoon Gun","Hatch Event Radar",
+    "Health Blessing","Holy Cross","Iron Ore","Katana","King's Crown","Knife","LMG","Last Supper Painting",
+    "Light Ammo","Light Ammo Pack","Living Eye","Medium Ammo","Medium Ammo Pack","Medkit","Megalodon Tooth",
+    "Metal Pipe","Milk","Mug","Mysterious Man Painting","Pain Painting","Pepper Spray","Pickaxe","Pink Book",
+    "Pizza","Portable Safe","Prangles","Pufferfish","Pumpkin Key","Purple Book","Radio","Ramen","Red Book",
+    "Red Key","Revolver","SMG","Salmon","Screwdriver","Scythe","Sea Urchin","Shark Tooth","Shotgun",
+    "Shotgun Ammo","Shotgun Ammo Pack","Shrimp","Silver Bar","Silver Ore","Skeleton Key","Sledgehammer",
+    "Soda","Speed Blessing","Speed Juice","Storage Flakes","Super Human Blessing","The Stuff","Trout",
+    "Turret","Waffles","Wallet","Water Bottle","White Book","Worm","Wrench","Yellow Book","Yellowfin Tuna"
 }
 table.sort(toolNames, function(a, b) return a:lower() < b:lower() end)
 
+local bankDropdownValues = {"None"}
+for _, v in ipairs(toolNames) do
+    table.insert(bankDropdownValues, v)
+end
+
 local selectedTools = {}
 local toolsDropdown = BankGroup:AddDropdown("SelectedTools", {
-Text = "Select Items",
-Values = toolNames,
-Multi = true,
-Default = {},
-Callback = function(selection)
-selectedTools = {}
-for k, v in pairs(selection) do
-if type(k) == "string" then
-selectedTools[k] = true
-elseif type(v) == "string" then
-selectedTools[v] = true
-end
-end
-end
+    Text = "Select Items",
+    Values = bankDropdownValues,
+    Multi = true,
+    Default = {},
+    Searchable = true,
+    Callback = function(selection)
+        if selection["None"] then
+            Options.SelectedTools:SetValue({})
+            return
+        end
+        selectedTools = {}
+        for k, v in pairs(selection) do
+            if type(k) == "string" and k ~= "None" then
+                selectedTools[k] = true
+            elseif type(v) == "string" and v ~= "None" then
+                selectedTools[v] = true
+            end
+        end
+    end
 })
 
 local storeDelay = 5
 local delayInput = BankGroup:AddInput("StoreDelay", {
-Text = "Store Delay (sec)",
-Default = tostring(storeDelay),
-Numeric = true,
-Finished = true,
-Callback = function(v)
-local n = tonumber(v)
-if n and n > 0 then storeDelay = n end
-end
+    Text = "Store Delay (sec)",
+    Default = tostring(storeDelay),
+    Numeric = true,
+    Finished = true,
+    Callback = function(v)
+        local n = tonumber(v)
+        if n and n > 0 then storeDelay = n end
+    end
 })
 
 local autoStoreDelay = false
 BankGroup:AddToggle("AutoStoreDelay", {
-Text = "Auto Store (Delay)",
-Default = false,
-Callback = function(v) autoStoreDelay = v end
+    Text = "Auto Store (Delay)",
+    Default = false,
+    Callback = function(v) autoStoreDelay = v end
 })
 
 local autoStoreInventory = false
 BankGroup:AddToggle("AutoStoreInventory", {
-Text = "Auto Store (Inventory)",
-Default = false,
-Callback = function(v) autoStoreInventory = v end
+    Text = "Auto Store (Inventory)",
+    Default = false,
+    Callback = function(v) autoStoreInventory = v end
 })
 
 local function getMaxCapacity(toolName)
-if toolName == "Light Ammo" or toolName == "Medium Ammo" or toolName == "Shotgun Ammo" then
-return 5000
-end
-return 999
+    if toolName == "Light Ammo" or toolName == "Medium Ammo" or toolName == "Shotgun Ammo" then
+        return 5000
+    end
+    return 999
 end
 
 local function getOwnedSafe()
-local storages = workspace:FindFirstChild("Storages")
-if not storages then return nil end
-for _, storage in ipairs(storages:GetChildren()) do
-local owner = storage:GetAttribute("Owner")
-if owner == LocalPlayer.Name then
-local contents = storage:FindFirstChild("Contents")
-if contents then
-local objects = contents:FindFirstChild("Objects")
-if objects then
-local safe = objects:FindFirstChild("Safe")
-if safe then return safe end
-end
-end
-end
-end
-return nil
+    local storages = workspace:FindFirstChild("Storages")
+    if not storages then return nil end
+    for _, storage in ipairs(storages:GetChildren()) do
+        local owner = storage:GetAttribute("Owner")
+        if owner == LocalPlayer.Name then
+            local contents = storage:FindFirstChild("Contents")
+            if contents then
+                local objects = contents:FindFirstChild("Objects")
+                if objects then
+                    local safe = objects:FindFirstChild("Safe")
+                    if safe then return safe end
+                end
+            end
+        end
+    end
+    return nil
 end
 
 local function getBankSlots()
-local bankGui = LocalPlayer.PlayerGui:FindFirstChild("HUD")
-if not bankGui then return {} end
-local bank = bankGui:FindFirstChild("Bank")
-if not bank then return {} end
-local grid = bank:FindFirstChild("Grid")
-if not grid then return {} end
+    local bankGui = LocalPlayer.PlayerGui:FindFirstChild("HUD")
+    if not bankGui then return {} end
+    local bank = bankGui:FindFirstChild("Bank")
+    if not bank then return {} end
+    local grid = bank:FindFirstChild("Grid")
+    if not grid then return {} end
 
-local slots = {}  
-for _, child in ipairs(grid:GetChildren()) do  
-    local num = tonumber(child.Name)  
-    if num then  
-        slots[num] = child  
-    end  
-end  
-  
-local sorted = {}  
-for i = 1, #slots do  
-    if slots[i] then  
-        table.insert(sorted, {number = i, frame = slots[i]})  
-    end  
-end  
-return sorted
+    local slots = {}
+    for _, child in ipairs(grid:GetChildren()) do
+        local num = tonumber(child.Name)
+        if num then
+            slots[num] = child
+        end
+    end
 
+    local sorted = {}
+    for i = 1, #slots do
+        if slots[i] then
+            table.insert(sorted, {number = i, frame = slots[i]})
+        end
+    end
+    return sorted
 end
 
 local function getItemNameFromSlot(slotFrame)
-local label = slotFrame:FindFirstChild("ItemName")
-if not label then return nil end
-local text = label.Text
-if text == "NOTHING" or text == "" then return nil end
-local name = text:match("^([^%(]*)")
-if name then
-return name:gsub("%s+$", "")
-end
-return nil
+    local label = slotFrame:FindFirstChild("ItemName")
+    if not label then return nil end
+    local text = label.Text
+    if text == "NOTHING" or text == "" then return nil end
+    local name = text:match("^([^%(]*)")
+    if name then
+        return name:gsub("%s+$", "")
+    end
+    return nil
 end
 
 local function getItemQuantity(slotFrame)
-local label = slotFrame:FindFirstChild("ItemName")
-if not label then return 0 end
-local text = label.Text
-local startPos = text:find("%(")
-local endPos = text:find("%)")
-if startPos and endPos then
-local numStr = text:sub(startPos + 1, endPos - 1)
-numStr = numStr:gsub("^[xX]", "")
-return tonumber(numStr) or 0
-end
-return 0
+    local label = slotFrame:FindFirstChild("ItemName")
+    if not label then return 0 end
+    local text = label.Text
+    local startPos = text:find("%(")
+    local endPos = text:find("%)")
+    if startPos and endPos then
+        local numStr = text:sub(startPos + 1, endPos - 1)
+        numStr = numStr:gsub("^[xX]", "")
+        return tonumber(numStr) or 0
+    end
+    return 0
 end
 
 local function findToolInInventory(toolName)
-local backpack = LocalPlayer.Backpack
-local character = LocalPlayer.Character
+    local backpack = LocalPlayer.Backpack
+    local character = LocalPlayer.Character
 
-if backpack then  
-    for _, tool in ipairs(backpack:GetChildren()) do  
-        local name = tool.Name  
-        if name:find("%[x%d+%]") then  
-            name = name:match("^(.-)%s*%[x%d+%]")  
-        end  
-        if name == toolName then  
-            local qty = tool.Name:match("%[x(%d+)%]")  
-            return tool, qty and tonumber(qty) or 1  
-        end  
-    end  
-end  
-  
-if character then  
-    for _, tool in ipairs(character:GetChildren()) do  
-        if tool:IsA("Tool") then  
-            local name = tool.Name  
-            if name:find("%[x%d+%]") then  
-                name = name:match("^(.-)%s*%[x%d+%]")  
-            end  
-            if name == toolName then  
-                local qty = tool.Name:match("%[x(%d+)%]")  
-                return tool, qty and tonumber(qty) or 1  
-            end  
-        end  
-    end  
-end  
-  
-return nil, 0
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            local name = tool.Name
+            if name:find("%[x%d+%]") then
+                name = name:match("^(.-)%s*%[x%d+%]")
+            end
+            if name == toolName then
+                local qty = tool.Name:match("%[x(%d+)%]")
+                return tool, qty and tonumber(qty) or 1
+            end
+        end
+    end
 
+    if character then
+        for _, tool in ipairs(character:GetChildren()) do
+            if tool:IsA("Tool") then
+                local name = tool.Name
+                if name:find("%[x%d+%]") then
+                    name = name:match("^(.-)%s*%[x%d+%]")
+                end
+                if name == toolName then
+                    local qty = tool.Name:match("%[x(%d+)%]")
+                    return tool, qty and tonumber(qty) or 1
+                end
+            end
+        end
+    end
+
+    return nil, 0
 end
 
 local function storeUnit(slotNumber, amount, safe)
-local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("RemoteEvent")
-local args = {
-"StoreBank",
-tostring(slotNumber),
-tostring(amount),
-safe
-}
-remote:FireServer(unpack(args))
+    local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("RemoteEvent")
+    local args = {
+        "StoreBank",
+        tostring(slotNumber),
+        tostring(amount),
+        safe
+    }
+    remote:FireServer(unpack(args))
 end
+
 local function equipOnlyThisTool(tool)
-local char = LocalPlayer.Character
-local backpack = LocalPlayer.Backpack
-if not char or not backpack or not tool then return false end
+    local char = LocalPlayer.Character
+    local backpack = LocalPlayer.Backpack
+    if not char or not backpack or not tool then return false end
 
-local humanoid = char:FindFirstChildOfClass("Humanoid")  
-if humanoid then  
-    humanoid:UnequipTools()  
-end  
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid:UnequipTools()
+    end
 
-for _, obj in ipairs(char:GetChildren()) do  
-    if obj:IsA("Tool") and obj ~= tool then  
-        obj.Parent = backpack  
-    end  
-end  
+    for _, obj in ipairs(char:GetChildren()) do
+        if obj:IsA("Tool") and obj ~= tool then
+            obj.Parent = backpack
+        end
+    end
 
-if tool.Parent ~= char then  
-    tool.Parent = char  
-end  
+    if tool.Parent ~= char then
+        tool.Parent = char
+    end
 
-task.wait(0.1)  
-return true
-
+    task.wait(0.1)
+    return true
 end
 
 local function processTool(toolName, safe, slots)
-local tool, quantity = findToolInInventory(toolName)
-if not tool or quantity == 0 then return false end
+    local tool, quantity = findToolInInventory(toolName)
+    if not tool or quantity == 0 then return false end
 
-local maxCap = getMaxCapacity(toolName)  
-local targetSlot = nil  
-local availableRoom = 0  
-  
-for _, slot in ipairs(slots) do  
-    local item = getItemNameFromSlot(slot.frame)  
-    if item == toolName then  
-        local currentQty = getItemQuantity(slot.frame)  
-        local room = maxCap - currentQty  
-        if room > 0 and room > availableRoom then  
-            availableRoom = room  
-            targetSlot = slot  
-        end  
-    end  
-end  
-  
-if not targetSlot then  
-    for _, slot in ipairs(slots) do  
-        local item = getItemNameFromSlot(slot.frame)  
-        if item == nil then  
-            targetSlot = slot  
-            availableRoom = maxCap  
-            break  
-        end  
-    end  
-end  
-  
-if not targetSlot then  
-    Library:Notify("No space in bank for " .. toolName, 3)  
-    return false  
-end  
-  
-local storeAmount = math.min(quantity, availableRoom)  
-if storeAmount <= 0 then return false end  
-  
-local char = LocalPlayer.Character  
-local hrp = char and char:FindFirstChild("HumanoidRootPart")  
-local startPos = hrp and hrp.CFrame or nil  
-  
-if hrp and safe then  
-    local safePart = safe:FindFirstChildWhichIsA("BasePart") or safe  
-    hrp.CFrame = CFrame.new(safePart.Position) + Vector3.new(0, 3, 0)  
-    task.wait(0.5)  
-end  
-  
-equipOnlyThisTool(tool)  
-  
-storeUnit(targetSlot.number, storeAmount, safe)  
-task.wait(0.5)  
-  
-if startPos and hrp then  
-    hrp.CFrame = startPos  
-end  
-  
-Library:Notify("Stored " .. storeAmount .. "x " .. toolName, 1)  
-return true
+    local maxCap = getMaxCapacity(toolName)
+    local targetSlot = nil
+    local availableRoom = 0
 
+    for _, slot in ipairs(slots) do
+        local item = getItemNameFromSlot(slot.frame)
+        if item == toolName then
+            local currentQty = getItemQuantity(slot.frame)
+            local room = maxCap - currentQty
+            if room > 0 and room > availableRoom then
+                availableRoom = room
+                targetSlot = slot
+            end
+        end
+    end
+
+    if not targetSlot then
+        for _, slot in ipairs(slots) do
+            local item = getItemNameFromSlot(slot.frame)
+            if item == nil then
+                targetSlot = slot
+                availableRoom = maxCap
+                break
+            end
+        end
+    end
+
+    if not targetSlot then
+        Library:Notify("No space in bank for " .. toolName, 3)
+        return false
+    end
+
+    local storeAmount = math.min(quantity, availableRoom)
+    if storeAmount <= 0 then return false end
+
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local startPos = hrp and hrp.CFrame or nil
+
+    if hrp and safe then
+        local safePart = safe:FindFirstChildWhichIsA("BasePart") or safe
+        hrp.CFrame = CFrame.new(safePart.Position) + Vector3.new(0, 3, 0)
+        task.wait(0.5)
+    end
+
+    equipOnlyThisTool(tool)
+
+    storeUnit(targetSlot.number, storeAmount, safe)
+    task.wait(0.5)
+
+    if startPos and hrp then
+        hrp.CFrame = startPos
+    end
+
+    Library:Notify("Stored " .. storeAmount .. "x " .. toolName, 1)
+    return true
 end
 
 task.spawn(function()
-while true do
-if autoStoreDelay then
-local safe = getOwnedSafe()
-if safe then
-local slots = getBankSlots()
-if #slots > 0 then
-for toolName, _ in pairs(selectedTools) do
-if not autoStoreDelay then break end
-processTool(toolName, safe, slots)
-end
-end
-end
-end
-task.wait(storeDelay)
-end
+    while true do
+        if autoStoreDelay then
+            local safe = getOwnedSafe()
+            if safe then
+                local slots = getBankSlots()
+                if #slots > 0 then
+                    for toolName, _ in pairs(selectedTools) do
+                        if not autoStoreDelay then break end
+                        processTool(toolName, safe, slots)
+                    end
+                end
+            end
+        end
+        task.wait(storeDelay)
+    end
 end)
 
 task.spawn(function()
-while true do
-if autoStoreInventory then
-local safe = getOwnedSafe()
-if safe then
-local slots = getBankSlots()
-if #slots > 0 then
-for toolName, _ in pairs(selectedTools) do
-if not autoStoreInventory then break end
-processTool(toolName, safe, slots)
-end
-end
-end
-end
-task.wait(0.5)
-end
+    while true do
+        if autoStoreInventory then
+            local safe = getOwnedSafe()
+            if safe then
+                local slots = getBankSlots()
+                if #slots > 0 then
+                    for toolName, _ in pairs(selectedTools) do
+                        if not autoStoreInventory then break end
+                        processTool(toolName, safe, slots)
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
 end)
+
+-- ===== BLATANT TAB ===== --
+local BlatantGroup = Tabs.Blatant:AddLeftGroupbox("BLATANT","skull")
+BlatantGroup:AddLabel("THIS IS BLATANT CHEATING (OBVIOUS CHEAT) very risky.", true)
+
+local PlayerGroup = Tabs.Blatant:AddLeftGroupbox("Player","skull")
+
+local walkSpeedValue = 12
+local walkSpeedEnabled = false
+local walkSpeedSignal, walkSpeedCharAdded
+
+local function applyWalkSpeed(hum)
+    if hum then
+        hum.WalkSpeed = walkSpeedValue
+    end
+end
+
+local function disconnectWalkSpeed()
+    if walkSpeedSignal then
+        walkSpeedSignal:Disconnect()
+        walkSpeedSignal = nil
+    end
+    if walkSpeedCharAdded then
+        walkSpeedCharAdded:Disconnect()
+        walkSpeedCharAdded = nil
+    end
+end
+
+local function enableWalkSpeed()
+    disconnectWalkSpeed()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChild("Humanoid")
+        if hum then
+            applyWalkSpeed(hum)
+            walkSpeedSignal = hum:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+                applyWalkSpeed(hum)
+            end)
+        end
+    end
+    walkSpeedCharAdded = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        local hum = newChar:FindFirstChild("Humanoid") or newChar:WaitForChild("Humanoid", 5)
+        if hum then
+            applyWalkSpeed(hum)
+            walkSpeedSignal = hum:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+                applyWalkSpeed(hum)
+            end)
+        end
+    end)
+end
+
+PlayerGroup:AddSlider("WalkSpeed", {
+    Text = "WalkSpeed",
+    Default = 12,
+    Min = 0,
+    Max = 37,
+    Callback = function(v)
+        walkSpeedValue = v
+        if walkSpeedEnabled then
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+            if hum then
+                hum.WalkSpeed = v
+            end
+        end
+    end
+})
+
+PlayerGroup:AddToggle("ApplyWalkSpeed", {
+    Text = "Apply",
+    Default = false,
+    Saved = false,
+    Callback = function(v)
+        walkSpeedEnabled = v
+        if v then
+            enableWalkSpeed()
+        else
+            disconnectWalkSpeed()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+            if hum then
+                hum.WalkSpeed = 12
+            end
+        end
+    end
+})
+
+local noclipEnabled = false
+local noclipConnection
+
+PlayerGroup:AddToggle("Noclip", {
+    Text = "Noclip",
+    Default = false,
+    Saved = false,
+    Callback = function(v)
+        noclipEnabled = v
+        if v then
+            if noclipConnection then noclipConnection:Disconnect() end
+            noclipConnection = game:GetService("RunService").Stepped:Connect(function()
+                if not noclipEnabled then return end
+                local char = LocalPlayer.Character
+                if not char then return end
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+            end)
+        else
+            if noclipConnection then
+                noclipConnection:Disconnect()
+                noclipConnection = nil
+            end
+            local char = LocalPlayer.Character
+            if char then
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = true end
+                end
+            end
+        end
+    end
+})
 
 -- ===== ui settings ===== --
 local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
