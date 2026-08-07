@@ -18,6 +18,28 @@ local PScripts = {
     { hwid="7b6c7e23-034b-41aa-b5de-30b39f1f84f8", universeIds={170247232}, url="https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z%20Private%20bulletlite" },
 }
 
+-- ===== ONLY GAME ===== --
+local OnlyGame = ...
+if OnlyGame then
+    local found = false
+    for _, g in ipairs(Games) do
+        if g.name == OnlyGame then
+            found = true
+            if table.find(g.universeIds, UniverseId) then
+                Library:Notify('Loading "' .. g.name .. '"', 3)
+                loadstring(game:HttpGet(g.url))()
+            else
+                Library:Notify("Game not supported.", 3)
+            end
+            break
+        end
+    end
+    if not found then
+        Library:Notify("Game '" .. OnlyGame .. "' not found in list.", 3)
+    end
+    return
+end
+
 -- ===== hwid loader ===== --
 for _, script in ipairs(PScripts) do
     if hwid == script.hwid and table.find(script.universeIds, UniverseId) then
