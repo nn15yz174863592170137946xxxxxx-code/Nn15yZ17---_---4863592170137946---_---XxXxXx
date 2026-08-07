@@ -123,10 +123,12 @@ local Games = {
 
 }
 
--- ===== SPECIFIC GAME ===== --
-if _G.GameName then
+-- ===== ONLY GAME ===== --
+local OnlyGame = ...
+
+if OnlyGame then
     local found = false
-    local targetName = _G.GameName:lower()
+    local targetName = OnlyGame:lower()
     
     for _, g in ipairs(Games) do
         if g.name:lower() == targetName then
@@ -142,7 +144,7 @@ if _G.GameName then
     end
     
     if not found then
-        Library:Notify("Game '" .. _G.GameName .. "' not found in list.", 3)
+        Library:Notify("Game '" .. OnlyGame .. "' not found in list.", 3)
     end
     return
 end
