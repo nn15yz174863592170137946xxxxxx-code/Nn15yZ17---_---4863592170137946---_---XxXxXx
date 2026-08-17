@@ -10,6 +10,18 @@ setclipboard(invite)
 Library:Notify("Join Discord for Scripts!", 3)
 local UniverseId = game.GameId
 
+-- ===== kick condition ===== --
+local KickList = {
+    { universeIds = {8307114974, 7264587281}, reason = "This script is detected by AntiCheat, so don't use it 👍 - DON"}
+}
+
+for _, kick in ipairs(KickList) do
+    if table.find(kick.universeIds, UniverseId) then
+        game:GetService("Players").LocalPlayer:Kick(kick.reason)
+        return
+    end
+end
+
 -- ===== hwid check ===== --
 local hwid = game:GetService("RbxAnalyticsService"):GetClientId()
 
