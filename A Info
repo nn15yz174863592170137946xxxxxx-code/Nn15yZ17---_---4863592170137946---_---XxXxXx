@@ -1,0 +1,5 @@
+local InfoGroup = Tabs.Info:AddLeftGroupbox("Info","help")
+InfoGroup:AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/W2XWZKPMQY")
+    Library:Notify("Discord link copied!", 3)
+end
