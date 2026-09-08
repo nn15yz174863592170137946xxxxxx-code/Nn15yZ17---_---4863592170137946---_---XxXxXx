@@ -1,0 +1,95 @@
+-- ===== ESP MODULE ===== --
+loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'template"))()
+
+-- ===== UI SETUP FUNCTION ===== --
+return function(configs)
+    local createdESPs = {}
+
+    for _, cfg in ipairs(configs) do
+        local esp = ESP.new(Players, LocalPlayer, cam, cfg.Settings or {})
+
+        if cfg.TargetSources then
+            for _, src in ipairs(cfg.TargetSources) do
+                esp:AddTargetSource(src.Name, src.GetEntities, src.IsPlayer, src.Enabled or false)
+            end
+        end
+
+        local container
+        if cfg.TabboxName then
+            local tabbox = Tabs.ESP:FindFirstChild(cfg.TabboxName) or Tabs.ESP:AddLeftTabbox()
+            container = tabbox:AddTab(cfg.Name)
+        else
+            local side = cfg.Side or "Left"
+            if side == "Right" then
+                container = Tabs.ESP:AddRightGroupbox(cfg.GroupboxName or cfg.Name, cfg.Icon or "eye")
+            else
+                container = Tabs.ESP:AddLeftGroupbox(cfg.GroupboxName or cfg.Name, cfg.Icon or "eye")
+            end
+        end
+
+        local featureFlags = {Text = false, Box = false, Health = false, Skeleton = false}
+
+        local function updateMaster()
+            local anyOn = featureFlags.Text or featureFlags.Box or featureFlags.Health or featureFlags.Skeleton
+            esp:SetEnabled(anyOn)
+        end
+
+        container:AddToggle(cfg.Name .. "_Text", {
+            Text = "Text ESP",
+            Default = false,
+            Callback = function(v) featureFlags.Text = v; updateMaster() end
+        })
+
+        container:AddToggle(cfg.Name .. "_Box", {
+            Text = "Box ESP",
+            Default = false,
+            Callback = function(v) featureFlags.Box = v; updateMaster() end
+        })
+
+        container:AddToggle(cfg.Name .. "_Health", {
+            Text = "Health Bar",
+            Default = false,
+            Callback = function(v) featureFlags.Health = v; updateMaster() end
+        })
+
+        container:AddToggle(cfg.Name .. "_Skeleton", {
+            Text = "Skeleton",
+            Default = false,
+            Callback = function(v) featureFlags.Skeleton = v; updateMaster() end
+        })
+
+        container:AddDivider()
+
+        for srcName, src in pairs(esp.TargetSources) do
+            container:AddToggle(cfg.Name .. "_" .. srcName, {
+                Text = "Target: " .. srcName,
+                Default = false,
+                Callback = function(v) src.Enabled = v end
+            })
+        end
+
+        container:AddDivider()
+
+        container:AddSlider(cfg.Name .. "_MaxDist", {
+            Text = "Max Distance",
+            Default = 0, Min = 0, Max = 5000, Rounding = 0,
+            Callback = function(v) esp.MaxDistance = (v == 0 and nil or v) end
+        })
+
+        container:AddSlider(cfg.Name .. "_TextSize", {
+            Text = "Text Size",
+            Default = 20, Min = 10, Max = 30, Rounding = 0,
+            Callback = function(v) esp.TextSize = v end
+        })
+
+        container:AddToggle(cfg.Name .. "_Rainbow", {
+            Text = "Rainbow",
+            Default = false,
+            Callback = function(v) esp.RainbowEnabled = v end
+        })
+
+        createdESPs[cfg.Name] = esp
+    end
+
+    return createdESPs
+end
