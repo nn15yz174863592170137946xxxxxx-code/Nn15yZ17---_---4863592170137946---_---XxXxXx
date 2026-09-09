@@ -10,7 +10,7 @@ return function(configs)
 
         if cfg.TargetSources then
             for _, src in ipairs(cfg.TargetSources) do
-                esp:AddTargetSource(src.Name, src.GetEntities, src.IsPlayer, src.Enabled or false)
+                esp:AddTargetSource(src.Name, src.GetPath, src.IsPlayer, src.Enabled or false)
             end
         end
 
