@@ -1,5 +1,3 @@
--- loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/A%20ESP"))()
-
 -- ===== ESP UI SETUP ===== --
 getgenv().ESP = getgenv().ESP or loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'template"))()
 
@@ -10,6 +8,8 @@ return function(configs, side)
     local cam = getgenv().cam
     local ESP = getgenv().ESP
 
+    local FEATURES = getgenv().ESP_FEATURES or {}
+
     getgenv().ESP_INSTANCES = getgenv().ESP_INSTANCES or {}
     local createdESPs = getgenv().ESP_INSTANCES
 
@@ -19,50 +19,6 @@ return function(configs, side)
         tabbox = ESPTab:AddRightTabbox()
     else
         tabbox = ESPTab:AddLeftTabbox()
-    end
-
-    local DEFAULT_FEATURES = {
-        Text = true,
-        Box = true,
-        HealthBar = true,
-        Skeleton = true,
-        Performance = true,
-        TextColor = true,
-        TextSize = true,
-        TextTransparency = true,
-        ShowName = true,
-        ShowHealth = true,
-        ShowDistance = true,
-        TextStroke = true,
-        BoxColor = true,
-        BoxThickness = true,
-        BoxTransparency = true,
-        BoxFilled = true,
-        BoxFillTransparency = true,
-        HealthColor = true,
-        LowHealthColor = true,
-        HealthTransparency = true,
-        HealthBarWidth = true,
-        HealthBarPosition = true,
-        HealthBarOffset = true,
-        SkeletonColor = true,
-        SkeletonThickness = true,
-        SkeletonTransparency = true,
-        VisibleOnly = true,
-        Rainbow = true,
-        RainbowSpeed = true,
-        MaxDistance = true,
-        MaxEntities = true,
-        UpdateRate = true,
-    }
-
-    local function mergeFeatures(override)
-        local out = {}
-        for k, v in pairs(DEFAULT_FEATURES) do out[k] = v end
-        if override then
-            for k, v in pairs(override) do out[k] = v end
-        end
-        return out
     end
 
     for _, cfg in ipairs(configs) do
@@ -83,7 +39,6 @@ return function(configs, side)
             group = tabbox:AddTab(cfg.TabName or cfg.Name)
         end
 
-        local features = mergeFeatures(cfg.Features)
         local prefix = cfg.Name.."_"
 
         local featureFlags = {Text = false, Box = false, Health = false, Skeleton = false}
@@ -91,7 +46,7 @@ return function(configs, side)
             esp:SetEnabled(featureFlags.Text or featureFlags.Box or featureFlags.Health or featureFlags.Skeleton)
         end
 
-        if features.Text then
+        if FEATURES.Text then
             group:AddToggle(prefix.."Text", {Text = "Text ESP", Default = false, Callback = function(v)
                 featureFlags.Text = v
                 esp.TextESPEnabled = v
@@ -99,7 +54,7 @@ return function(configs, side)
             end})
         end
 
-        if features.Box then
+        if FEATURES.Box then
             group:AddToggle(prefix.."Box", {Text = "Box ESP", Default = false, Callback = function(v)
                 featureFlags.Box = v
                 esp.BoxESPEnabled = v
@@ -107,7 +62,7 @@ return function(configs, side)
             end})
         end
 
-        if features.HealthBar then
+        if FEATURES.HealthBar then
             group:AddToggle(prefix.."Health", {Text = "Health Bar", Default = false, Callback = function(v)
                 featureFlags.Health = v
                 esp.HealthBarESPEnabled = v
@@ -115,7 +70,7 @@ return function(configs, side)
             end})
         end
 
-        if features.Skeleton then
+        if FEATURES.Skeleton then
             group:AddToggle(prefix.."Skeleton", {Text = "Skeleton", Default = false, Callback = function(v)
                 featureFlags.Skeleton = v
                 esp.SkeletonESPEnabled = v
@@ -123,7 +78,9 @@ return function(configs, side)
             end})
         end
 
-        group:AddDivider()
+        if FEATURES.Text or FEATURES.Box or FEATURES.HealthBar or FEATURES.Skeleton then
+            group:AddDivider()
+        end
 
         for srcName, src in pairs(esp.TargetSources) do
             group:AddToggle(prefix..srcName, {
@@ -135,10 +92,10 @@ return function(configs, side)
 
         group:AddDivider()
 
-        if features.Performance then
+        if FEATURES.Performance then
             group:AddLabel("Performance")
 
-            if features.MaxDistance then
+            if FEATURES.MaxDistance then
                 group:AddInput(prefix.."MaxDist", {
                     Text = "Max Distance",
                     Default = esp.MaxDistance and tostring(esp.MaxDistance) or "",
@@ -152,7 +109,7 @@ return function(configs, side)
                 })
             end
 
-            if features.MaxEntities then
+            if FEATURES.MaxEntities then
                 group:AddSlider(prefix.."MaxEntities", {
                     Text = "Max Entities",
                     Default = esp.MaxEntities or 0,
@@ -161,7 +118,7 @@ return function(configs, side)
                 })
             end
 
-            if features.UpdateRate then
+            if FEATURES.UpdateRate then
                 group:AddSlider(prefix.."UpdateRate", {
                     Text = "Update Rate",
                     Default = esp.UpdateRate,
@@ -170,7 +127,7 @@ return function(configs, side)
                 })
             end
 
-            if features.VisibleOnly then
+            if FEATURES.VisibleOnly then
                 group:AddToggle(prefix.."VisibleOnly", {
                     Text = "Visible Only",
                     Default = esp.VisibleOnly,
@@ -178,7 +135,7 @@ return function(configs, side)
                 })
             end
 
-            if features.Rainbow then
+            if FEATURES.Rainbow then
                 group:AddToggle(prefix.."Rainbow", {
                     Text = "Rainbow",
                     Default = esp.RainbowEnabled,
@@ -194,7 +151,7 @@ return function(configs, side)
                 })
             end
 
-            if features.RainbowSpeed then
+            if FEATURES.RainbowSpeed then
                 group:AddInput(prefix.."RainbowSpeed", {
                     Text = "Rainbow Speed",
                     Default = tostring(esp.RainbowSpeed),
@@ -211,17 +168,17 @@ return function(configs, side)
             group:AddDivider()
         end
 
-        if features.TextColor or features.TextSize or features.TextTransparency or features.ShowName or features.ShowHealth or features.ShowDistance or features.TextStroke then
+        if FEATURES.TextColor or FEATURES.TextSize or FEATURES.TextTransparency or FEATURES.ShowName or FEATURES.ShowHealth or FEATURES.ShowDistance or FEATURES.TextStroke then
             group:AddLabel("Text ESP")
 
-            if features.TextColor then
+            if FEATURES.TextColor then
                 group:AddLabel("Text Color"):AddColorPicker(prefix.."TextColor", {
                     Default = esp.TextColor,
                     Callback = function(v) esp.TextColor = v; esp:UpdateTextESP() end
                 })
             end
 
-            if features.TextSize then
+            if FEATURES.TextSize then
                 group:AddSlider(prefix.."TextSize", {
                     Text = "Text Size",
                     Default = esp.TextSize,
@@ -230,7 +187,7 @@ return function(configs, side)
                 })
             end
 
-            if features.TextTransparency then
+            if FEATURES.TextTransparency then
                 group:AddSlider(prefix.."TextTransparency", {
                     Text = "Text Transparency",
                     Default = esp.TextTransparency,
@@ -239,7 +196,7 @@ return function(configs, side)
                 })
             end
 
-            if features.ShowName then
+            if FEATURES.ShowName then
                 group:AddToggle(prefix.."ShowName", {
                     Text = "Show Name",
                     Default = esp.ShowName,
@@ -247,7 +204,7 @@ return function(configs, side)
                 })
             end
 
-            if features.ShowHealth then
+            if FEATURES.ShowHealth then
                 group:AddToggle(prefix.."ShowHealth", {
                     Text = "Show Health",
                     Default = esp.ShowHealth,
@@ -255,7 +212,7 @@ return function(configs, side)
                 })
             end
 
-            if features.ShowDistance then
+            if FEATURES.ShowDistance then
                 group:AddToggle(prefix.."ShowDistance", {
                     Text = "Show Distance",
                     Default = esp.ShowDistance,
@@ -263,7 +220,7 @@ return function(configs, side)
                 })
             end
 
-            if features.TextStroke then
+            if FEATURES.TextStroke then
                 group:AddToggle(prefix.."TextStroke", {
                     Text = "Text Stroke",
                     Default = esp.TextStroke,
@@ -274,17 +231,17 @@ return function(configs, side)
             group:AddDivider()
         end
 
-        if features.BoxColor or features.BoxThickness or features.BoxTransparency or features.BoxFilled or features.BoxFillTransparency then
+        if FEATURES.BoxColor or FEATURES.BoxThickness or FEATURES.BoxTransparency or FEATURES.BoxFilled or FEATURES.BoxFillTransparency then
             group:AddLabel("Box ESP")
 
-            if features.BoxColor then
+            if FEATURES.BoxColor then
                 group:AddLabel("Box Color"):AddColorPicker(prefix.."BoxColor", {
                     Default = esp.BoxColor,
                     Callback = function(v) esp.BoxColor = v; esp:UpdateBoxESPConfig() end
                 })
             end
 
-            if features.BoxThickness then
+            if FEATURES.BoxThickness then
                 group:AddSlider(prefix.."BoxThickness", {
                     Text = "Box Thickness",
                     Default = esp.BoxThickness,
@@ -293,7 +250,7 @@ return function(configs, side)
                 })
             end
 
-            if features.BoxTransparency then
+            if FEATURES.BoxTransparency then
                 group:AddSlider(prefix.."BoxTransparency", {
                     Text = "Box Transparency",
                     Default = esp.BoxTransparency,
@@ -302,7 +259,7 @@ return function(configs, side)
                 })
             end
 
-            if features.BoxFilled then
+            if FEATURES.BoxFilled then
                 group:AddToggle(prefix.."BoxFilled", {
                     Text = "Box Filled",
                     Default = esp.BoxFilled,
@@ -310,7 +267,7 @@ return function(configs, side)
                 })
             end
 
-            if features.BoxFillTransparency then
+            if FEATURES.BoxFillTransparency then
                 group:AddSlider(prefix.."BoxFillTransparency", {
                     Text = "Box Fill Transparency",
                     Default = esp.BoxFillTransparency,
@@ -322,24 +279,24 @@ return function(configs, side)
             group:AddDivider()
         end
 
-        if features.HealthColor or features.LowHealthColor or features.HealthTransparency or features.HealthBarWidth or features.HealthBarPosition or features.HealthBarOffset then
+        if FEATURES.HealthColor or FEATURES.LowHealthColor or FEATURES.HealthTransparency or FEATURES.HealthBarWidth or FEATURES.HealthBarPosition or FEATURES.HealthBarOffset then
             group:AddLabel("Health Bar")
 
-            if features.HealthColor then
+            if FEATURES.HealthColor then
                 group:AddLabel("Health Color"):AddColorPicker(prefix.."HealthColor", {
                     Default = esp.HealthColor,
                     Callback = function(v) esp.HealthColor = v end
                 })
             end
 
-            if features.LowHealthColor then
+            if FEATURES.LowHealthColor then
                 group:AddLabel("Low Health Color"):AddColorPicker(prefix.."LowHealthColor", {
                     Default = esp.LowHealthColor,
                     Callback = function(v) esp.LowHealthColor = v end
                 })
             end
 
-            if features.HealthTransparency then
+            if FEATURES.HealthTransparency then
                 group:AddSlider(prefix.."HealthTransparency", {
                     Text = "Health Transparency",
                     Default = esp.HealthTransparency,
@@ -348,7 +305,7 @@ return function(configs, side)
                 })
             end
 
-            if features.HealthBarWidth then
+            if FEATURES.HealthBarWidth then
                 group:AddSlider(prefix.."HealthBarWidth", {
                     Text = "Health Bar Width",
                     Default = esp.HealthBarWidth,
@@ -357,7 +314,7 @@ return function(configs, side)
                 })
             end
 
-            if features.HealthBarPosition then
+            if FEATURES.HealthBarPosition then
                 group:AddDropdown(prefix.."HealthBarPosition", {
                     Text = "Health Bar Position",
                     Values = {"Left", "Right", "Top", "Bottom"},
@@ -366,7 +323,7 @@ return function(configs, side)
                 })
             end
 
-            if features.HealthBarOffset then
+            if FEATURES.HealthBarOffset then
                 group:AddSlider(prefix.."HealthBarOffset", {
                     Text = "Health Bar Offset",
                     Default = esp.HealthBarOffset,
@@ -378,17 +335,17 @@ return function(configs, side)
             group:AddDivider()
         end
 
-        if features.SkeletonColor or features.SkeletonThickness or features.SkeletonTransparency then
+        if FEATURES.SkeletonColor or FEATURES.SkeletonThickness or FEATURES.SkeletonTransparency then
             group:AddLabel("Skeleton ESP")
 
-            if features.SkeletonColor then
+            if FEATURES.SkeletonColor then
                 group:AddLabel("Skeleton Color"):AddColorPicker(prefix.."SkeletonColor", {
                     Default = esp.SkeletonColor,
                     Callback = function(v) esp.SkeletonColor = v; esp:UpdateSkeletonESPConfig() end
                 })
             end
 
-            if features.SkeletonThickness then
+            if FEATURES.SkeletonThickness then
                 group:AddSlider(prefix.."SkeletonThickness", {
                     Text = "Skeleton Thickness",
                     Default = esp.SkeletonThickness,
@@ -397,7 +354,7 @@ return function(configs, side)
                 })
             end
 
-            if features.SkeletonTransparency then
+            if FEATURES.SkeletonTransparency then
                 group:AddSlider(prefix.."SkeletonTransparency", {
                     Text = "Skeleton Transparency",
                     Default = esp.SkeletonTransparency,
