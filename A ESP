@@ -1,9 +1,47 @@
--- ===== ESP MODULE ===== --
-loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'template"))()
+-- ===== ESP UI SETUP ===== --
+getgenv().ESP = getgenv().ESP or loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'template"))()
 
--- ===== UI SETUP FUNCTION ===== --
-return function(configs)
-    local createdESPs = {}
+return function(configs, side)
+    getgenv().ESP_INSTANCES = getgenv().ESP_INSTANCES or {}
+    local createdESPs = getgenv().ESP_INSTANCES
+    local ESP = getgenv().ESP
+
+    local tabbox = (side == "Right" and Tabs.ESP:AddRightTabbox()) or Tabs.ESP:AddLeftTabbox()
+
+    local DEFAULT_FEATURES = {
+        Text = true,
+        Box = true,
+        HealthBar = true,
+        Skeleton = true,
+        Performance = true,
+        TextColor = true,
+        TextSize = true,
+        TextTransparency = true,
+        ShowName = true,
+        ShowHealth = true,
+        ShowDistance = true,
+        TextStroke = true,
+        BoxColor = true,
+        BoxThickness = true,
+        BoxTransparency = true,
+        BoxFilled = true,
+        BoxFillTransparency = true,
+        HealthColor = true,
+        LowHealthColor = true,
+        HealthTransparency = true,
+        HealthBarWidth = true,
+        HealthBarPosition = true,
+        HealthBarOffset = true,
+        SkeletonColor = true,
+        SkeletonThickness = true,
+        SkeletonTransparency = true,
+        VisibleOnly = true,
+        Rainbow = true,
+        RainbowSpeed = true,
+        MaxDistance = true,
+        MaxEntities = true,
+        UpdateRate = true,
+    }
 
     for _, cfg in ipairs(configs) do
         local esp = ESP.new(Players, LocalPlayer, cam, cfg.Settings or {})
@@ -14,79 +52,297 @@ return function(configs)
             end
         end
 
-        local container
-        if cfg.TabboxName then
-            local tabbox = Tabs.ESP:FindFirstChild(cfg.TabboxName) or Tabs.ESP:AddLeftTabbox()
-            container = tabbox:AddTab(cfg.Name)
-        else
-            local side = cfg.Side or "Left"
-            if side == "Right" then
-                container = Tabs.ESP:AddRightGroupbox(cfg.GroupboxName or cfg.Name, cfg.Icon or "eye")
-            else
-                container = Tabs.ESP:AddLeftGroupbox(cfg.GroupboxName or cfg.Name, cfg.Icon or "eye")
-            end
-        end
+        local group = tabbox:AddTab(cfg.TabName or cfg.Name)
+
+        local features = cfg.Features or DEFAULT_FEATURES
 
         local featureFlags = {Text = false, Box = false, Health = false, Skeleton = false}
-
         local function updateMaster()
             local anyOn = featureFlags.Text or featureFlags.Box or featureFlags.Health or featureFlags.Skeleton
             esp:SetEnabled(anyOn)
         end
 
-        container:AddToggle(cfg.Name .. "_Text", {
-            Text = "Text ESP",
-            Default = false,
-            Callback = function(v) featureFlags.Text = v; updateMaster() end
-        })
+        if features.Text then
+            group:AddToggle(cfg.Name.."_Text", {Text = "Text ESP", Default = false, Callback = function(v) featureFlags.Text = v; esp.TextESPEnabled = v; updateMaster() end})
+        end
+        if features.Box then
+            group:AddToggle(cfg.Name.."_Box", {Text = "Box ESP", Default = false, Callback = function(v) featureFlags.Box = v; esp.BoxESPEnabled = v; updateMaster() end})
+        end
+        if features.HealthBar then
+            group:AddToggle(cfg.Name.."_Health", {Text = "Health Bar", Default = false, Callback = function(v) featureFlags.Health = v; esp.HealthBarESPEnabled = v; updateMaster() end})
+        end
+        if features.Skeleton then
+            group:AddToggle(cfg.Name.."_Skeleton", {Text = "Skeleton", Default = false, Callback = function(v) featureFlags.Skeleton = v; esp.SkeletonESPEnabled = v; updateMaster() end})
+        end
 
-        container:AddToggle(cfg.Name .. "_Box", {
-            Text = "Box ESP",
-            Default = false,
-            Callback = function(v) featureFlags.Box = v; updateMaster() end
-        })
-
-        container:AddToggle(cfg.Name .. "_Health", {
-            Text = "Health Bar",
-            Default = false,
-            Callback = function(v) featureFlags.Health = v; updateMaster() end
-        })
-
-        container:AddToggle(cfg.Name .. "_Skeleton", {
-            Text = "Skeleton",
-            Default = false,
-            Callback = function(v) featureFlags.Skeleton = v; updateMaster() end
-        })
-
-        container:AddDivider()
+        group:AddDivider()
 
         for srcName, src in pairs(esp.TargetSources) do
-            container:AddToggle(cfg.Name .. "_" .. srcName, {
-                Text = "Target: " .. srcName,
-                Default = false,
+            group:AddToggle(cfg.Name.."_"..srcName, {
+                Text = "Target: "..srcName,
+                Default = src.Enabled or false,
                 Callback = function(v) src.Enabled = v end
             })
         end
 
-        container:AddDivider()
+        group:AddDivider()
 
-        container:AddSlider(cfg.Name .. "_MaxDist", {
-            Text = "Max Distance",
-            Default = 0, Min = 0, Max = 5000, Rounding = 0,
-            Callback = function(v) esp.MaxDistance = (v == 0 and nil or v) end
-        })
+        if features.Performance then
+            group:AddLabel("Performance")
 
-        container:AddSlider(cfg.Name .. "_TextSize", {
-            Text = "Text Size",
-            Default = 20, Min = 10, Max = 30, Rounding = 0,
-            Callback = function(v) esp.TextSize = v end
-        })
+            if features.MaxDistance then
+                group:AddInput(cfg.Name.."_MaxDist", {
+                    Text = "Max Distance",
+                    Default = esp.MaxDistance and tostring(esp.MaxDistance) or "",
+                    Numeric = true,
+                    Finished = true,
+                    Placeholder = "inf",
+                    Callback = function(v)
+                        local n = tonumber(v)
+                        esp.MaxDistance = (n and n > 0) and n or nil
+                    end
+                })
+            end
 
-        container:AddToggle(cfg.Name .. "_Rainbow", {
-            Text = "Rainbow",
-            Default = false,
-            Callback = function(v) esp.RainbowEnabled = v end
-        })
+            if features.MaxEntities then
+                group:AddSlider(cfg.Name.."_MaxEntities", {
+                    Text = "Max Entities",
+                    Default = esp.MaxEntities or 0,
+                    Min = 0, Max = 500, Rounding = 0,
+                    Callback = function(v)
+                        esp.MaxEntities = (v == 0) and nil or v
+                    end
+                })
+            end
+
+            if features.UpdateRate then
+                group:AddSlider(cfg.Name.."_UpdateRate", {
+                    Text = "Update Rate",
+                    Default = esp.UpdateRate,
+                    Min = 1, Max = 10, Rounding = 0,
+                    Callback = function(v) esp.UpdateRate = v end
+                })
+            end
+
+            if features.VisibleOnly then
+                group:AddToggle(cfg.Name.."_VisibleOnly", {
+                    Text = "Visible Only",
+                    Default = esp.VisibleOnly,
+                    Callback = function(v) esp.VisibleOnly = v end
+                })
+            end
+
+            if features.Rainbow then
+                group:AddToggle(cfg.Name.."_Rainbow", {
+                    Text = "Rainbow",
+                    Default = esp.RainbowEnabled,
+                    Callback = function(v)
+                        esp.RainbowEnabled = v
+                        if not v then
+                            esp.BoxColor = (cfg.Settings and cfg.Settings.BoxColor) or Color3.new(1,1,1)
+                            esp.SkeletonColor = (cfg.Settings and cfg.Settings.SkeletonColor) or Color3.new(1,1,1)
+                            esp:UpdateBoxESPConfig()
+                            esp:UpdateSkeletonESPConfig()
+                        end
+                    end
+                })
+            end
+
+            if features.RainbowSpeed then
+                group:AddInput(cfg.Name.."_RainbowSpeed", {
+                    Text = "Rainbow Speed",
+                    Default = tostring(esp.RainbowSpeed),
+                    Numeric = true,
+                    Finished = true,
+                    Placeholder = "1",
+                    Callback = function(v)
+                        local n = tonumber(v)
+                        if n then esp.RainbowSpeed = n end
+                    end
+                })
+            end
+
+            group:AddDivider()
+        end
+
+        if features.TextColor or features.TextSize or features.TextTransparency or features.ShowName or features.ShowHealth or features.ShowDistance or features.TextStroke then
+            group:AddLabel("Text ESP")
+
+            if features.TextColor then
+                group:AddLabel("Text Color"):AddColorPicker(cfg.Name.."_TextColor", {
+                    Default = esp.TextColor,
+                    Callback = function(v) esp.TextColor = v; esp:UpdateTextESP() end
+                })
+            end
+
+            if features.TextSize then
+                group:AddSlider(cfg.Name.."_TextSize", {
+                    Text = "Text Size",
+                    Default = esp.TextSize,
+                    Min = 8, Max = 40, Rounding = 0,
+                    Callback = function(v) esp.TextSize = v; esp:UpdateTextESP() end
+                })
+            end
+
+            if features.TextTransparency then
+                group:AddSlider(cfg.Name.."_TextTransparency", {
+                    Text = "Text Transparency",
+                    Default = esp.TextTransparency,
+                    Min = 0, Max = 1, Rounding = 1,
+                    Callback = function(v) esp.TextTransparency = v; esp:UpdateTextESP() end
+                })
+            end
+
+            if features.ShowName then
+                group:AddToggle(cfg.Name.."_ShowName", {Text = "Show Name", Default = esp.ShowName, Callback = function(v) esp.ShowName = v end})
+            end
+            if features.ShowHealth then
+                group:AddToggle(cfg.Name.."_ShowHealth", {Text = "Show Health", Default = esp.ShowHealth, Callback = function(v) esp.ShowHealth = v end})
+            end
+            if features.ShowDistance then
+                group:AddToggle(cfg.Name.."_ShowDistance", {Text = "Show Distance", Default = esp.ShowDistance, Callback = function(v) esp.ShowDistance = v end})
+            end
+            if features.TextStroke then
+                group:AddToggle(cfg.Name.."_TextStroke", {Text = "Text Stroke", Default = esp.TextStroke, Callback = function(v) esp.TextStroke = v; esp:UpdateTextESP() end})
+            end
+
+            group:AddDivider()
+        end
+
+        if features.BoxColor or features.BoxThickness or features.BoxTransparency or features.BoxFilled or features.BoxFillTransparency then
+            group:AddLabel("Box ESP")
+
+            if features.BoxColor then
+                group:AddLabel("Box Color"):AddColorPicker(cfg.Name.."_BoxColor", {
+                    Default = esp.BoxColor,
+                    Callback = function(v) esp.BoxColor = v; esp:UpdateBoxESPConfig() end
+                })
+            end
+
+            if features.BoxThickness then
+                group:AddSlider(cfg.Name.."_BoxThickness", {
+                    Text = "Box Thickness",
+                    Default = esp.BoxThickness,
+                    Min = 1, Max = 10, Rounding = 0,
+                    Callback = function(v) esp.BoxThickness = v; esp:UpdateBoxESPConfig() end
+                })
+            end
+
+            if features.BoxTransparency then
+                group:AddSlider(cfg.Name.."_BoxTransparency", {
+                    Text = "Box Transparency",
+                    Default = esp.BoxTransparency,
+                    Min = 0, Max = 1, Rounding = 1,
+                    Callback = function(v) esp.BoxTransparency = v; esp:UpdateBoxESPConfig() end
+                })
+            end
+
+            if features.BoxFilled then
+                group:AddToggle(cfg.Name.."_BoxFilled", {
+                    Text = "Box Filled",
+                    Default = esp.BoxFilled,
+                    Callback = function(v) esp.BoxFilled = v; esp:UpdateBoxESPConfig() end
+                })
+            end
+
+            if features.BoxFillTransparency then
+                group:AddSlider(cfg.Name.."_BoxFillTransparency", {
+                    Text = "Box Fill Transparency",
+                    Default = esp.BoxFillTransparency,
+                    Min = 0, Max = 1, Rounding = 1,
+                    Callback = function(v) esp.BoxFillTransparency = v; esp:UpdateBoxESPConfig() end
+                })
+            end
+
+            group:AddDivider()
+        end
+
+        if features.HealthColor or features.LowHealthColor or features.HealthTransparency or features.HealthBarWidth or features.HealthBarPosition or features.HealthBarOffset then
+            group:AddLabel("Health Bar")
+
+            if features.HealthColor then
+                group:AddLabel("Health Color"):AddColorPicker(cfg.Name.."_HealthColor", {
+                    Default = esp.HealthColor,
+                    Callback = function(v) esp.HealthColor = v end
+                })
+            end
+
+            if features.LowHealthColor then
+                group:AddLabel("Low Health Color"):AddColorPicker(cfg.Name.."_LowHealthColor", {
+                    Default = esp.LowHealthColor,
+                    Callback = function(v) esp.LowHealthColor = v end
+                })
+            end
+
+            if features.HealthTransparency then
+                group:AddSlider(cfg.Name.."_HealthTransparency", {
+                    Text = "Health Transparency",
+                    Default = esp.HealthTransparency,
+                    Min = 0, Max = 1, Rounding = 1,
+                    Callback = function(v) esp.HealthTransparency = v end
+                })
+            end
+
+            if features.HealthBarWidth then
+                group:AddSlider(cfg.Name.."_HealthBarWidth", {
+                    Text = "Health Bar Width",
+                    Default = esp.HealthBarWidth,
+                    Min = 1, Max = 20, Rounding = 0,
+                    Callback = function(v) esp.HealthBarWidth = v end
+                })
+            end
+
+            if features.HealthBarPosition then
+                group:AddDropdown(cfg.Name.."_HealthBarPosition", {
+                    Text = "Health Bar Position",
+                    Values = {"Left", "Right", "Top", "Bottom"},
+                    Default = esp.HealthBarPosition,
+                    Callback = function(v) esp.HealthBarPosition = v end
+                })
+            end
+
+            if features.HealthBarOffset then
+                group:AddSlider(cfg.Name.."_HealthBarOffset", {
+                    Text = "Health Bar Offset",
+                    Default = esp.HealthBarOffset,
+                    Min = 0, Max = 20, Rounding = 0,
+                    Callback = function(v) esp.HealthBarOffset = v end
+                })
+            end
+
+            group:AddDivider()
+        end
+
+        if features.SkeletonColor or features.SkeletonThickness or features.SkeletonTransparency then
+            group:AddLabel("Skeleton ESP")
+
+            if features.SkeletonColor then
+                group:AddLabel("Skeleton Color"):AddColorPicker(cfg.Name.."_SkeletonColor", {
+                    Default = esp.SkeletonColor,
+                    Callback = function(v) esp.SkeletonColor = v; esp:UpdateSkeletonESPConfig() end
+                })
+            end
+
+            if features.SkeletonThickness then
+                group:AddSlider(cfg.Name.."_SkeletonThickness", {
+                    Text = "Skeleton Thickness",
+                    Default = esp.SkeletonThickness,
+                    Min = 1, Max = 10, Rounding = 0,
+                    Callback = function(v) esp.SkeletonThickness = v; esp:UpdateSkeletonESPConfig() end
+                })
+            end
+
+            if features.SkeletonTransparency then
+                group:AddSlider(cfg.Name.."_SkeletonTransparency", {
+                    Text = "Skeleton Transparency",
+                    Default = esp.SkeletonTransparency,
+                    Min = 0, Max = 1, Rounding = 1,
+                    Callback = function(v) esp.SkeletonTransparency = v; esp:UpdateSkeletonESPConfig() end
+                })
+            end
+
+            group:AddDivider()
+        end
 
         createdESPs[cfg.Name] = esp
     end
