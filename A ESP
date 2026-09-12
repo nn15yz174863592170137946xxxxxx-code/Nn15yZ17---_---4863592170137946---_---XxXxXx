@@ -1,373 +1,400 @@
--- ===== ESP UI SETUP ===== --
-getgenv().ESP = getgenv().ESP or loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'template"))()
+-- ===== TEXT ESP ===== --
+local TextESP = {}
+TextESP.__index = TextESP
 
-return function(configs, side)
-    local Tabs = getgenv().Tabs
-    local Players = getgenv().Players
-    local LocalPlayer = getgenv().LocalPlayer
-    local cam = getgenv().cam
-    local ESP = getgenv().ESP
+local TextPlayers = game:GetService("Players")
+local TextRunService = game:GetService("RunService")
+local TextLocalPlayer = TextPlayers.LocalPlayer
+local TextPlayerGui = TextLocalPlayer:WaitForChild("PlayerGui")
 
-    local FEATURES = getgenv().ESP_FEATURES or {}
-
-    getgenv().ESP_INSTANCES = getgenv().ESP_INSTANCES or {}
-    local createdESPs = getgenv().ESP_INSTANCES
-
-    local ESPTab = Tabs.ESP or Tabs.Main
-    local tabbox
-    if side == "Right" then
-        tabbox = ESPTab:AddRightTabbox()
-    else
-        tabbox = ESPTab:AddLeftTabbox()
-    end
-
-    for _, cfg in ipairs(configs) do
-        local esp = ESP.new(Players, LocalPlayer, cam, cfg.Settings or {})
-
-        if cfg.TargetSources then
-            for _, src in ipairs(cfg.TargetSources) do
-                esp:AddTargetSource(src.Name, src.GetPath, src.IsPlayer, src.Enabled or false)
-            end
-        end
-
-        local group
-        if cfg.Groupbox then
-            group = cfg.Groupbox
-        elseif cfg.Tabbox then
-            group = cfg.Tabbox:AddTab(cfg.TabName or cfg.Name)
-        else
-            group = tabbox:AddTab(cfg.TabName or cfg.Name)
-        end
-
-        local prefix = cfg.Name.."_"
-
-        local featureFlags = {Text = false, Box = false, Health = false, Skeleton = false}
-        local function updateMaster()
-            esp:SetEnabled(featureFlags.Text or featureFlags.Box or featureFlags.Health or featureFlags.Skeleton)
-        end
-
-        if FEATURES.Text then
-            group:AddToggle(prefix.."Text", {Text = "Text ESP", Default = false, Callback = function(v)
-                featureFlags.Text = v
-                esp.TextESPEnabled = v
-                updateMaster()
-            end})
-        end
-
-        if FEATURES.Box then
-            group:AddToggle(prefix.."Box", {Text = "Box ESP", Default = false, Callback = function(v)
-                featureFlags.Box = v
-                esp.BoxESPEnabled = v
-                updateMaster()
-            end})
-        end
-
-        if FEATURES.HealthBar then
-            group:AddToggle(prefix.."Health", {Text = "Health Bar", Default = false, Callback = function(v)
-                featureFlags.Health = v
-                esp.HealthBarESPEnabled = v
-                updateMaster()
-            end})
-        end
-
-        if FEATURES.Skeleton then
-            group:AddToggle(prefix.."Skeleton", {Text = "Skeleton", Default = false, Callback = function(v)
-                featureFlags.Skeleton = v
-                esp.SkeletonESPEnabled = v
-                updateMaster()
-            end})
-        end
-
-        if FEATURES.Text or FEATURES.Box or FEATURES.HealthBar or FEATURES.Skeleton then
-            group:AddDivider()
-        end
-
-        for srcName, src in pairs(esp.TargetSources) do
-            group:AddToggle(prefix..srcName, {
-                Text = "Target: "..srcName,
-                Default = src.Enabled or false,
-                Callback = function(v) src.Enabled = v end
-            })
-        end
-
-        group:AddDivider()
-
-        if FEATURES.Performance then
-            group:AddLabel("Performance")
-
-            if FEATURES.MaxDistance then
-                group:AddInput(prefix.."MaxDist", {
-                    Text = "Max Distance",
-                    Default = esp.MaxDistance and tostring(esp.MaxDistance) or "",
-                    Numeric = true,
-                    Finished = true,
-                    Placeholder = "inf",
-                    Callback = function(v)
-                        local n = tonumber(v)
-                        esp.MaxDistance = (n and n > 0) and n or nil
-                    end
-                })
-            end
-
-            if FEATURES.MaxEntities then
-                group:AddSlider(prefix.."MaxEntities", {
-                    Text = "Max Entities",
-                    Default = esp.MaxEntities or 0,
-                    Min = 0, Max = 500, Rounding = 0,
-                    Callback = function(v) esp.MaxEntities = (v == 0) and nil or v end
-                })
-            end
-
-            if FEATURES.UpdateRate then
-                group:AddSlider(prefix.."UpdateRate", {
-                    Text = "Update Rate",
-                    Default = esp.UpdateRate,
-                    Min = 1, Max = 10, Rounding = 0,
-                    Callback = function(v) esp.UpdateRate = v end
-                })
-            end
-
-            if FEATURES.VisibleOnly then
-                group:AddToggle(prefix.."VisibleOnly", {
-                    Text = "Visible Only",
-                    Default = esp.VisibleOnly,
-                    Callback = function(v) esp.VisibleOnly = v end
-                })
-            end
-
-            if FEATURES.Rainbow then
-                group:AddToggle(prefix.."Rainbow", {
-                    Text = "Rainbow",
-                    Default = esp.RainbowEnabled,
-                    Callback = function(v)
-                        esp.RainbowEnabled = v
-                        if not v then
-                            esp.BoxColor = (cfg.Settings and cfg.Settings.BoxColor) or Color3.new(1, 1, 1)
-                            esp.SkeletonColor = (cfg.Settings and cfg.Settings.SkeletonColor) or Color3.new(1, 1, 1)
-                            esp:UpdateBoxESPConfig()
-                            esp:UpdateSkeletonESPConfig()
-                        end
-                    end
-                })
-            end
-
-            if FEATURES.RainbowSpeed then
-                group:AddInput(prefix.."RainbowSpeed", {
-                    Text = "Rainbow Speed",
-                    Default = tostring(esp.RainbowSpeed),
-                    Numeric = true,
-                    Finished = true,
-                    Placeholder = "1",
-                    Callback = function(v)
-                        local n = tonumber(v)
-                        if n then esp.RainbowSpeed = n end
-                    end
-                })
-            end
-
-            group:AddDivider()
-        end
-
-        if FEATURES.TextColor or FEATURES.TextSize or FEATURES.TextTransparency or FEATURES.ShowName or FEATURES.ShowHealth or FEATURES.ShowDistance or FEATURES.TextStroke then
-            group:AddLabel("Text ESP")
-
-            if FEATURES.TextColor then
-                group:AddLabel("Text Color"):AddColorPicker(prefix.."TextColor", {
-                    Default = esp.TextColor,
-                    Callback = function(v) esp.TextColor = v; esp:UpdateTextESP() end
-                })
-            end
-
-            if FEATURES.TextSize then
-                group:AddSlider(prefix.."TextSize", {
-                    Text = "Text Size",
-                    Default = esp.TextSize,
-                    Min = 8, Max = 40, Rounding = 0,
-                    Callback = function(v) esp.TextSize = v; esp:UpdateTextESP() end
-                })
-            end
-
-            if FEATURES.TextTransparency then
-                group:AddSlider(prefix.."TextTransparency", {
-                    Text = "Text Transparency",
-                    Default = esp.TextTransparency,
-                    Min = 0, Max = 1, Rounding = 1,
-                    Callback = function(v) esp.TextTransparency = v; esp:UpdateTextESP() end
-                })
-            end
-
-            if FEATURES.ShowName then
-                group:AddToggle(prefix.."ShowName", {
-                    Text = "Show Name",
-                    Default = esp.ShowName,
-                    Callback = function(v) esp.ShowName = v end
-                })
-            end
-
-            if FEATURES.ShowHealth then
-                group:AddToggle(prefix.."ShowHealth", {
-                    Text = "Show Health",
-                    Default = esp.ShowHealth,
-                    Callback = function(v) esp.ShowHealth = v end
-                })
-            end
-
-            if FEATURES.ShowDistance then
-                group:AddToggle(prefix.."ShowDistance", {
-                    Text = "Show Distance",
-                    Default = esp.ShowDistance,
-                    Callback = function(v) esp.ShowDistance = v end
-                })
-            end
-
-            if FEATURES.TextStroke then
-                group:AddToggle(prefix.."TextStroke", {
-                    Text = "Text Stroke",
-                    Default = esp.TextStroke,
-                    Callback = function(v) esp.TextStroke = v; esp:UpdateTextESP() end
-                })
-            end
-
-            group:AddDivider()
-        end
-
-        if FEATURES.BoxColor or FEATURES.BoxThickness or FEATURES.BoxTransparency or FEATURES.BoxFilled or FEATURES.BoxFillTransparency then
-            group:AddLabel("Box ESP")
-
-            if FEATURES.BoxColor then
-                group:AddLabel("Box Color"):AddColorPicker(prefix.."BoxColor", {
-                    Default = esp.BoxColor,
-                    Callback = function(v) esp.BoxColor = v; esp:UpdateBoxESPConfig() end
-                })
-            end
-
-            if FEATURES.BoxThickness then
-                group:AddSlider(prefix.."BoxThickness", {
-                    Text = "Box Thickness",
-                    Default = esp.BoxThickness,
-                    Min = 1, Max = 10, Rounding = 0,
-                    Callback = function(v) esp.BoxThickness = v; esp:UpdateBoxESPConfig() end
-                })
-            end
-
-            if FEATURES.BoxTransparency then
-                group:AddSlider(prefix.."BoxTransparency", {
-                    Text = "Box Transparency",
-                    Default = esp.BoxTransparency,
-                    Min = 0, Max = 1, Rounding = 1,
-                    Callback = function(v) esp.BoxTransparency = v; esp:UpdateBoxESPConfig() end
-                })
-            end
-
-            if FEATURES.BoxFilled then
-                group:AddToggle(prefix.."BoxFilled", {
-                    Text = "Box Filled",
-                    Default = esp.BoxFilled,
-                    Callback = function(v) esp.BoxFilled = v; esp:UpdateBoxESPConfig() end
-                })
-            end
-
-            if FEATURES.BoxFillTransparency then
-                group:AddSlider(prefix.."BoxFillTransparency", {
-                    Text = "Box Fill Transparency",
-                    Default = esp.BoxFillTransparency,
-                    Min = 0, Max = 1, Rounding = 1,
-                    Callback = function(v) esp.BoxFillTransparency = v; esp:UpdateBoxESPConfig() end
-                })
-            end
-
-            group:AddDivider()
-        end
-
-        if FEATURES.HealthColor or FEATURES.LowHealthColor or FEATURES.HealthTransparency or FEATURES.HealthBarWidth or FEATURES.HealthBarPosition or FEATURES.HealthBarOffset then
-            group:AddLabel("Health Bar")
-
-            if FEATURES.HealthColor then
-                group:AddLabel("Health Color"):AddColorPicker(prefix.."HealthColor", {
-                    Default = esp.HealthColor,
-                    Callback = function(v) esp.HealthColor = v end
-                })
-            end
-
-            if FEATURES.LowHealthColor then
-                group:AddLabel("Low Health Color"):AddColorPicker(prefix.."LowHealthColor", {
-                    Default = esp.LowHealthColor,
-                    Callback = function(v) esp.LowHealthColor = v end
-                })
-            end
-
-            if FEATURES.HealthTransparency then
-                group:AddSlider(prefix.."HealthTransparency", {
-                    Text = "Health Transparency",
-                    Default = esp.HealthTransparency,
-                    Min = 0, Max = 1, Rounding = 1,
-                    Callback = function(v) esp.HealthTransparency = v end
-                })
-            end
-
-            if FEATURES.HealthBarWidth then
-                group:AddSlider(prefix.."HealthBarWidth", {
-                    Text = "Health Bar Width",
-                    Default = esp.HealthBarWidth,
-                    Min = 1, Max = 20, Rounding = 0,
-                    Callback = function(v) esp.HealthBarWidth = v end
-                })
-            end
-
-            if FEATURES.HealthBarPosition then
-                group:AddDropdown(prefix.."HealthBarPosition", {
-                    Text = "Health Bar Position",
-                    Values = {"Left", "Right", "Top", "Bottom"},
-                    Default = esp.HealthBarPosition,
-                    Callback = function(v) esp.HealthBarPosition = v end
-                })
-            end
-
-            if FEATURES.HealthBarOffset then
-                group:AddSlider(prefix.."HealthBarOffset", {
-                    Text = "Health Bar Offset",
-                    Default = esp.HealthBarOffset,
-                    Min = 0, Max = 20, Rounding = 0,
-                    Callback = function(v) esp.HealthBarOffset = v end
-                })
-            end
-
-            group:AddDivider()
-        end
-
-        if FEATURES.SkeletonColor or FEATURES.SkeletonThickness or FEATURES.SkeletonTransparency then
-            group:AddLabel("Skeleton ESP")
-
-            if FEATURES.SkeletonColor then
-                group:AddLabel("Skeleton Color"):AddColorPicker(prefix.."SkeletonColor", {
-                    Default = esp.SkeletonColor,
-                    Callback = function(v) esp.SkeletonColor = v; esp:UpdateSkeletonESPConfig() end
-                })
-            end
-
-            if FEATURES.SkeletonThickness then
-                group:AddSlider(prefix.."SkeletonThickness", {
-                    Text = "Skeleton Thickness",
-                    Default = esp.SkeletonThickness,
-                    Min = 1, Max = 10, Rounding = 0,
-                    Callback = function(v) esp.SkeletonThickness = v; esp:UpdateSkeletonESPConfig() end
-                })
-            end
-
-            if FEATURES.SkeletonTransparency then
-                group:AddSlider(prefix.."SkeletonTransparency", {
-                    Text = "Skeleton Transparency",
-                    Default = esp.SkeletonTransparency,
-                    Min = 0, Max = 1, Rounding = 1,
-                    Callback = function(v) esp.SkeletonTransparency = v; esp:UpdateSkeletonESPConfig() end
-                })
-            end
-
-            group:AddDivider()
-        end
-
-        createdESPs[cfg.Name] = esp
-    end
-
-    return createdESPs
+local function textRound(num, numDecimalPlaces)
+    local mult = 10 ^ (numDecimalPlaces or 0)
+    return math.floor(num * mult + 0.5) / mult
 end
+
+local function textGetRoot(character)
+    return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("Head")
+end
+
+function TextESP.new(settings)
+    settings = settings or {}
+    local self = setmetatable({}, TextESP)
+    self.Enabled = false
+    self.ShowName = settings.ShowName ~= false
+    self.ShowHealth = settings.ShowHealth ~= false
+    self.ShowDistance = settings.ShowDistance ~= false
+    self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
+    self.TextSize = settings.TextSize or 20
+    self.TextStroke = settings.TextStroke ~= false
+    self.Folder = {}
+    self.PlayerAddedConn = nil
+    self.PlayerRemovingConn = nil
+    return self
+end
+
+function TextESP:CreateForPlayer(plr)
+    if not self.Enabled then return end
+    if plr == TextLocalPlayer then return end
+
+    task.spawn(function()
+        local folderName = plr.Name .. "_TESP"
+
+        if self.Folder[plr] then
+            self.Folder[plr]:Destroy()
+            self.Folder[plr] = nil
+        end
+
+        if not plr.Character then return end
+        repeat task.wait() until plr.Character and textGetRoot(plr.Character) and plr.Character:FindFirstChildOfClass("Humanoid")
+        if not self.Enabled then return end
+
+        local head = plr.Character:FindFirstChild("Head")
+        if not head then return end
+
+        local holder = Instance.new("Folder")
+        holder.Name = folderName
+        holder.Parent = TextPlayerGui
+        self.Folder[plr] = holder
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Adornee = head
+        billboard.Name = plr.Name
+        billboard.Parent = holder
+        billboard.Size = UDim2.new(0, 100, 0, 150)
+        billboard.StudsOffset = Vector3.new(0, 1, 0)
+        billboard.AlwaysOnTop = true
+
+        local label = Instance.new("TextLabel")
+        label.Parent = billboard
+        label.BackgroundTransparency = 1
+        label.Position = UDim2.new(0, 0, 0, -50)
+        label.Size = UDim2.new(0, 100, 0, 100)
+        label.Font = Enum.Font.SourceSansSemibold
+        label.TextSize = self.TextSize
+        label.TextColor3 = self.TextColor
+        label.TextStrokeTransparency = self.TextStroke and 0 or 1
+        label.TextYAlignment = Enum.TextYAlignment.Bottom
+        label.Text = "Name: " .. plr.Name
+        label.ZIndex = 10
+
+        local loopConnection
+        local addedConnection
+        local removedConnection
+
+        local function updateText()
+            if not holder.Parent then return end
+            local char = plr.Character
+            local localChar = TextLocalPlayer.Character
+            if char and textGetRoot(char) and char:FindFirstChildOfClass("Humanoid") and localChar and textGetRoot(localChar) and localChar:FindFirstChildOfClass("Humanoid") then
+                local dist = math.floor((textGetRoot(localChar).Position - textGetRoot(char).Position).Magnitude)
+                local health = textRound(char:FindFirstChildOfClass("Humanoid").Health, 1)
+                local parts = {}
+                if self.ShowName then table.insert(parts, "Name: " .. plr.Name) end
+                if self.ShowHealth then table.insert(parts, "Health: " .. health) end
+                if self.ShowDistance then table.insert(parts, "Studs: " .. dist) end
+                label.Text = table.concat(parts, " | ")
+            end
+        end
+
+        loopConnection = TextRunService.RenderStepped:Connect(updateText)
+
+        addedConnection = plr.CharacterAdded:Connect(function(newChar)
+            if loopConnection then loopConnection:Disconnect() end
+            if addedConnection then addedConnection:Disconnect() end
+            if holder then holder:Destroy() end
+            self.Folder[plr] = nil
+            repeat task.wait() until newChar and textGetRoot(newChar) and newChar:FindFirstChildOfClass("Humanoid")
+            self:CreateForPlayer(plr)
+        end)
+
+        removedConnection = plr.AncestryChanged:Connect(function()
+            if not plr.Parent then
+                if loopConnection then loopConnection:Disconnect() end
+                if addedConnection then addedConnection:Disconnect() end
+                if removedConnection then removedConnection:Disconnect() end
+                if holder then holder:Destroy() end
+                self.Folder[plr] = nil
+            end
+        end)
+    end)
+end
+
+function TextESP:RemoveForPlayer(plr)
+    if self.Folder[plr] then
+        self.Folder[plr]:Destroy()
+        self.Folder[plr] = nil
+    end
+end
+
+function TextESP:Start()
+    if self.Enabled then return end
+    self.Enabled = true
+
+    for _, plr in ipairs(TextPlayers:GetPlayers()) do
+        if plr ~= TextLocalPlayer then
+            self:CreateForPlayer(plr)
+        end
+    end
+
+    self.PlayerAddedConn = TextPlayers.PlayerAdded:Connect(function(plr)
+        plr.CharacterAdded:Connect(function()
+            self:CreateForPlayer(plr)
+        end)
+    end)
+
+    self.PlayerRemovingConn = TextPlayers.PlayerRemoving:Connect(function(plr)
+        self:RemoveForPlayer(plr)
+    end)
+end
+
+function TextESP:Stop()
+    if not self.Enabled then return end
+    self.Enabled = false
+
+    if self.PlayerAddedConn then
+        self.PlayerAddedConn:Disconnect()
+        self.PlayerAddedConn = nil
+    end
+    if self.PlayerRemovingConn then
+        self.PlayerRemovingConn:Disconnect()
+        self.PlayerRemovingConn = nil
+    end
+
+    for plr, folder in pairs(self.Folder) do
+        if folder then folder:Destroy() end
+    end
+    self.Folder = {}
+end
+
+function TextESP:Destroy()
+    self:Stop()
+end
+
+-- ===== DRAWING ESP ===== --
+local DrawingESP = {}
+DrawingESP.__index = DrawingESP
+
+local DrawPlayers = game:GetService("Players")
+local DrawRunService = game:GetService("RunService")
+local DrawCamera = workspace.CurrentCamera
+local DrawLocalPlayer = DrawPlayers.LocalPlayer
+
+local bodyConnections = {
+    R15 = {
+        {"Head", "UpperTorso"},
+        {"UpperTorso", "LowerTorso"},
+        {"LowerTorso", "LeftUpperLeg"},
+        {"LowerTorso", "RightUpperLeg"},
+        {"LeftUpperLeg", "LeftLowerLeg"},
+        {"LeftLowerLeg", "LeftFoot"},
+        {"RightUpperLeg", "RightLowerLeg"},
+        {"RightLowerLeg", "RightFoot"},
+        {"UpperTorso", "LeftUpperArm"},
+        {"UpperTorso", "RightUpperArm"},
+        {"LeftUpperArm", "LeftLowerArm"},
+        {"LeftLowerArm", "LeftHand"},
+        {"RightUpperArm", "RightLowerArm"},
+        {"RightLowerArm", "RightHand"}
+    },
+    R6 = {
+        {"Head", "Torso"},
+        {"Torso", "Left Arm"},
+        {"Torso", "Right Arm"},
+        {"Torso", "Left Leg"},
+        {"Torso", "Right Leg"}
+    }
+}
+
+function DrawingESP.new(settings)
+    settings = settings or {}
+    local self = setmetatable({}, DrawingESP)
+    self.Enabled = false
+    self.espCache = {}
+    self.ShowBox = settings.ShowBox ~= false
+    self.ShowHealth = settings.ShowHealth ~= false
+    self.ShowSkeleton = settings.ShowSkeleton ~= false
+    self.BoxColor = settings.BoxColor or Color3.fromRGB(255, 255, 255)
+    self.HealthColor = settings.HealthColor or Color3.fromRGB(0, 255, 0)
+    self.SkeletonColor = settings.SkeletonColor or Color3.fromRGB(255, 255, 255)
+    self.LoopConnection = nil
+    return self
+end
+
+function DrawingESP:createDrawing(drawingType, properties)
+    local drawing = Drawing.new(drawingType)
+    for prop, val in pairs(properties) do
+        drawing[prop] = val
+    end
+    return drawing
+end
+
+function DrawingESP:createComponents()
+    return {
+        Box = self:createDrawing("Square", {
+            Thickness = 1,
+            Transparency = 1,
+            Color = self.BoxColor,
+            Filled = false
+        }),
+        HealthBar = {
+            Outline = self:createDrawing("Square", {
+                Thickness = 1,
+                Transparency = 1,
+                Color = Color3.fromRGB(0, 0, 0),
+                Filled = false
+            }),
+            Health = self:createDrawing("Square", {
+                Thickness = 1,
+                Transparency = 1,
+                Color = self.HealthColor,
+                Filled = true
+            })
+        },
+        SkeletonLines = {}
+    }
+end
+
+function DrawingESP:updateComponents(components, character, player)
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChild("Humanoid")
+
+    if hrp and humanoid then
+        local hrpPosition, onScreen = DrawCamera:WorldToViewportPoint(hrp.Position)
+
+        if onScreen then
+            local screenWidth, screenHeight = DrawCamera.ViewportSize.X, DrawCamera.ViewportSize.Y
+            local factor = 1 / (hrpPosition.Z * math.tan(math.rad(DrawCamera.FieldOfView * 0.5)) * 2) * 100
+            local width, height = math.floor(screenHeight / 20 * factor), math.floor(screenWidth / 30 * factor)
+
+            components.Box.Size = Vector2.new(width, height)
+            components.Box.Position = Vector2.new(hrpPosition.X - width / 2, hrpPosition.Y - height / 2)
+            components.Box.Color = self.BoxColor
+            components.Box.Visible = self.ShowBox
+
+            local healthBarHeight = height
+            local healthBarWidth = 5
+            local healthFraction = humanoid.Health / humanoid.MaxHealth
+
+            components.HealthBar.Outline.Size = Vector2.new(healthBarWidth, healthBarHeight)
+            components.HealthBar.Outline.Position = Vector2.new(components.Box.Position.X - healthBarWidth - 2, components.Box.Position.Y)
+            components.HealthBar.Outline.Visible = self.ShowHealth
+
+            components.HealthBar.Health.Size = Vector2.new(healthBarWidth - 2, healthBarHeight * healthFraction)
+            components.HealthBar.Health.Position = Vector2.new(components.HealthBar.Outline.Position.X + 1, components.HealthBar.Outline.Position.Y + healthBarHeight * (1 - healthFraction))
+            components.HealthBar.Health.Color = self.HealthColor
+            components.HealthBar.Health.Visible = self.ShowHealth
+
+            local connections = bodyConnections[humanoid.RigType.Name] or {}
+            local activeKeys = {}
+            for _, connection in ipairs(connections) do
+                local key = connection[1] .. "-" .. connection[2]
+                activeKeys[key] = true
+                local partA = character:FindFirstChild(connection[1])
+                local partB = character:FindFirstChild(connection[2])
+                if partA and partB then
+                    local line = components.SkeletonLines[key]
+                    if not line then
+                        line = self:createDrawing("Line", {Thickness = 1, Color = self.SkeletonColor})
+                        components.SkeletonLines[key] = line
+                    end
+                    local posA, onScreenA = DrawCamera:WorldToViewportPoint(partA.Position)
+                    local posB, onScreenB = DrawCamera:WorldToViewportPoint(partB.Position)
+                    if onScreenA and onScreenB and self.ShowSkeleton then
+                        line.From = Vector2.new(posA.X, posA.Y)
+                        line.To = Vector2.new(posB.X, posB.Y)
+                        line.Color = self.SkeletonColor
+                        line.Visible = true
+                    else
+                        line.Visible = false
+                    end
+                end
+            end
+            for key, line in pairs(components.SkeletonLines) do
+                if not activeKeys[key] then line.Visible = false end
+            end
+        else
+            self:hideComponents(components)
+        end
+    else
+        self:hideComponents(components)
+    end
+end
+
+function DrawingESP:hideComponents(components)
+    components.Box.Visible = false
+    components.HealthBar.Outline.Visible = false
+    components.HealthBar.Health.Visible = false
+    for _, line in pairs(components.SkeletonLines) do
+        line.Visible = false
+    end
+end
+
+function DrawingESP:removeEsp(player)
+    local components = self.espCache[player]
+    if components then
+        components.Box:Remove()
+        components.HealthBar.Outline:Remove()
+        components.HealthBar.Health:Remove()
+        for _, line in pairs(components.SkeletonLines) do
+            line:Remove()
+        end
+        self.espCache[player] = nil
+    end
+end
+
+function DrawingESP:Start()
+    if self.Enabled then return end
+    self.Enabled = true
+
+    self.LoopConnection = DrawRunService.RenderStepped:Connect(function()
+        for _, player in ipairs(DrawPlayers:GetPlayers()) do
+            if player ~= DrawLocalPlayer then
+                local character = player.Character
+                if character then
+                    if not self.espCache[player] then
+                        self.espCache[player] = self:createComponents()
+                    end
+                    self:updateComponents(self.espCache[player], character, player)
+                else
+                    if self.espCache[player] then
+                        self:hideComponents(self.espCache[player])
+                    end
+                end
+            end
+        end
+    end)
+
+    DrawPlayers.PlayerRemoving:Connect(function(player)
+        self:removeEsp(player)
+    end)
+end
+
+function DrawingESP:Stop()
+    if not self.Enabled then return end
+    self.Enabled = false
+
+    if self.LoopConnection then
+        self.LoopConnection:Disconnect()
+        self.LoopConnection = nil
+    end
+
+    for _, components in pairs(self.espCache) do
+        components.Box:Remove()
+        components.HealthBar.Outline:Remove()
+        components.HealthBar.Health:Remove()
+        for _, line in pairs(components.SkeletonLines) do
+            line:Remove()
+        end
+    end
+    self.espCache = {}
+end
+
+function DrawingESP:Destroy()
+    self:Stop()
+end
+
+-- ===== PACKAGE ===== --
+return {
+    Text = TextESP,
+    Drawing = DrawingESP
+}
