@@ -308,11 +308,11 @@ function Aimlock:SetEnabled(state)
 end
 
 return Aimlock
-
 -- ===== ESP MODULE ===== --
 local ESP = {}
 ESP.__index = ESP
 
+-- ===== CONSTRUCTOR ===== --
 function ESP.new(playersService, localPlayer, camera, settings)
     settings = settings or {}
     local self = setmetatable({}, ESP)
@@ -321,51 +321,44 @@ function ESP.new(playersService, localPlayer, camera, settings)
     self.Camera = camera
     self.PlayerGui = localPlayer:WaitForChild("PlayerGui")
 
-    -- ===== PERFORMANCE CONFIG =====
     self.MaxDistance = settings.MaxDistance or nil
     self.MaxEntities = settings.MaxEntities or nil
-    self.UpdateRate = settings.UpdateRate or 1  -- 1 = every frame, 2 = every 2 frames
+    self.UpdateRate = settings.UpdateRate or 1
     self.VisibleOnly = settings.VisibleOnly or false
     self.RainbowEnabled = settings.RainbowEnabled or false
     self.RainbowSpeed = settings.RainbowSpeed or 1
 
-    -- ===== TEXT ESP CONFIG =====
     self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
     self.TextSize = settings.TextSize or 20
     self.TextTransparency = settings.TextTransparency or 0
-    self.ShowName = settings.ShowName or true
-    self.ShowHealth = settings.ShowHealth or true
-    self.ShowDistance = settings.ShowDistance or true
-    self.TextStroke = settings.TextStroke or true
+    self.ShowName = settings.ShowName ~= false
+    self.ShowHealth = settings.ShowHealth ~= false
+    self.ShowDistance = settings.ShowDistance ~= false
+    self.TextStroke = settings.TextStroke ~= false
 
-    -- ===== BOX ESP CONFIG =====
     self.BoxColor = settings.BoxColor or Color3.new(1, 1, 1)
     self.BoxThickness = settings.BoxThickness or 1
     self.BoxTransparency = settings.BoxTransparency or 1
     self.BoxFilled = settings.BoxFilled or false
     self.BoxFillTransparency = settings.BoxFillTransparency or 0.5
 
-    -- ===== HEALTH BAR ESP CONFIG =====
     self.HealthColor = settings.HealthColor or Color3.new(0, 1, 0)
     self.LowHealthColor = settings.LowHealthColor or Color3.new(1, 0, 0)
     self.HealthTransparency = settings.HealthTransparency or 0.5
     self.HealthBarWidth = settings.HealthBarWidth or 5
-    self.HealthBarPosition = settings.HealthBarPosition or "Left" -- Left, Right, Top, Bottom
+    self.HealthBarPosition = settings.HealthBarPosition or "Left"
     self.HealthBarOffset = settings.HealthBarOffset or 2
 
-    -- ===== SKELETON ESP CONFIG =====
     self.SkeletonColor = settings.SkeletonColor or Color3.new(1, 1, 1)
     self.SkeletonThickness = settings.SkeletonThickness or 1
     self.SkeletonTransparency = settings.SkeletonTransparency or 1
 
-    -- ===== ENABLED STATES =====
     self.ESPEnabled = false
     self.TextESPEnabled = false
     self.BoxESPEnabled = false
     self.HealthBarESPEnabled = false
     self.SkeletonESPEnabled = false
 
-    -- ===== CACHES =====
     self.TextESPObjects = {}
     self.BoxESPObjects = {}
     self.HealthBarESPObjects = {}
@@ -373,7 +366,6 @@ function ESP.new(playersService, localPlayer, camera, settings)
     self.ESPLoopConnection = nil
     self.FrameCounter = 0
 
-    -- ===== TARGET SOURCES =====
     self.TargetSources = {}
     if settings.ESPTargetSources then
         for name, src in pairs(settings.ESPTargetSources) do
@@ -388,10 +380,7 @@ function ESP.new(playersService, localPlayer, camera, settings)
     return self
 end
 
--- ==========================================
--- ===== HELPER FUNCTIONS =====
--- ==========================================
-
+-- ===== HELPERS ===== --
 function ESP:GetRoot(character)
     return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("Head")
 end
@@ -417,6 +406,22 @@ function ESP:IsVisible(part, camPos, ignoreList)
     return character and hit:IsDescendantOf(character)
 end
 
+function ESP:GetEntityKey(entityData)
+    if entityData.PlayerObject then
+        return entityData.SourceName .. "_" .. entityData.PlayerObject.Name
+    end
+    return entityData.SourceName .. "_" .. entityData.Entity.Name
+end
+
+function ESP:AddTargetSource(name, getEntitiesFunc, isPlayer, startEnabled)
+    self.TargetSources[name] = {
+        Enabled = startEnabled or false,
+        GetEntities = getEntitiesFunc,
+        IsPlayer = isPlayer or false
+    }
+end
+
+-- ===== ENTITY COLLECTION ===== --
 function ESP:GetSortedEntities()
     local allEntities = {}
     local camPos = self.Camera.CFrame.Position
@@ -427,11 +432,20 @@ function ESP:GetSortedEntities()
         if not entities then continue end
 
         for _, entity in ipairs(entities) do
-            if not entity:IsA("Model") then continue end
-            local hum = entity:FindFirstChild("Humanoid") or entity:FindFirstChildOfClass("Humanoid")
+            local model
+            local playerObject
+            if entity:IsA("Player") then
+                playerObject = entity
+                model = entity.Character
+            elseif entity:IsA("Model") then
+                model = entity
+            end
+            if not model then continue end
+
+            local hum = model:FindFirstChildOfClass("Humanoid")
             if not hum or hum.Health <= 0 then continue end
 
-            local root = self:GetRoot(entity)
+            local root = self:GetRoot(model)
             if not root then continue end
 
             local dist = self:GetDistance(camPos, root.Position)
@@ -440,7 +454,8 @@ function ESP:GetSortedEntities()
             if self.VisibleOnly and not self:IsVisible(root, camPos) then continue end
 
             table.insert(allEntities, {
-                Entity = entity,
+                Entity = model,
+                PlayerObject = playerObject,
                 Distance = dist,
                 Root = root,
                 SourceName = name,
@@ -458,12 +473,9 @@ function ESP:GetSortedEntities()
     return allEntities
 end
 
--- ==========================================
--- ===== TEXT ESP =====
--- ==========================================
-
+-- ===== TEXT ESP ===== --
 function ESP:CreateTextESP(entity, entityData)
-    local entityKey = entityData.SourceName .. "_" .. entity.Name
+    local entityKey = self:GetEntityKey(entityData)
     local oldData = self.TextESPObjects[entityKey]
     if oldData then
         if oldData.Holder then oldData.Holder:Destroy() end
@@ -506,38 +518,40 @@ function ESP:CreateTextESP(entity, entityData)
 
     local function updateText()
         if not holder.Parent then return end
-        local char = entity
+        if not entity or not entity.Parent then return end
+        local hum = entity:FindFirstChildOfClass("Humanoid")
         local localChar = self.LocalPlayer.Character
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if char and self:GetRoot(char) and hum and localChar and self:GetRoot(localChar) then
-            local dist = math.floor(self:GetDistance(self:GetRoot(localChar).Position, self:GetRoot(char).Position))
-            local health = self:Round(hum.Health, 1)
+        local localRoot = localChar and self:GetRoot(localChar)
+        local currentRoot = self:GetRoot(entity)
+        if not hum or not localRoot or not currentRoot then return end
 
-            local parts = {}
-            if self.ShowName then
-                local name = entityData.IsPlayer and entity.Name or entity.Name
-                table.insert(parts, string.format("<b>%s</b>", name))
-            end
-            if self.ShowHealth then
-                table.insert(parts, string.format("❤️ %d", math.floor(health)))
-            end
-            if self.ShowDistance then
-                table.insert(parts, string.format("📏 %d", dist))
-            end
+        local dist = math.floor(self:GetDistance(localRoot.Position, currentRoot.Position))
+        local health = self:Round(hum.Health, 1)
 
-            label.Text = table.concat(parts, " | ")
+        local parts = {}
+        if self.ShowName then
+            local name = entityData.PlayerObject and entityData.PlayerObject.Name or entity.Name
+            table.insert(parts, string.format("<b>%s</b>", name))
         end
+        if self.ShowHealth then
+            table.insert(parts, string.format("❤️ %d", math.floor(health)))
+        end
+        if self.ShowDistance then
+            table.insert(parts, string.format("📏 %d", dist))
+        end
+
+        label.Text = table.concat(parts, " | ")
     end
 
     local loopConn = game:GetService("RunService").RenderStepped:Connect(updateText)
 
     local charAddedConn
-    if entityData.IsPlayer then
-        charAddedConn = entity.CharacterAdded:Connect(function(newChar)
+    if entityData.IsPlayer and entityData.PlayerObject then
+        charAddedConn = entityData.PlayerObject.CharacterAdded:Connect(function()
             loopConn:Disconnect()
             if charAddedConn then charAddedConn:Disconnect() end
-            holder:Destroy()
-            self:CreateTextESP(entity, entityData)
+            if holder then holder:Destroy() end
+            self.TextESPObjects[entityKey] = nil
         end)
     end
 
@@ -563,7 +577,7 @@ function ESP:DestroyTextESP(entityKey)
 end
 
 function ESP:UpdateTextESP()
-    for key, data in pairs(self.TextESPObjects) do
+    for _, data in pairs(self.TextESPObjects) do
         if data.Label then
             data.Label.TextColor3 = self.TextColor
             data.Label.TextTransparency = self.TextTransparency
@@ -573,10 +587,7 @@ function ESP:UpdateTextESP()
     end
 end
 
--- ==========================================
--- ===== BOX ESP =====
--- ==========================================
-
+-- ===== BOX ESP ===== --
 function ESP:CreateBoxESP()
     local box = Drawing.new("Square")
     box.Thickness = self.BoxThickness
@@ -584,35 +595,31 @@ function ESP:CreateBoxESP()
     box.Filled = self.BoxFilled
     box.Color = self.BoxColor
     box.Visible = false
-
     if self.BoxFilled then
         box.Transparency = self.BoxFillTransparency
     end
-
     return box
 end
 
 function ESP:UpdateBoxESP(box, entity)
-    local hrp = entity:FindFirstChild("HumanoidRootPart")
-    local humanoid = entity:FindFirstChild("Humanoid")
-
-    if not hrp or not humanoid then
+    local root = self:GetRoot(entity)
+    if not root then
         box.Visible = false
         return
     end
 
-    local hrpPosition, onScreen = self.Camera:WorldToViewportPoint(hrp.Position)
+    local screenPos, onScreen = self.Camera:WorldToViewportPoint(root.Position)
     if not onScreen then
         box.Visible = false
         return
     end
 
     local screenWidth, screenHeight = self.Camera.ViewportSize.X, self.Camera.ViewportSize.Y
-    local factor = 1 / (hrpPosition.Z * math.tan(math.rad(self.Camera.FieldOfView * 0.5)) * 2) * 100
+    local factor = 1 / (screenPos.Z * math.tan(math.rad(self.Camera.FieldOfView * 0.5)) * 2) * 100
     local width, height = math.floor(screenHeight / 20 * factor), math.floor(screenWidth / 30 * factor)
 
     box.Size = Vector2.new(width, height)
-    box.Position = Vector2.new(hrpPosition.X - width / 2, hrpPosition.Y - height / 2)
+    box.Position = Vector2.new(screenPos.X - width / 2, screenPos.Y - height / 2)
     box.Visible = true
 end
 
@@ -634,10 +641,7 @@ function ESP:UpdateBoxESPConfig()
     end
 end
 
--- ==========================================
--- ===== HEALTH BAR ESP =====
--- ==========================================
-
+-- ===== HEALTH BAR ESP ===== --
 function ESP:CreateHealthBarESP()
     return {
         Outline = Drawing.new("Square"),
@@ -646,7 +650,7 @@ function ESP:CreateHealthBarESP()
 end
 
 function ESP:UpdateHealthBarESP(healthBar, entity, boxPos, boxSize)
-    local humanoid = entity:FindFirstChild("Humanoid")
+    local humanoid = entity:FindFirstChildOfClass("Humanoid")
     if not humanoid then
         healthBar.Outline.Visible = false
         healthBar.Health.Visible = false
@@ -667,25 +671,21 @@ function ESP:UpdateHealthBarESP(healthBar, entity, boxPos, boxSize)
     local barHeight = boxSize.Y
     local posX, posY
 
-    -- ===== POSITION CALCULATION =====
     if self.HealthBarPosition == "Left" then
         posX = boxPos.X - barWidth - offset
         posY = boxPos.Y
         barHeight = boxSize.Y
         barWidth = self.HealthBarWidth
-
     elseif self.HealthBarPosition == "Right" then
         posX = boxPos.X + boxSize.X + offset
         posY = boxPos.Y
         barHeight = boxSize.Y
         barWidth = self.HealthBarWidth
-
     elseif self.HealthBarPosition == "Top" then
         barWidth = boxSize.X
         barHeight = 6
         posX = boxPos.X
         posY = boxPos.Y - barHeight - offset
-
     elseif self.HealthBarPosition == "Bottom" then
         barWidth = boxSize.X
         barHeight = 6
@@ -705,10 +705,13 @@ function ESP:UpdateHealthBarESP(healthBar, entity, boxPos, boxSize)
     healthBar.Health.Visible = true
 end
 
--- ==========================================
--- ===== SKELETON ESP =====
--- ==========================================
+function ESP:DestroyHealthBarESP(healthBar)
+    if not healthBar then return end
+    if healthBar.Outline then healthBar.Outline:Remove() end
+    if healthBar.Health then healthBar.Health:Remove() end
+end
 
+-- ===== SKELETON ESP ===== --
 local bodyConnections = {
     R15 = {
         {"Head", "UpperTorso"},
@@ -749,7 +752,7 @@ function ESP:CreateSkeletonESP()
 end
 
 function ESP:UpdateSkeletonESP(skeletonLines, entity)
-    local humanoid = entity:FindFirstChild("Humanoid")
+    local humanoid = entity:FindFirstChildOfClass("Humanoid")
     if not humanoid then
         for _, data in ipairs(skeletonLines) do
             data.line.Visible = false
@@ -804,10 +807,7 @@ function ESP:UpdateSkeletonESPConfig()
     end
 end
 
--- ==========================================
--- ===== MAIN ESP LOOP =====
--- ==========================================
-
+-- ===== MAIN LOOP ===== --
 function ESP:Start()
     if self.ESPLoopConnection then return end
 
@@ -837,7 +837,7 @@ function ESP:Start()
 
         for _, entityData in ipairs(entities) do
             local entity = entityData.Entity
-            local key = entityData.SourceName .. "_" .. entity.Name
+            local key = self:GetEntityKey(entityData)
             activeKeys[key] = true
 
             if self.TextESPEnabled then
@@ -864,16 +864,19 @@ function ESP:Start()
                 if not self.HealthBarESPObjects[key] then
                     self.HealthBarESPObjects[key] = self:CreateHealthBarESP()
                 end
-                local hrp = entity:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local hrpPos, onScreen = self.Camera:WorldToViewportPoint(hrp.Position)
+                local root = self:GetRoot(entity)
+                if root then
+                    local screenPos, onScreen = self.Camera:WorldToViewportPoint(root.Position)
                     if onScreen then
                         local screenWidth, screenHeight = self.Camera.ViewportSize.X, self.Camera.ViewportSize.Y
-                        local factor = 1 / (hrpPos.Z * math.tan(math.rad(self.Camera.FieldOfView * 0.5)) * 2) * 100
+                        local factor = 1 / (screenPos.Z * math.tan(math.rad(self.Camera.FieldOfView * 0.5)) * 2) * 100
                         local width, height = math.floor(screenHeight / 20 * factor), math.floor(screenWidth / 30 * factor)
-                        local boxPos = Vector2.new(hrpPos.X - width / 2, hrpPos.Y - height / 2)
+                        local boxPos = Vector2.new(screenPos.X - width / 2, screenPos.Y - height / 2)
                         local boxSize = Vector2.new(width, height)
                         self:UpdateHealthBarESP(self.HealthBarESPObjects[key], entity, boxPos, boxSize)
+                    else
+                        self.HealthBarESPObjects[key].Outline.Visible = false
+                        self.HealthBarESPObjects[key].Health.Visible = false
                     end
                 end
             else
@@ -935,31 +938,17 @@ function ESP:Stop()
         self.ESPLoopConnection = nil
     end
     for key in pairs(self.TextESPObjects) do self:DestroyTextESP(key) end
-    for key, data in pairs(self.BoxESPObjects) do
-        self:DestroyBoxESP(data)
-    end
+    for _, data in pairs(self.BoxESPObjects) do self:DestroyBoxESP(data) end
     self.BoxESPObjects = {}
-    for key, data in pairs(self.HealthBarESPObjects) do
-        self:DestroyHealthBarESP(data)
-    end
+    for _, data in pairs(self.HealthBarESPObjects) do self:DestroyHealthBarESP(data) end
     self.HealthBarESPObjects = {}
-    for key, data in pairs(self.SkeletonESPObjects) do
-        self:DestroySkeletonESP(data)
-    end
+    for _, data in pairs(self.SkeletonESPObjects) do self:DestroySkeletonESP(data) end
     self.SkeletonESPObjects = {}
 end
 
 function ESP:SetEnabled(state)
     self.ESPEnabled = state
     if state then self:Start() else self:Stop() end
-end
-
-function ESP:AddTargetSource(name, getEntitiesFunc, isPlayer, startEnabled)
-    self.TargetSources[name] = {
-        Enabled = startEnabled or false,
-        GetEntities = getEntitiesFunc,
-        IsPlayer = isPlayer or false
-    }
 end
 
 function ESP:Destroy()
