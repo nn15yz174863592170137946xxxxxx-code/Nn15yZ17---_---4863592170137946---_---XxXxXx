@@ -451,7 +451,7 @@ function ESP:GetSortedEntities()
 
     table.sort(allEntities, function(a, b) return a.Distance < b.Distance end)
 
-    if #allEntities > self.MaxEntities then
+    if self.MaxEntities and #allEntities > self.MaxEntities then
         for i = self.MaxEntities + 1, #allEntities do allEntities[i] = nil end
     end
 
