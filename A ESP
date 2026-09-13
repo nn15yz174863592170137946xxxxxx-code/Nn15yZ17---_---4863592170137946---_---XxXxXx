@@ -38,12 +38,11 @@ function ESP.new(settings)
     settings = settings or {}
     local self = setmetatable({}, ESP)
 
-    self.MaxDistance = settings.MaxDistance or nil
-    self.MaxEntities = settings.MaxEntities or nil
-    self.UpdateRate = settings.UpdateRate or 1
-    self.VisibleOnly = settings.VisibleOnly or false
-    self.RainbowEnabled = settings.RainbowEnabled or false
-    self.RainbowSpeed = settings.RainbowSpeed or 1
+    self.TextESPEnabled = false
+    self.BoxESPEnabled = false
+    self.HealthESPEnabled = false
+    self.SkeletonESPEnabled = false
+    self.Enabled = false
 
     self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
     self.TextSize = settings.TextSize or 20
@@ -71,11 +70,12 @@ function ESP.new(settings)
     self.SkeletonThickness = settings.SkeletonThickness or 1
     self.SkeletonTransparency = settings.SkeletonTransparency or 0
 
-    self.TextESPEnabled = false
-    self.BoxESPEnabled = false
-    self.HealthESPEnabled = false
-    self.SkeletonESPEnabled = false
-    self.Enabled = false
+    self.MaxDistance = settings.MaxDistance or nil
+    self.MaxEntities = settings.MaxEntities or nil
+    self.UpdateRate = settings.UpdateRate or 1
+    self.VisibleOnly = settings.VisibleOnly or false
+    self.RainbowEnabled = settings.RainbowEnabled or false
+    self.RainbowSpeed = settings.RainbowSpeed or 1
 
     self.Sources = {}
     self.Cache = {}
