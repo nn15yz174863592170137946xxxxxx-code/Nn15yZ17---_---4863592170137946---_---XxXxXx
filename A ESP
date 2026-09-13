@@ -45,8 +45,8 @@ function ESP.new(settings)
     self.RainbowEnabled = settings.RainbowEnabled or false
     self.RainbowSpeed = settings.RainbowSpeed or 1
 
-    self.TextColor = settings.TextColor or Color3.fromRGB(255, 255, 255)
-    self.TextSize = settings.TextSize or 16
+    self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
+    self.TextSize = settings.TextSize or 20
     self.TextTransparency = settings.TextTransparency or 0
     self.TextStroke = settings.TextStroke ~= false
     self.TextStrokeTransparency = settings.TextStrokeTransparency or 0.3
@@ -54,19 +54,20 @@ function ESP.new(settings)
     self.ShowHealth = settings.ShowHealth ~= false
     self.ShowDistance = settings.ShowDistance ~= false
 
-    self.BoxColor = settings.BoxColor or Color3.fromRGB(255, 255, 255)
+    self.BoxColor = settings.BoxColor or Color3.new(1, 1, 1)
     self.BoxThickness = settings.BoxThickness or 1
     self.BoxTransparency = settings.BoxTransparency or 0
     self.BoxFilled = settings.BoxFilled or false
     self.BoxFillTransparency = settings.BoxFillTransparency or 0.5
 
-    self.HealthColor = settings.HealthColor or Color3.fromRGB(0, 255, 0)
-    self.LowHealthColor = settings.LowHealthColor or Color3.fromRGB(255, 0, 0)
-    self.HealthTransparency = settings.HealthTransparency or 0
-    self.HealthBarWidth = settings.HealthBarWidth or 3
+    self.HealthColor = settings.HealthColor or Color3.new(0, 1, 0)
+    self.LowHealthColor = settings.LowHealthColor or Color3.new(1, 0, 0)
+    self.HealthTransparency = settings.HealthTransparency or 0.5
+    self.HealthBarWidth = settings.HealthBarWidth or 5
+    self.HealthBarPosition = settings.HealthBarPosition or "Left"
     self.HealthBarOffset = settings.HealthBarOffset or 2
 
-    self.SkeletonColor = settings.SkeletonColor or Color3.fromRGB(255, 255, 255)
+    self.SkeletonColor = settings.SkeletonColor or Color3.new(1, 1, 1)
     self.SkeletonThickness = settings.SkeletonThickness or 1
     self.SkeletonTransparency = settings.SkeletonTransparency or 0
 
@@ -80,7 +81,7 @@ function ESP.new(settings)
     self.Cache = {}
     self.FrameCounter = 0
     self.LoopConnection = nil
-    self._rainbow = Color3.fromRGB(255, 255, 255)
+    self._rainbow = Color3.new(1, 1, 1)
 
     return self
 end
@@ -211,19 +212,17 @@ function ESP:GetBoxRect(entry)
     local screenPos, onScreen = Camera:WorldToViewportPoint(entry.Root.Position)
     if not onScreen then return nil end
 
-    local viewport = Camera.ViewportSize
-    local dist = math.max(screenPos.Z, 0.1)
-    local fovScale = math.tan(math.rad(Camera.FieldOfView * 0.5))
+    local sw, sh = Camera.ViewportSize.X, Camera.ViewportSize.Y
+    local factor = 1 / (screenPos.Z * math.tan(math.rad(Camera.FieldOfView * 0.5)) * 2) * 100
+    local w = math.floor(sh / 20 * factor)
+    local h = math.floor(sw / 30 * factor)
 
-    local height = (viewport.Y / dist) / (2 * fovScale) * 4.5
-    local width = height * 0.55
-
-    height = math.clamp(math.floor(height), 10, 2000)
-    width = math.clamp(math.floor(width), 5, 1000)
+    if w < 4 then w = 4 end
+    if h < 6 then h = 6 end
 
     return {
-        Position = Vector2.new(screenPos.X - width * 0.5, screenPos.Y - height * 0.5),
-        Size = Vector2.new(width, height),
+        Position = Vector2.new(screenPos.X - w * 0.5, screenPos.Y - h * 0.5),
+        Size = Vector2.new(w, h),
         Center = Vector2.new(screenPos.X, screenPos.Y),
         ScreenPos = screenPos
     }
@@ -237,23 +236,26 @@ function ESP:CreateText(entry)
     local holder = Instance.new("BillboardGui")
     holder.Name = "ESP_Text"
     holder.Adornee = head
-    holder.Size = UDim2.new(0, 300, 0, 40)
-    holder.StudsOffset = Vector3.new(0, 2, 0)
+    holder.Size = UDim2.new(0, 100, 0, 150)
+    holder.StudsOffset = Vector3.new(0, 1, 0)
     holder.AlwaysOnTop = true
     holder.ResetOnSpawn = false
     holder.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
     local label = Instance.new("TextLabel", holder)
-    label.Size = UDim2.fromScale(1, 1)
+    label.Size = UDim2.new(0, 100, 0, 100)
+    label.Position = UDim2.new(0, 0, 0, -50)
     label.BackgroundTransparency = 1
-    label.Font = Enum.Font.SourceSansBold
+    label.Font = Enum.Font.SourceSansSemibold
     label.TextSize = self.TextSize
     label.TextColor3 = self:TextDrawColor()
     label.TextTransparency = self.TextTransparency
     label.TextStrokeColor3 = Color3.new(0, 0, 0)
     label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
+    label.TextYAlignment = Enum.TextYAlignment.Bottom
     label.TextWrapped = true
     label.RichText = true
+    label.ZIndex = 10
 
     return {Holder = holder, Label = label}
 end
@@ -287,6 +289,10 @@ function ESP:UpdateText(data, entry)
     data.Label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
 end
 
+function ESP:DestroyText(data)
+    if data and data.Holder then data.Holder:Destroy() end
+end
+
 -- ===== BOX ===== --
 function ESP:CreateBox()
     local box = Drawing.new("Square")
@@ -311,6 +317,10 @@ function ESP:UpdateBox(box, entry)
     box.Visible = true
 end
 
+function ESP:DestroyBox(box)
+    if box then box:Remove() end
+end
+
 -- ===== HEALTH ===== --
 function ESP:CreateHealth()
     return {
@@ -330,10 +340,33 @@ function ESP:UpdateHealth(data, entry, rect)
     local frac = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
     local color = self:HealthDrawColor(frac)
 
-    local w = self.HealthBarWidth
-    local x = rect.Position.X - w - self.HealthBarOffset
-    local y = rect.Position.Y
-    local h = rect.Size.Y
+    local pos = self.HealthBarPosition
+    local ox = self.HealthBarOffset
+    local bw = self.HealthBarWidth
+
+    local x, y, w, h
+
+    if pos == "Right" then
+        w = bw
+        h = rect.Size.Y
+        x = rect.Position.X + rect.Size.X + ox
+        y = rect.Position.Y
+    elseif pos == "Top" then
+        w = rect.Size.X
+        h = 6
+        x = rect.Position.X
+        y = rect.Position.Y - ox - h
+    elseif pos == "Bottom" then
+        w = rect.Size.X
+        h = 6
+        x = rect.Position.X
+        y = rect.Position.Y + rect.Size.Y + ox
+    else
+        w = bw
+        h = rect.Size.Y
+        x = rect.Position.X - bw - ox
+        y = rect.Position.Y
+    end
 
     data.Outline.Size = Vector2.new(w, h)
     data.Outline.Position = Vector2.new(x, y)
@@ -342,12 +375,24 @@ function ESP:UpdateHealth(data, entry, rect)
     data.Outline.Transparency = self.HealthTransparency
     data.Outline.Visible = true
 
-    data.Fill.Size = Vector2.new(math.max(w - 2, 0), math.max((h - 2) * frac, 0))
-    data.Fill.Position = Vector2.new(x + 1, y + 1 + (h - 2) * (1 - frac))
+    if pos == "Top" or pos == "Bottom" then
+        data.Fill.Size = Vector2.new(math.max((w - 2) * frac, 0), math.max(h - 2, 0))
+        data.Fill.Position = Vector2.new(x + 1, y + 1)
+    else
+        data.Fill.Size = Vector2.new(math.max(w - 2, 0), math.max((h - 2) * frac, 0))
+        data.Fill.Position = Vector2.new(x + 1, y + 1 + (h - 2) * (1 - frac))
+    end
+
     data.Fill.Color = color
     data.Fill.Filled = true
     data.Fill.Transparency = self.HealthTransparency
     data.Fill.Visible = true
+end
+
+function ESP:DestroyHealth(data)
+    if not data then return end
+    if data.Outline then data.Outline:Remove() end
+    if data.Fill then data.Fill:Remove() end
 end
 
 -- ===== SKELETON ===== --
@@ -412,33 +457,23 @@ function ESP:UpdateSkeleton(data, entry)
     end
 end
 
--- ===== ENTRY ===== --
-function ESP:CreateEntry(entry)
-    return {
-        Text = self.TextESPEnabled and self:CreateText(entry) or nil,
-        Box = self.BoxESPEnabled and self:CreateBox() or nil,
-        Health = self.HealthESPEnabled and self:CreateHealth() or nil,
-        Skeleton = self.SkeletonESPEnabled and self:CreateSkeleton() or nil,
-    }
+function ESP:DestroySkeleton(data)
+    if not data then return end
+    for _, line in pairs(data.Lines) do line:Remove() end
 end
 
+-- ===== ENTRY ===== --
 function ESP:DestroyEntry(data)
-    if data.Text and data.Text.Holder then data.Text.Holder:Destroy() end
-    if data.Box then data.Box:Remove() end
-    if data.Health then
-        data.Health.Outline:Remove()
-        data.Health.Fill:Remove()
-    end
-    if data.Skeleton then
-        for _, line in pairs(data.Skeleton.Lines) do line:Remove() end
-    end
+    self:DestroyText(data.Text)
+    self:DestroyBox(data.Box)
+    self:DestroyHealth(data.Health)
+    self:DestroySkeleton(data.Skeleton)
 end
 
 -- ===== MAIN LOOP ===== --
 function ESP:Step()
     self.FrameCounter = self.FrameCounter + 1
     if self.FrameCounter % self.UpdateRate ~= 0 then return end
-
     if not self.Enabled then return end
 
     self:ApplyRainbow()
@@ -452,13 +487,51 @@ function ESP:Step()
 
         local data = self.Cache[key]
         if not data then
-            data = self:CreateEntry(entry)
+            data = {}
             self.Cache[key] = data
+        end
+
+        if self.TextESPEnabled then
+            if not data.Text then data.Text = self:CreateText(entry) end
+        else
+            if data.Text then
+                self:DestroyText(data.Text)
+                data.Text = nil
+            end
+        end
+
+        if self.BoxESPEnabled then
+            if not data.Box then data.Box = self:CreateBox() end
+        else
+            if data.Box then
+                self:DestroyBox(data.Box)
+                data.Box = nil
+            end
+        end
+
+        if self.HealthESPEnabled then
+            if not data.Health then data.Health = self:CreateHealth() end
+        else
+            if data.Health then
+                self:DestroyHealth(data.Health)
+                data.Health = nil
+            end
+        end
+
+        if self.SkeletonESPEnabled then
+            if not data.Skeleton then data.Skeleton = self:CreateSkeleton() end
+        else
+            if data.Skeleton then
+                self:DestroySkeleton(data.Skeleton)
+                data.Skeleton = nil
+            end
         end
 
         local rect = self:GetBoxRect(entry)
 
-        if data.Text then self:UpdateText(data.Text, entry) end
+        if data.Text then
+            self:UpdateText(data.Text, entry)
+        end
 
         if data.Box then
             self:UpdateBox(data.Box, entry)
