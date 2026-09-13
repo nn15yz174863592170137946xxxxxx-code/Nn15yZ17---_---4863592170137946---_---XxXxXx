@@ -176,7 +176,7 @@ function ESP:BuildList()
                         model = entity
                     end
 
-                    if model and model ~= localChar then
+                    if model and model ~= localChar and model.Parent then
                         local hum = model:FindFirstChildOfClass("Humanoid")
                         local root = self:GetRoot(model)
                         if hum and hum.Health > 0 and root and not seen[model] then
@@ -233,14 +233,13 @@ end
 -- ===== TEXT ===== --
 function ESP:CreateText(entry)
     local head = self:GetHead(entry.Model)
-    if not head then return nil end
+    if not head or not head.Parent then return nil end
 
     local holder = Instance.new("Folder")
     holder.Name = entry.Model.Name .. "_ESP"
     holder.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
     local billboard = Instance.new("BillboardGui")
-    billboard.Adornee = head
     billboard.Name = entry.Model.Name
     billboard.Parent = holder
     billboard.Size = UDim2.new(0, 100, 0, 150)
@@ -260,12 +259,17 @@ function ESP:CreateText(entry)
     label.Text = "Name: " .. entry.Model.Name
     label.ZIndex = 10
 
-    return {Holder = holder, Label = label}
+    pcall(function() billboard.Adornee = head end)
+
+    return {Holder = holder, Label = label, Billboard = billboard}
 end
 
 function ESP:UpdateText(data, entry)
     if not data or not data.Label then return end
-    if not data.Holder.Parent or not data.Holder.Adornee then return end
+    if not data.Holder or not data.Holder.Parent then return end
+
+    local adornee = data.Billboard and data.Billboard.Adornee
+    if not adornee or not adornee.Parent then return end
 
     local hum = entry.Model:FindFirstChildOfClass("Humanoid")
     local localRoot = LocalPlayer.Character and self:GetRoot(LocalPlayer.Character)
@@ -482,13 +486,23 @@ function ESP:Step()
         active[key] = true
 
         local data = self.Cache[key]
-        if not data then
-            data = {}
+        if not data or data.Model ~= entry.Model then
+            if data then self:DestroyEntry(data) end
+            data = { Model = entry.Model }
             self.Cache[key] = data
         end
 
         if self.TextESPEnabled then
-            if not data.Text then data.Text = self:CreateText(entry) end
+            if data.Text then
+                local adornee = data.Text.Billboard and data.Text.Billboard.Adornee
+                if not data.Text.Holder or not data.Text.Holder.Parent or not adornee or not adornee.Parent then
+                    self:DestroyText(data.Text)
+                    data.Text = nil
+                end
+            end
+            if not data.Text then
+                data.Text = self:CreateText(entry)
+            end
         else
             if data.Text then
                 self:DestroyText(data.Text)
