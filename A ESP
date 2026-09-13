@@ -7,6 +7,11 @@ local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
+local function round(num, places)
+    local mult = 10 ^ (places or 0)
+    return math.floor(num * mult + 0.5) / mult
+end
+
 local bodyConnections = {
     R15 = {
         {"Head", "UpperTorso"},
@@ -38,17 +43,17 @@ function ESP.new(settings)
     settings = settings or {}
     local self = setmetatable({}, ESP)
 
-    self.TextESPEnabled = false
-    self.BoxESPEnabled = false
-    self.HealthESPEnabled = false
-    self.SkeletonESPEnabled = false
-    self.Enabled = false
+    self.Enabled = settings.Enabled or false
+    self.TextESPEnabled = settings.TextESPEnabled ~= false
+    self.BoxESPEnabled = settings.BoxESPEnabled ~= false
+    self.HealthESPEnabled = settings.HealthESPEnabled ~= false
+    self.SkeletonESPEnabled = settings.SkeletonESPEnabled ~= false
 
     self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
     self.TextSize = settings.TextSize or 20
     self.TextTransparency = settings.TextTransparency or 0
     self.TextStroke = settings.TextStroke ~= false
-    self.TextStrokeTransparency = settings.TextStrokeTransparency or 0.3
+    self.TextStrokeTransparency = settings.TextStrokeTransparency or 0
     self.ShowName = settings.ShowName ~= false
     self.ShowHealth = settings.ShowHealth ~= false
     self.ShowDistance = settings.ShowDistance ~= false
@@ -217,11 +222,8 @@ function ESP:GetBoxRect(entry)
     local w = math.floor(sh / 20 * factor)
     local h = math.floor(sw / 30 * factor)
 
-    if w < 4 then w = 4 end
-    if h < 6 then h = 6 end
-
     return {
-        Position = Vector2.new(screenPos.X - w * 0.5, screenPos.Y - h * 0.5),
+        Position = Vector2.new(screenPos.X - w / 2, screenPos.Y - h / 2),
         Size = Vector2.new(w, h),
         Center = Vector2.new(screenPos.X, screenPos.Y),
         ScreenPos = screenPos
@@ -233,28 +235,29 @@ function ESP:CreateText(entry)
     local head = self:GetHead(entry.Model)
     if not head then return nil end
 
-    local holder = Instance.new("BillboardGui")
-    holder.Name = "ESP_Text"
-    holder.Adornee = head
-    holder.Size = UDim2.new(0, 100, 0, 150)
-    holder.StudsOffset = Vector3.new(0, 1, 0)
-    holder.AlwaysOnTop = true
-    holder.ResetOnSpawn = false
+    local holder = Instance.new("Folder")
+    holder.Name = entry.Model.Name .. "_ESP"
     holder.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-    local label = Instance.new("TextLabel", holder)
-    label.Size = UDim2.new(0, 100, 0, 100)
-    label.Position = UDim2.new(0, 0, 0, -50)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Adornee = head
+    billboard.Name = entry.Model.Name
+    billboard.Parent = holder
+    billboard.Size = UDim2.new(0, 100, 0, 150)
+    billboard.StudsOffset = Vector3.new(0, 1, 0)
+    billboard.AlwaysOnTop = true
+
+    local label = Instance.new("TextLabel")
+    label.Parent = billboard
     label.BackgroundTransparency = 1
+    label.Position = UDim2.new(0, 0, 0, -50)
+    label.Size = UDim2.new(0, 100, 0, 100)
     label.Font = Enum.Font.SourceSansSemibold
     label.TextSize = self.TextSize
     label.TextColor3 = self:TextDrawColor()
-    label.TextTransparency = self.TextTransparency
-    label.TextStrokeColor3 = Color3.new(0, 0, 0)
     label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
     label.TextYAlignment = Enum.TextYAlignment.Bottom
-    label.TextWrapped = true
-    label.RichText = true
+    label.Text = "Name: " .. entry.Model.Name
     label.ZIndex = 10
 
     return {Holder = holder, Label = label}
@@ -269,23 +272,17 @@ function ESP:UpdateText(data, entry)
     if not hum or not localRoot then return end
 
     local dist = math.floor((localRoot.Position - entry.Root.Position).Magnitude)
-    local parts = {}
+    local health = round(hum.Health, 1)
+    local name = entry.Player and entry.Player.Name or entry.Model.Name
 
-    if self.ShowName then
-        local n = entry.Player and entry.Player.Name or entry.Model.Name
-        table.insert(parts, "<b>" .. n .. "</b>")
-    end
-    if self.ShowHealth then
-        table.insert(parts, "HP: " .. math.floor(hum.Health))
-    end
-    if self.ShowDistance then
-        table.insert(parts, math.floor(dist) .. "m")
-    end
+    local parts = {}
+    if self.ShowName then table.insert(parts, "Name: " .. name) end
+    if self.ShowHealth then table.insert(parts, "Health: " .. health) end
+    if self.ShowDistance then table.insert(parts, "Studs: " .. dist) end
 
     data.Label.Text = table.concat(parts, " | ")
     data.Label.TextColor3 = self:TextDrawColor()
     data.Label.TextSize = self.TextSize
-    data.Label.TextTransparency = self.TextTransparency
     data.Label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
 end
 
@@ -297,8 +294,8 @@ end
 function ESP:CreateBox()
     local box = Drawing.new("Square")
     box.Thickness = self.BoxThickness
-    box.Color = self:BoxDrawColor()
     box.Transparency = self.BoxTransparency
+    box.Color = self:BoxDrawColor()
     box.Filled = self.BoxFilled
     box.Visible = false
     return box
@@ -310,10 +307,10 @@ function ESP:UpdateBox(box, entry)
 
     box.Size = rect.Size
     box.Position = rect.Position
-    box.Thickness = self.BoxThickness
     box.Color = self:BoxDrawColor()
     box.Filled = self.BoxFilled
     box.Transparency = self.BoxFilled and self.BoxFillTransparency or self.BoxTransparency
+    box.Thickness = self.BoxThickness
     box.Visible = true
 end
 
@@ -343,7 +340,6 @@ function ESP:UpdateHealth(data, entry, rect)
     local pos = self.HealthBarPosition
     local ox = self.HealthBarOffset
     local bw = self.HealthBarWidth
-
     local x, y, w, h
 
     if pos == "Right" then
@@ -417,32 +413,32 @@ function ESP:UpdateSkeleton(data, entry)
     local conns = bodyConnections[rig] or bodyConnections.R15
     local activeKeys = {}
 
-    for _, conn in ipairs(conns) do
-        local key = conn[1] .. "-" .. conn[2]
+    for _, connection in ipairs(conns) do
+        local key = connection[1] .. "-" .. connection[2]
         activeKeys[key] = true
 
         if not data.Lines[key] then
             local line = Drawing.new("Line")
             line.Thickness = self.SkeletonThickness
-            line.Color = self:SkeletonDrawColor()
             line.Transparency = self.SkeletonTransparency
+            line.Color = self:SkeletonDrawColor()
             line.Visible = false
             data.Lines[key] = line
         end
 
         local line = data.Lines[key]
-        local a = entry.Model:FindFirstChild(conn[1])
-        local b = entry.Model:FindFirstChild(conn[2])
+        local partA = entry.Model:FindFirstChild(connection[1])
+        local partB = entry.Model:FindFirstChild(connection[2])
 
-        if a and b then
-            local pa, onA = Camera:WorldToViewportPoint(a.Position)
-            local pb, onB = Camera:WorldToViewportPoint(b.Position)
+        if partA and partB then
+            local posA, onA = Camera:WorldToViewportPoint(partA.Position)
+            local posB, onB = Camera:WorldToViewportPoint(partB.Position)
             if onA and onB then
-                line.From = Vector2.new(pa.X, pa.Y)
-                line.To = Vector2.new(pb.X, pb.Y)
-                line.Thickness = self.SkeletonThickness
+                line.From = Vector2.new(posA.X, posA.Y)
+                line.To = Vector2.new(posB.X, posB.Y)
                 line.Color = self:SkeletonDrawColor()
                 line.Transparency = self.SkeletonTransparency
+                line.Thickness = self.SkeletonThickness
                 line.Visible = true
             else
                 line.Visible = false
