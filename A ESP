@@ -1,183 +1,11 @@
--- ===== TEXT ESP ===== --
-local TextESP = {}
-TextESP.__index = TextESP
+-- ===== ESP MODULE ===== --
+local ESP = {}
+ESP.__index = ESP
 
-local TextPlayers = game:GetService("Players")
-local TextRunService = game:GetService("RunService")
-local TextLocalPlayer = TextPlayers.LocalPlayer
-local TextPlayerGui = TextLocalPlayer:WaitForChild("PlayerGui")
-
-local function textRound(num, numDecimalPlaces)
-    local mult = 10 ^ (numDecimalPlaces or 0)
-    return math.floor(num * mult + 0.5) / mult
-end
-
-local function textGetRoot(character)
-    return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("Head")
-end
-
-function TextESP.new(settings)
-    settings = settings or {}
-    local self = setmetatable({}, TextESP)
-    self.Enabled = false
-    self.ShowName = settings.ShowName ~= false
-    self.ShowHealth = settings.ShowHealth ~= false
-    self.ShowDistance = settings.ShowDistance ~= false
-    self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
-    self.TextSize = settings.TextSize or 20
-    self.TextStroke = settings.TextStroke ~= false
-    self.Folder = {}
-    self.PlayerAddedConn = nil
-    self.PlayerRemovingConn = nil
-    return self
-end
-
-function TextESP:CreateForPlayer(plr)
-    if not self.Enabled then return end
-    if plr == TextLocalPlayer then return end
-
-    task.spawn(function()
-        local folderName = plr.Name .. "_TESP"
-
-        if self.Folder[plr] then
-            self.Folder[plr]:Destroy()
-            self.Folder[plr] = nil
-        end
-
-        if not plr.Character then return end
-        repeat task.wait() until plr.Character and textGetRoot(plr.Character) and plr.Character:FindFirstChildOfClass("Humanoid")
-        if not self.Enabled then return end
-
-        local head = plr.Character:FindFirstChild("Head")
-        if not head then return end
-
-        local holder = Instance.new("Folder")
-        holder.Name = folderName
-        holder.Parent = TextPlayerGui
-        self.Folder[plr] = holder
-
-        local billboard = Instance.new("BillboardGui")
-        billboard.Adornee = head
-        billboard.Name = plr.Name
-        billboard.Parent = holder
-        billboard.Size = UDim2.new(0, 100, 0, 150)
-        billboard.StudsOffset = Vector3.new(0, 1, 0)
-        billboard.AlwaysOnTop = true
-
-        local label = Instance.new("TextLabel")
-        label.Parent = billboard
-        label.BackgroundTransparency = 1
-        label.Position = UDim2.new(0, 0, 0, -50)
-        label.Size = UDim2.new(0, 100, 0, 100)
-        label.Font = Enum.Font.SourceSansSemibold
-        label.TextSize = self.TextSize
-        label.TextColor3 = self.TextColor
-        label.TextStrokeTransparency = self.TextStroke and 0 or 1
-        label.TextYAlignment = Enum.TextYAlignment.Bottom
-        label.Text = "Name: " .. plr.Name
-        label.ZIndex = 10
-
-        local loopConnection
-        local addedConnection
-        local removedConnection
-
-        local function updateText()
-            if not holder.Parent then return end
-            local char = plr.Character
-            local localChar = TextLocalPlayer.Character
-            if char and textGetRoot(char) and char:FindFirstChildOfClass("Humanoid") and localChar and textGetRoot(localChar) and localChar:FindFirstChildOfClass("Humanoid") then
-                local dist = math.floor((textGetRoot(localChar).Position - textGetRoot(char).Position).Magnitude)
-                local health = textRound(char:FindFirstChildOfClass("Humanoid").Health, 1)
-                local parts = {}
-                if self.ShowName then table.insert(parts, "Name: " .. plr.Name) end
-                if self.ShowHealth then table.insert(parts, "Health: " .. health) end
-                if self.ShowDistance then table.insert(parts, "Studs: " .. dist) end
-                label.Text = table.concat(parts, " | ")
-            end
-        end
-
-        loopConnection = TextRunService.RenderStepped:Connect(updateText)
-
-        addedConnection = plr.CharacterAdded:Connect(function(newChar)
-            if loopConnection then loopConnection:Disconnect() end
-            if addedConnection then addedConnection:Disconnect() end
-            if holder then holder:Destroy() end
-            self.Folder[plr] = nil
-            repeat task.wait() until newChar and textGetRoot(newChar) and newChar:FindFirstChildOfClass("Humanoid")
-            self:CreateForPlayer(plr)
-        end)
-
-        removedConnection = plr.AncestryChanged:Connect(function()
-            if not plr.Parent then
-                if loopConnection then loopConnection:Disconnect() end
-                if addedConnection then addedConnection:Disconnect() end
-                if removedConnection then removedConnection:Disconnect() end
-                if holder then holder:Destroy() end
-                self.Folder[plr] = nil
-            end
-        end)
-    end)
-end
-
-function TextESP:RemoveForPlayer(plr)
-    if self.Folder[plr] then
-        self.Folder[plr]:Destroy()
-        self.Folder[plr] = nil
-    end
-end
-
-function TextESP:Start()
-    if self.Enabled then return end
-    self.Enabled = true
-
-    for _, plr in ipairs(TextPlayers:GetPlayers()) do
-        if plr ~= TextLocalPlayer then
-            self:CreateForPlayer(plr)
-        end
-    end
-
-    self.PlayerAddedConn = TextPlayers.PlayerAdded:Connect(function(plr)
-        plr.CharacterAdded:Connect(function()
-            self:CreateForPlayer(plr)
-        end)
-    end)
-
-    self.PlayerRemovingConn = TextPlayers.PlayerRemoving:Connect(function(plr)
-        self:RemoveForPlayer(plr)
-    end)
-end
-
-function TextESP:Stop()
-    if not self.Enabled then return end
-    self.Enabled = false
-
-    if self.PlayerAddedConn then
-        self.PlayerAddedConn:Disconnect()
-        self.PlayerAddedConn = nil
-    end
-    if self.PlayerRemovingConn then
-        self.PlayerRemovingConn:Disconnect()
-        self.PlayerRemovingConn = nil
-    end
-
-    for plr, folder in pairs(self.Folder) do
-        if folder then folder:Destroy() end
-    end
-    self.Folder = {}
-end
-
-function TextESP:Destroy()
-    self:Stop()
-end
-
--- ===== DRAWING ESP ===== --
-local DrawingESP = {}
-DrawingESP.__index = DrawingESP
-
-local DrawPlayers = game:GetService("Players")
-local DrawRunService = game:GetService("RunService")
-local DrawCamera = workspace.CurrentCamera
-local DrawLocalPlayer = DrawPlayers.LocalPlayer
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
 
 local bodyConnections = {
     R15 = {
@@ -205,196 +33,486 @@ local bodyConnections = {
     }
 }
 
-function DrawingESP.new(settings)
+-- ===== CONSTRUCTOR ===== --
+function ESP.new(settings)
     settings = settings or {}
-    local self = setmetatable({}, DrawingESP)
-    self.Enabled = false
-    self.espCache = {}
-    self.ShowBox = settings.ShowBox ~= false
+    local self = setmetatable({}, ESP)
+
+    self.MaxDistance = settings.MaxDistance or nil
+    self.MaxEntities = settings.MaxEntities or nil
+    self.UpdateRate = settings.UpdateRate or 1
+    self.VisibleOnly = settings.VisibleOnly or false
+    self.RainbowEnabled = settings.RainbowEnabled or false
+    self.RainbowSpeed = settings.RainbowSpeed or 1
+
+    self.TextColor = settings.TextColor or Color3.fromRGB(255, 255, 255)
+    self.TextSize = settings.TextSize or 16
+    self.TextTransparency = settings.TextTransparency or 0
+    self.TextStroke = settings.TextStroke ~= false
+    self.TextStrokeTransparency = settings.TextStrokeTransparency or 0.3
+    self.ShowName = settings.ShowName ~= false
     self.ShowHealth = settings.ShowHealth ~= false
-    self.ShowSkeleton = settings.ShowSkeleton ~= false
+    self.ShowDistance = settings.ShowDistance ~= false
+
     self.BoxColor = settings.BoxColor or Color3.fromRGB(255, 255, 255)
+    self.BoxThickness = settings.BoxThickness or 1
+    self.BoxTransparency = settings.BoxTransparency or 0
+    self.BoxFilled = settings.BoxFilled or false
+    self.BoxFillTransparency = settings.BoxFillTransparency or 0.5
+
     self.HealthColor = settings.HealthColor or Color3.fromRGB(0, 255, 0)
+    self.LowHealthColor = settings.LowHealthColor or Color3.fromRGB(255, 0, 0)
+    self.HealthTransparency = settings.HealthTransparency or 0
+    self.HealthBarWidth = settings.HealthBarWidth or 3
+    self.HealthBarOffset = settings.HealthBarOffset or 2
+
     self.SkeletonColor = settings.SkeletonColor or Color3.fromRGB(255, 255, 255)
+    self.SkeletonThickness = settings.SkeletonThickness or 1
+    self.SkeletonTransparency = settings.SkeletonTransparency or 0
+
+    self.TextESPEnabled = false
+    self.BoxESPEnabled = false
+    self.HealthESPEnabled = false
+    self.SkeletonESPEnabled = false
+    self.Enabled = false
+
+    self.Sources = {}
+    self.Cache = {}
+    self.FrameCounter = 0
     self.LoopConnection = nil
+    self._rainbow = Color3.fromRGB(255, 255, 255)
+
     return self
 end
 
-function DrawingESP:createDrawing(drawingType, properties)
-    local drawing = Drawing.new(drawingType)
-    for prop, val in pairs(properties) do
-        drawing[prop] = val
-    end
-    return drawing
+-- ===== COLORS ===== --
+function ESP:ApplyRainbow()
+    if not self.RainbowEnabled then return end
+    local hue = (os.clock() * self.RainbowSpeed) % 1
+    self._rainbow = Color3.fromHSV(hue, 1, 1)
 end
 
-function DrawingESP:createComponents()
-    return {
-        Box = self:createDrawing("Square", {
-            Thickness = 1,
-            Transparency = 1,
-            Color = self.BoxColor,
-            Filled = false
-        }),
-        HealthBar = {
-            Outline = self:createDrawing("Square", {
-                Thickness = 1,
-                Transparency = 1,
-                Color = Color3.fromRGB(0, 0, 0),
-                Filled = false
-            }),
-            Health = self:createDrawing("Square", {
-                Thickness = 1,
-                Transparency = 1,
-                Color = self.HealthColor,
-                Filled = true
-            })
-        },
-        SkeletonLines = {}
+function ESP:BoxDrawColor()
+    return self.RainbowEnabled and self._rainbow or self.BoxColor
+end
+
+function ESP:SkeletonDrawColor()
+    return self.RainbowEnabled and self._rainbow or self.SkeletonColor
+end
+
+function ESP:TextDrawColor()
+    return self.RainbowEnabled and self._rainbow or self.TextColor
+end
+
+function ESP:HealthDrawColor(frac)
+    local baseColor = self.RainbowEnabled and self._rainbow or self.HealthColor
+    if frac < 0.3 then return self.LowHealthColor end
+    if frac < 0.6 then
+        local t = (frac - 0.3) / 0.3
+        return baseColor:Lerp(self.LowHealthColor, 1 - t)
+    end
+    return baseColor
+end
+
+-- ===== SOURCES ===== --
+function ESP:AddSource(name, getter, isPlayer, startEnabled)
+    self.Sources[name] = {
+        Enabled = startEnabled ~= false,
+        Getter = getter,
+        IsPlayer = isPlayer or false
     }
 end
 
-function DrawingESP:updateComponents(components, character, player)
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character:FindFirstChild("Humanoid")
+function ESP:SetSourceEnabled(name, enabled)
+    if self.Sources[name] then
+        self.Sources[name].Enabled = enabled
+    end
+end
 
-    if hrp and humanoid then
-        local hrpPosition, onScreen = DrawCamera:WorldToViewportPoint(hrp.Position)
+-- ===== HELPERS ===== --
+function ESP:GetRoot(model)
+    return model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model:FindFirstChild("Head")
+end
 
-        if onScreen then
-            local screenWidth, screenHeight = DrawCamera.ViewportSize.X, DrawCamera.ViewportSize.Y
-            local factor = 1 / (hrpPosition.Z * math.tan(math.rad(DrawCamera.FieldOfView * 0.5)) * 2) * 100
-            local width, height = math.floor(screenHeight / 20 * factor), math.floor(screenWidth / 30 * factor)
+function ESP:GetHead(model)
+    return model:FindFirstChild("Head") or self:GetRoot(model)
+end
 
-            components.Box.Size = Vector2.new(width, height)
-            components.Box.Position = Vector2.new(hrpPosition.X - width / 2, hrpPosition.Y - height / 2)
-            components.Box.Color = self.BoxColor
-            components.Box.Visible = self.ShowBox
+function ESP:IsVisible(part, camPos)
+    local pos = part.Position
+    local dir = (pos - camPos).Unit
+    local dist = (pos - camPos).Magnitude
+    local ray = Ray.new(camPos, dir * dist)
+    local ignore = {LocalPlayer.Character, Camera}
+    local hit = workspace:FindPartOnRayWithIgnoreList(ray, ignore, false, true)
+    if not hit then return false end
+    local character = part
+    while character and not character:IsA("Model") do character = character.Parent end
+    return character and hit:IsDescendantOf(character)
+end
 
-            local healthBarHeight = height
-            local healthBarWidth = 5
-            local healthFraction = humanoid.Health / humanoid.MaxHealth
+function ESP:BuildList()
+    local list = {}
+    local camPos = Camera.CFrame.Position
+    local localChar = LocalPlayer.Character
+    local seen = {}
 
-            components.HealthBar.Outline.Size = Vector2.new(healthBarWidth, healthBarHeight)
-            components.HealthBar.Outline.Position = Vector2.new(components.Box.Position.X - healthBarWidth - 2, components.Box.Position.Y)
-            components.HealthBar.Outline.Visible = self.ShowHealth
-
-            components.HealthBar.Health.Size = Vector2.new(healthBarWidth - 2, healthBarHeight * healthFraction)
-            components.HealthBar.Health.Position = Vector2.new(components.HealthBar.Outline.Position.X + 1, components.HealthBar.Outline.Position.Y + healthBarHeight * (1 - healthFraction))
-            components.HealthBar.Health.Color = self.HealthColor
-            components.HealthBar.Health.Visible = self.ShowHealth
-
-            local connections = bodyConnections[humanoid.RigType.Name] or {}
-            local activeKeys = {}
-            for _, connection in ipairs(connections) do
-                local key = connection[1] .. "-" .. connection[2]
-                activeKeys[key] = true
-                local partA = character:FindFirstChild(connection[1])
-                local partB = character:FindFirstChild(connection[2])
-                if partA and partB then
-                    local line = components.SkeletonLines[key]
-                    if not line then
-                        line = self:createDrawing("Line", {Thickness = 1, Color = self.SkeletonColor})
-                        components.SkeletonLines[key] = line
+    for srcName, src in pairs(self.Sources) do
+        if src.Enabled then
+            local ok, entities = pcall(src.Getter)
+            if ok and entities then
+                for _, entity in ipairs(entities) do
+                    local model, playerObj
+                    if typeof(entity) == "Instance" and entity:IsA("Player") then
+                        playerObj = entity
+                        model = entity.Character
+                    elseif typeof(entity) == "Instance" and entity:IsA("Model") then
+                        model = entity
                     end
-                    local posA, onScreenA = DrawCamera:WorldToViewportPoint(partA.Position)
-                    local posB, onScreenB = DrawCamera:WorldToViewportPoint(partB.Position)
-                    if onScreenA and onScreenB and self.ShowSkeleton then
-                        line.From = Vector2.new(posA.X, posA.Y)
-                        line.To = Vector2.new(posB.X, posB.Y)
-                        line.Color = self.SkeletonColor
-                        line.Visible = true
-                    else
-                        line.Visible = false
+
+                    if model and model ~= localChar then
+                        local hum = model:FindFirstChildOfClass("Humanoid")
+                        local root = self:GetRoot(model)
+                        if hum and hum.Health > 0 and root and not seen[model] then
+                            local dist = (camPos - root.Position).Magnitude
+                            if not self.MaxDistance or dist <= self.MaxDistance then
+                                if not self.VisibleOnly or self:IsVisible(root, camPos) then
+                                    seen[model] = true
+                                    table.insert(list, {
+                                        Model = model,
+                                        Player = playerObj,
+                                        Root = root,
+                                        Distance = dist,
+                                        SourceName = srcName,
+                                    })
+                                end
+                            end
+                        end
                     end
                 end
             end
-            for key, line in pairs(components.SkeletonLines) do
-                if not activeKeys[key] then line.Visible = false end
+        end
+    end
+
+    table.sort(list, function(a, b) return a.Distance < b.Distance end)
+    if self.MaxEntities and #list > self.MaxEntities then
+        for i = self.MaxEntities + 1, #list do list[i] = nil end
+    end
+    return list
+end
+
+function ESP:GetKey(entry)
+    if entry.Player then return "P_" .. entry.Player.Name end
+    return "M_" .. entry.Model.Name .. "_" .. tostring(entry.Model:GetDebugId())
+end
+
+-- ===== BOX SIZING ===== --
+function ESP:GetBoxRect(entry)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(entry.Root.Position)
+    if not onScreen then return nil end
+
+    local viewport = Camera.ViewportSize
+    local dist = math.max(screenPos.Z, 0.1)
+    local fovScale = math.tan(math.rad(Camera.FieldOfView * 0.5))
+
+    local height = (viewport.Y / dist) / (2 * fovScale) * 4.5
+    local width = height * 0.55
+
+    height = math.clamp(math.floor(height), 10, 2000)
+    width = math.clamp(math.floor(width), 5, 1000)
+
+    return {
+        Position = Vector2.new(screenPos.X - width * 0.5, screenPos.Y - height * 0.5),
+        Size = Vector2.new(width, height),
+        Center = Vector2.new(screenPos.X, screenPos.Y),
+        ScreenPos = screenPos
+    }
+end
+
+-- ===== TEXT ===== --
+function ESP:CreateText(entry)
+    local head = self:GetHead(entry.Model)
+    if not head then return nil end
+
+    local holder = Instance.new("BillboardGui")
+    holder.Name = "ESP_Text"
+    holder.Adornee = head
+    holder.Size = UDim2.new(0, 300, 0, 40)
+    holder.StudsOffset = Vector3.new(0, 2, 0)
+    holder.AlwaysOnTop = true
+    holder.ResetOnSpawn = false
+    holder.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local label = Instance.new("TextLabel", holder)
+    label.Size = UDim2.fromScale(1, 1)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.SourceSansBold
+    label.TextSize = self.TextSize
+    label.TextColor3 = self:TextDrawColor()
+    label.TextTransparency = self.TextTransparency
+    label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
+    label.TextWrapped = true
+    label.RichText = true
+
+    return {Holder = holder, Label = label}
+end
+
+function ESP:UpdateText(data, entry)
+    if not data or not data.Label then return end
+    if not data.Holder.Parent or not data.Holder.Adornee then return end
+
+    local hum = entry.Model:FindFirstChildOfClass("Humanoid")
+    local localRoot = LocalPlayer.Character and self:GetRoot(LocalPlayer.Character)
+    if not hum or not localRoot then return end
+
+    local dist = math.floor((localRoot.Position - entry.Root.Position).Magnitude)
+    local parts = {}
+
+    if self.ShowName then
+        local n = entry.Player and entry.Player.Name or entry.Model.Name
+        table.insert(parts, "<b>" .. n .. "</b>")
+    end
+    if self.ShowHealth then
+        table.insert(parts, "HP: " .. math.floor(hum.Health))
+    end
+    if self.ShowDistance then
+        table.insert(parts, math.floor(dist) .. "m")
+    end
+
+    data.Label.Text = table.concat(parts, " | ")
+    data.Label.TextColor3 = self:TextDrawColor()
+    data.Label.TextSize = self.TextSize
+    data.Label.TextTransparency = self.TextTransparency
+    data.Label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
+end
+
+-- ===== BOX ===== --
+function ESP:CreateBox()
+    local box = Drawing.new("Square")
+    box.Thickness = self.BoxThickness
+    box.Color = self:BoxDrawColor()
+    box.Transparency = self.BoxTransparency
+    box.Filled = self.BoxFilled
+    box.Visible = false
+    return box
+end
+
+function ESP:UpdateBox(box, entry)
+    local rect = self:GetBoxRect(entry)
+    if not rect then box.Visible = false; return end
+
+    box.Size = rect.Size
+    box.Position = rect.Position
+    box.Thickness = self.BoxThickness
+    box.Color = self:BoxDrawColor()
+    box.Filled = self.BoxFilled
+    box.Transparency = self.BoxFilled and self.BoxFillTransparency or self.BoxTransparency
+    box.Visible = true
+end
+
+-- ===== HEALTH ===== --
+function ESP:CreateHealth()
+    return {
+        Outline = Drawing.new("Square"),
+        Fill = Drawing.new("Square")
+    }
+end
+
+function ESP:UpdateHealth(data, entry, rect)
+    local hum = entry.Model:FindFirstChildOfClass("Humanoid")
+    if not hum then
+        data.Outline.Visible = false
+        data.Fill.Visible = false
+        return
+    end
+
+    local frac = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
+    local color = self:HealthDrawColor(frac)
+
+    local w = self.HealthBarWidth
+    local x = rect.Position.X - w - self.HealthBarOffset
+    local y = rect.Position.Y
+    local h = rect.Size.Y
+
+    data.Outline.Size = Vector2.new(w, h)
+    data.Outline.Position = Vector2.new(x, y)
+    data.Outline.Color = Color3.new(0, 0, 0)
+    data.Outline.Filled = true
+    data.Outline.Transparency = self.HealthTransparency
+    data.Outline.Visible = true
+
+    data.Fill.Size = Vector2.new(math.max(w - 2, 0), math.max((h - 2) * frac, 0))
+    data.Fill.Position = Vector2.new(x + 1, y + 1 + (h - 2) * (1 - frac))
+    data.Fill.Color = color
+    data.Fill.Filled = true
+    data.Fill.Transparency = self.HealthTransparency
+    data.Fill.Visible = true
+end
+
+-- ===== SKELETON ===== --
+function ESP:CreateSkeleton()
+    return {Lines = {}, Rig = nil}
+end
+
+function ESP:UpdateSkeleton(data, entry)
+    local hum = entry.Model:FindFirstChildOfClass("Humanoid")
+    if not hum then
+        for _, line in pairs(data.Lines) do line.Visible = false end
+        return
+    end
+
+    local rig = hum.RigType.Name
+    if data.Rig ~= rig then
+        for _, line in pairs(data.Lines) do line:Remove() end
+        data.Lines = {}
+        data.Rig = rig
+    end
+
+    local conns = bodyConnections[rig] or bodyConnections.R15
+    local activeKeys = {}
+
+    for _, conn in ipairs(conns) do
+        local key = conn[1] .. "-" .. conn[2]
+        activeKeys[key] = true
+
+        if not data.Lines[key] then
+            local line = Drawing.new("Line")
+            line.Thickness = self.SkeletonThickness
+            line.Color = self:SkeletonDrawColor()
+            line.Transparency = self.SkeletonTransparency
+            line.Visible = false
+            data.Lines[key] = line
+        end
+
+        local line = data.Lines[key]
+        local a = entry.Model:FindFirstChild(conn[1])
+        local b = entry.Model:FindFirstChild(conn[2])
+
+        if a and b then
+            local pa, onA = Camera:WorldToViewportPoint(a.Position)
+            local pb, onB = Camera:WorldToViewportPoint(b.Position)
+            if onA and onB then
+                line.From = Vector2.new(pa.X, pa.Y)
+                line.To = Vector2.new(pb.X, pb.Y)
+                line.Thickness = self.SkeletonThickness
+                line.Color = self:SkeletonDrawColor()
+                line.Transparency = self.SkeletonTransparency
+                line.Visible = true
+            else
+                line.Visible = false
             end
         else
-            self:hideComponents(components)
+            line.Visible = false
         end
-    else
-        self:hideComponents(components)
+    end
+
+    for key, line in pairs(data.Lines) do
+        if not activeKeys[key] then line.Visible = false end
     end
 end
 
-function DrawingESP:hideComponents(components)
-    components.Box.Visible = false
-    components.HealthBar.Outline.Visible = false
-    components.HealthBar.Health.Visible = false
-    for _, line in pairs(components.SkeletonLines) do
-        line.Visible = false
+-- ===== ENTRY ===== --
+function ESP:CreateEntry(entry)
+    return {
+        Text = self.TextESPEnabled and self:CreateText(entry) or nil,
+        Box = self.BoxESPEnabled and self:CreateBox() or nil,
+        Health = self.HealthESPEnabled and self:CreateHealth() or nil,
+        Skeleton = self.SkeletonESPEnabled and self:CreateSkeleton() or nil,
+    }
+end
+
+function ESP:DestroyEntry(data)
+    if data.Text and data.Text.Holder then data.Text.Holder:Destroy() end
+    if data.Box then data.Box:Remove() end
+    if data.Health then
+        data.Health.Outline:Remove()
+        data.Health.Fill:Remove()
+    end
+    if data.Skeleton then
+        for _, line in pairs(data.Skeleton.Lines) do line:Remove() end
     end
 end
 
-function DrawingESP:removeEsp(player)
-    local components = self.espCache[player]
-    if components then
-        components.Box:Remove()
-        components.HealthBar.Outline:Remove()
-        components.HealthBar.Health:Remove()
-        for _, line in pairs(components.SkeletonLines) do
-            line:Remove()
+-- ===== MAIN LOOP ===== --
+function ESP:Step()
+    self.FrameCounter = self.FrameCounter + 1
+    if self.FrameCounter % self.UpdateRate ~= 0 then return end
+
+    if not self.Enabled then return end
+
+    self:ApplyRainbow()
+
+    local list = self:BuildList()
+    local active = {}
+
+    for _, entry in ipairs(list) do
+        local key = self:GetKey(entry)
+        active[key] = true
+
+        local data = self.Cache[key]
+        if not data then
+            data = self:CreateEntry(entry)
+            self.Cache[key] = data
         end
-        self.espCache[player] = nil
-    end
-end
 
-function DrawingESP:Start()
-    if self.Enabled then return end
-    self.Enabled = true
+        local rect = self:GetBoxRect(entry)
 
-    self.LoopConnection = DrawRunService.RenderStepped:Connect(function()
-        for _, player in ipairs(DrawPlayers:GetPlayers()) do
-            if player ~= DrawLocalPlayer then
-                local character = player.Character
-                if character then
-                    if not self.espCache[player] then
-                        self.espCache[player] = self:createComponents()
-                    end
-                    self:updateComponents(self.espCache[player], character, player)
-                else
-                    if self.espCache[player] then
-                        self:hideComponents(self.espCache[player])
-                    end
-                end
+        if data.Text then self:UpdateText(data.Text, entry) end
+
+        if data.Box then
+            self:UpdateBox(data.Box, entry)
+        end
+
+        if data.Health then
+            if rect then
+                self:UpdateHealth(data.Health, entry, rect)
+            else
+                data.Health.Outline.Visible = false
+                data.Health.Fill.Visible = false
             end
         end
-    end)
 
-    DrawPlayers.PlayerRemoving:Connect(function(player)
-        self:removeEsp(player)
-    end)
+        if data.Skeleton then
+            self:UpdateSkeleton(data.Skeleton, entry)
+        end
+    end
+
+    for key, data in pairs(self.Cache) do
+        if not active[key] then
+            self:DestroyEntry(data)
+            self.Cache[key] = nil
+        end
+    end
 end
 
-function DrawingESP:Stop()
-    if not self.Enabled then return end
-    self.Enabled = false
+function ESP:Start()
+    if self.LoopConnection then return end
+    self.LoopConnection = RunService.RenderStepped:Connect(function() self:Step() end)
+end
 
+function ESP:Stop()
     if self.LoopConnection then
         self.LoopConnection:Disconnect()
         self.LoopConnection = nil
     end
-
-    for _, components in pairs(self.espCache) do
-        components.Box:Remove()
-        components.HealthBar.Outline:Remove()
-        components.HealthBar.Health:Remove()
-        for _, line in pairs(components.SkeletonLines) do
-            line:Remove()
-        end
+    for _, data in pairs(self.Cache) do
+        self:DestroyEntry(data)
     end
-    self.espCache = {}
+    self.Cache = {}
 end
 
-function DrawingESP:Destroy()
+function ESP:SetEnabled(state)
+    self.Enabled = state
+    if state then
+        self:Start()
+    else
+        self:Stop()
+    end
+end
+
+function ESP:Destroy()
     self:Stop()
 end
 
--- ===== PACKAGE ===== --
-return {
-    Text = TextESP,
-    Drawing = DrawingESP
-}
+return ESP
