@@ -356,6 +356,10 @@ function Aimlock:FindBestTarget()
         local vel = aimPart.Velocity
         local predicted = self:GetPredictedPos(point, vel, targetChar)
 
+        if self.LockAnywhere then
+            return predicted, 0
+        end
+
         local screenPos, onScreen = self.Camera:WorldToViewportPoint(predicted)
         if not onScreen then return nil, nil end
 
@@ -367,7 +371,6 @@ function Aimlock:FindBestTarget()
         local dy = screenPos.Y - fPos.Y
         local screenDist = math.sqrt(dx * dx + dy * dy)
 
-        if self.LockAnywhere then return predicted, 0 end
         if screenDist <= self.FOVSize / 2 then return predicted, screenDist end
         return nil, nil
     end
@@ -493,7 +496,7 @@ function Aimlock:SetEnabled(state)
     if state then self:Start() else self:Stop() end
     self:UpdateMobileButton()
     if self.OnStateChanged then
-        pcall(self.OnStateChanged, state)
+        self.OnStateChanged(state)
     end
 end
 
