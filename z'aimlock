@@ -498,7 +498,11 @@ function Aimlock:SetEnabled(state)
 end
 
 function Aimlock:CreateMobileButton()
-    if self.MobileButtonGui then return end
+    if self.MobileButtonGui then
+        self.MobileButtonGui.Enabled = true
+        self:UpdateMobileButton()
+        return
+    end
 
     local gui = Instance.new("ScreenGui")
     gui.Name = self.AimlockName .. "MobileToggle"
@@ -528,6 +532,14 @@ function Aimlock:CreateMobileButton()
     end)
 
     self:UpdateMobileButton()
+end
+
+function Aimlock:SetMobileButtonVisible(visible)
+    if not self.MobileButtonGui then
+        if visible then self:CreateMobileButton() end
+        return
+    end
+    self.MobileButtonGui.Enabled = visible
 end
 
 function Aimlock:DestroyMobileButton()
