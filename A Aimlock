@@ -7,7 +7,6 @@ local DEFAULTS = {
     LockAnywhere = false,
     TeamCheck = false,
     MaxDistance = nil,
-
     MobileButtonEnabled = true,
 
     FOVSize = 500,
@@ -27,11 +26,11 @@ local DEFAULTS = {
 
 local DEFAULT_FEATURES = {
     Enabled = true,
-    Sources = true,
+    Target = true,
     Lists = true,
-    FOV = true,
     Prediction = true,
     Targeting = true,
+    FOV = true,
 }
 
 -- ===== MERGE ===== --
@@ -42,15 +41,25 @@ local function merge(a, b)
     return out
 end
 
--- ===== HELPERS ===== --
-local function collectPlayerNames(Players, LocalPlayer)
-    local names = {}
+-- ===== PLAYER LIST HELPER ===== --
+local function buildPlayerOptions(Players, LocalPlayer)
+    local names = {"None"}
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             table.insert(names, plr.Name)
         end
     end
     return names
+end
+
+-- ===== STATE ===== --
+local function setupStateSync(prefix, aim)
+    aim.OnStateChanged = function(state)
+        local uiToggle = Options[prefix.."Enabled"]
+        if uiToggle and uiToggle.Value ~= state then
+            uiToggle:SetValue(state)
+        end
+    end
 end
 
 -- ===== BUILDERS ===== --
@@ -115,40 +124,58 @@ B.Keybind = function(g, p, e)
             local uiToggle = Options[p.."Enabled"]
             if uiToggle then
                 uiToggle:SetValue(not uiToggle.Value)
-            else
-                e:SetEnabled(not e.Enabled)
             end
         end,
     })
 end
 
-B.SourceCheckbox = function(g, p, e)
-    for name, src in pairs(e.TargetSources) do
-        g:AddCheckbox(p.."Source_"..name, {
-            Text = "Target "..name,
-            Default = src.Enabled,
-            Callback = function(v) src.Enabled = v end,
+B.TargetPlayers = function(g, p, e)
+    if e.TargetSources["Players"] then
+        g:AddCheckbox(p.."Target_Players", {
+            Text = "Target Players",
+            Default = e.TargetSources["Players"].Enabled,
+            Callback = function(v)
+                e.TargetPlayers = v
+                e.TargetSources["Players"].Enabled = v
+            end,
         })
     end
 end
 
+B.TargetCustom = function(g, p, e)
+    for name, src in pairs(e.TargetSources) do
+        if name ~= "Players" then
+            g:AddCheckbox(p.."Target_"..name, {
+                Text = "Target "..name,
+                Default = src.Enabled,
+                Callback = function(v)
+                    src.Enabled = v
+                end,
+            })
+        end
+    end
+end
+
 B.Whitelist = function(g, p, e)
-    local names = collectPlayerNames(e.Players, e.LocalPlayer)
+    local names = buildPlayerOptions(e.Players, e.LocalPlayer)
 
     g:AddDropdown(p.."Whitelist", {
         Text = "Whitelist",
         Values = names,
-        Default = {},
         Multi = true,
+        Default = {},
         Searchable = true,
-        Callback = function(selected)
+        Callback = function(selection)
+            if selection["None"] then
+                Options[p.."Whitelist"]:SetValue({})
+                e.Whitelist = {}
+                return
+            end
             local out = {}
-            if type(selected) == "table" then
-                for name, checked in pairs(selected) do
-                    if checked then table.insert(out, name) end
+            for k, v in pairs(selection) do
+                if type(k) == "string" and k ~= "None" then
+                    table.insert(out, k)
                 end
-            elseif type(selected) == "string" then
-                table.insert(out, selected)
             end
             e.Whitelist = out
         end,
@@ -156,26 +183,124 @@ B.Whitelist = function(g, p, e)
 end
 
 B.PriorityTarget = function(g, p, e)
-    local names = collectPlayerNames(e.Players, e.LocalPlayer)
+    local names = buildPlayerOptions(e.Players, e.LocalPlayer)
 
     g:AddDropdown(p.."PriorityTarget", {
         Text = "Priority Target",
         Values = names,
-        Default = {},
         Multi = true,
+        Default = {},
         Searchable = true,
-        Callback = function(selected)
+        Callback = function(selection)
+            if selection["None"] then
+                Options[p.."PriorityTarget"]:SetValue({})
+                e.Targetlist = {}
+                return
+            end
             local out = {}
-            if type(selected) == "table" then
-                for name, checked in pairs(selected) do
-                    if checked then table.insert(out, name) end
+            for k, v in pairs(selection) do
+                if type(k) == "string" and k ~= "None" then
+                    table.insert(out, k)
                 end
-            elseif type(selected) == "string" then
-                table.insert(out, selected)
             end
             e.Targetlist = out
         end,
     })
+end
+
+B.PredictionXZ = function(g, p, e)
+    g:AddInput(p.."PredictionXZ", {
+        Text = "Prediction XZ",
+        Default = tostring(e.PredictionXZ),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "0",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.PredictionXZ = n end
+        end,
+    })
+end
+
+B.PredictionY = function(g, p, e)
+    g:AddInput(p.."PredictionY", {
+        Text = "Prediction Y",
+        Default = tostring(e.PredictionY),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "0",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.PredictionY = n end
+        end,
+    })
+end
+
+B.AutoPrediction = function(g, p, e)
+    g:AddCheckbox(p.."AutoPrediction", {
+        Text = "Auto",
+        Default = e.AutoPredictionEnabled,
+        Callback = function(v) e.AutoPredictionEnabled = v end,
+    })
+end
+
+B.SampleMode = function(g, p, e)
+    g:AddDropdown(p.."SampleMode", {
+        Text = "Grid Mode",
+        Values = {"1", "2", "3"},
+        Default = tostring(e.SampleMode),
+        Callback = function(v) e.SampleMode = tonumber(v) end,
+    })
+end
+
+B.AimPart = function(g, p, e)
+    local order = {"Head", "Torso", "Other Parts"}
+
+    g:AddDropdown(p.."AimPart", {
+        Text = "Aim Part",
+        Values = {"Head", "Torso", "Other Parts"},
+        Default = {"Head", "Torso", "Other Parts"},
+        Multi = true,
+        Callback = function(selected)
+            local newOrder = {}
+            for _, name in ipairs(order) do
+                if selected[name] then table.insert(newOrder, name) end
+            end
+            for name, checked in pairs(selected) do
+                if checked and not table.find(newOrder, name) then
+                    table.insert(newOrder, name)
+                end
+            end
+            order = newOrder
+            e.AimPartPreference = newOrder
+        end,
+    })
+end
+
+B.HeadChance = function(g, p, e)
+    g:AddSlider(p.."HeadChance", {
+        Text = "Head %",
+        Default = e.HeadChance,
+        Min = 0, Max = 100, Rounding = 0,
+    })
+
+    g:AddSlider(p.."TorsoChance", {
+        Text = "Torso/Other Parts %",
+        Default = 100 - e.HeadChance,
+        Min = 0, Max = 100, Rounding = 0,
+    })
+
+    Options[p.."HeadChance"]:OnChanged(function(v)
+        e.HeadChance = v
+        Options[p.."TorsoChance"]:SetValue(100 - v)
+    end)
+
+    Options[p.."TorsoChance"]:OnChanged(function(v)
+        e.HeadChance = 100 - v
+        Options[p.."HeadChance"]:SetValue(100 - v)
+    end)
 end
 
 B.FOVSize = function(g, p, e)
@@ -254,101 +379,6 @@ B.RainbowSpeed = function(g, p, e)
     })
 end
 
-B.PredictionXZ = function(g, p, e)
-    g:AddInput(p.."PredictionXZ", {
-        Text = "Prediction XZ",
-        Default = tostring(e.PredictionXZ),
-        Numeric = true,
-        Finished = false,
-        ClearTextOnFocus = false,
-        Placeholder = "0",
-        Callback = function(v)
-            local n = tonumber(v)
-            if n then e.PredictionXZ = n end
-        end,
-    })
-end
-
-B.PredictionY = function(g, p, e)
-    g:AddInput(p.."PredictionY", {
-        Text = "Prediction Y",
-        Default = tostring(e.PredictionY),
-        Numeric = true,
-        Finished = false,
-        ClearTextOnFocus = false,
-        Placeholder = "0",
-        Callback = function(v)
-            local n = tonumber(v)
-            if n then e.PredictionY = n end
-        end,
-    })
-end
-
-B.AutoPredictionEnabled = function(g, p, e)
-    g:AddCheckbox(p.."AutoPredictionEnabled", {
-        Text = "Auto",
-        Default = e.AutoPredictionEnabled,
-        Callback = function(v) e.AutoPredictionEnabled = v end,
-    })
-end
-
-B.SampleMode = function(g, p, e)
-    g:AddDropdown(p.."SampleMode", {
-        Text = "Grid Mode",
-        Values = {"1", "2", "3"},
-        Default = tostring(e.SampleMode),
-        Callback = function(v) e.SampleMode = tonumber(v) end,
-    })
-end
-
-B.AimPartPreference = function(g, p, e)
-    local order = {"Head", "Torso", "Other Parts"}
-
-    g:AddDropdown(p.."AimPartPreference", {
-        Text = "Aim Part",
-        Values = {"Head", "Torso", "Other Parts"},
-        Default = {"Head", "Torso", "Other Parts"},
-        Multi = true,
-        Callback = function(selected)
-            local newOrder = {}
-            for _, name in ipairs(order) do
-                if selected[name] then table.insert(newOrder, name) end
-            end
-            for name, checked in pairs(selected) do
-                if checked and not table.find(newOrder, name) then
-                    table.insert(newOrder, name)
-                end
-            end
-            order = newOrder
-            e.AimPartPreference = newOrder
-        end,
-    })
-end
-
-B.HeadChance = function(g, p, e)
-    g:AddSlider(p.."HeadChance", {
-        Text = "Head %",
-        Default = e.HeadChance,
-        Min = 0, Max = 100, Rounding = 0,
-    })
-
-    g:AddSlider(p.."TorsoChance", {
-        Text = "Torso/Other Parts %",
-        Default = 100 - e.HeadChance,
-        Min = 0, Max = 100, Rounding = 0,
-    })
-
-    Options[p.."HeadChance"]:OnChanged(function(v)
-        e.HeadChance = v
-        Options[p.."TorsoChance"]:SetValue(100 - v)
-    end)
-
-    Options[p.."TorsoChance"]:OnChanged(function(v)
-        e.HeadChance = 100 - v
-        Options[p.."HeadChance"]:SetValue(100 - v)
-    end)
-end
-
 -- ===== SECTIONS ===== --
 local SECTIONS = {
     Enabled = {
@@ -359,12 +389,23 @@ local SECTIONS = {
         {"MobileQuickToggle"},
         {"Keybind"},
     },
-    Sources = {
-        {"SourceCheckbox"},
+    Target = {
+        {"TargetPlayers"},
+        {"TargetCustom"},
     },
     Lists = {
         {"Whitelist"},
         {"PriorityTarget"},
+    },
+    Prediction = {
+        {"PredictionXZ"},
+        {"PredictionY"},
+        {"AutoPrediction"},
+    },
+    Targeting = {
+        {"SampleMode"},
+        {"AimPart"},
+        {"HeadChance"},
     },
     FOV = {
         {"FOVSize"},
@@ -374,25 +415,15 @@ local SECTIONS = {
         {"CrosshairRainbowEnabled"},
         {"RainbowSpeed"},
     },
-    Prediction = {
-        {"PredictionXZ"},
-        {"PredictionY"},
-        {"AutoPredictionEnabled"},
-    },
-    Targeting = {
-        {"SampleMode"},
-        {"AimPartPreference"},
-        {"HeadChance"},
-    },
 }
 
 local SECTION_ORDER = {
     "Enabled",
-    "Sources",
+    "Target",
     "Lists",
-    "FOV",
     "Prediction",
     "Targeting",
+    "FOV",
 }
 
 -- ===== BUILD ===== --
@@ -432,9 +463,9 @@ local function Build(Group, prefix, aim, config)
 end
 
 -- ===== PLAYER LIST REFRESH ===== --
-local function SetupPlayerListRefresh(Players, LocalPlayer, prefix)
+local function setupPlayerListRefresh(Players, LocalPlayer, prefix)
     local function refresh()
-        local names = collectPlayerNames(Players, LocalPlayer)
+        local names = buildPlayerOptions(Players, LocalPlayer)
 
         local wl = Options[prefix.."Whitelist"]
         if wl and wl.SetValues then
@@ -448,24 +479,14 @@ local function SetupPlayerListRefresh(Players, LocalPlayer, prefix)
     end
 
     Players.PlayerAdded:Connect(function()
-        task.wait(0.2)
+        task.wait(0.3)
         refresh()
     end)
 
     Players.PlayerRemoving:Connect(function()
-        task.wait(0.2)
+        task.wait(0.3)
         refresh()
     end)
-end
-
--- ===== STATE SYNC ===== --
-local function SetupStateSync(prefix, aim)
-    aim.OnStateChanged = function(state)
-        local uiToggle = Options[prefix.."Enabled"]
-        if uiToggle and uiToggle.Value ~= state then
-            uiToggle:SetValue(state)
-        end
-    end
 end
 
 -- ===== FACTORY ===== --
@@ -474,7 +495,6 @@ local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sourc
 
     local settings = merge(DEFAULTS, config.Settings)
     local aim = Aimlock.new(Players, LocalPlayer, Camera, settings)
-    aim:CreateFOV()
 
     if sources then
         for _, src in ipairs(sources) do
@@ -482,14 +502,16 @@ local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sourc
         end
     end
 
+    aim:CreateFOV()
+    setupStateSync(prefix, aim)
+
     if aim.MobileButtonEnabled then
         aim:CreateMobileButton()
         aim:SetMobileButtonVisible(true)
     end
 
     Build(Group, prefix, aim, config)
-    SetupStateSync(prefix, aim)
-    SetupPlayerListRefresh(Players, LocalPlayer, prefix)
+    setupPlayerListRefresh(Players, LocalPlayer, prefix)
 
     return aim
 end
