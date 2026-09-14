@@ -90,11 +90,7 @@ B.MobileQuickToggle = function(g, p, e)
         Default = e.MobileButtonEnabled,
         Callback = function(v)
             e.MobileButtonEnabled = v
-            if v then
-                e:CreateMobileButton()
-            else
-                e:DestroyMobileButton()
-            end
+            e:SetMobileButtonVisible(v)
         end,
     })
 end
@@ -126,11 +122,17 @@ B.SourceCheckbox = function(g, p, e)
 end
 
 B.FOVSize = function(g, p, e)
-    g:AddSlider(p.."FOVSize", {
+    g:AddInput(p.."FOVSize", {
         Text = "FOV Size",
-        Default = e.FOVSize,
-        Min = 50, Max = 1000, Rounding = 0,
-        Callback = function(v) e:UpdateFOVSize(v) end,
+        Default = tostring(e.FOVSize),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "500",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e:UpdateFOVSize(n) end
+        end,
     })
 end
 
@@ -301,14 +303,18 @@ end
 B.Whitelist = function(g, p, e)
     g:AddDropdown(p.."Whitelist", {
         Text = "Whitelist",
-        Values = {},
-        Default = {},
+        SpecialType = "Player",
+        ExcludeLocalPlayer = true,
         Multi = true,
         Searchable = true,
         Callback = function(selected)
             local out = {}
-            for name, checked in pairs(selected) do
-                if checked then table.insert(out, name) end
+            if type(selected) == "table" then
+                for name, checked in pairs(selected) do
+                    if checked then table.insert(out, name) end
+                end
+            elseif type(selected) == "string" then
+                table.insert(out, selected)
             end
             e.Whitelist = out
         end,
@@ -318,14 +324,18 @@ end
 B.PriorityTarget = function(g, p, e)
     g:AddDropdown(p.."PriorityTarget", {
         Text = "Priority Target",
-        Values = {},
-        Default = {},
+        SpecialType = "Player",
+        ExcludeLocalPlayer = true,
         Multi = true,
         Searchable = true,
         Callback = function(selected)
             local out = {}
-            for name, checked in pairs(selected) do
-                if checked then table.insert(out, name) end
+            if type(selected) == "table" then
+                for name, checked in pairs(selected) do
+                    if checked then table.insert(out, name) end
+                end
+            elseif type(selected) == "string" then
+                table.insert(out, selected)
             end
             e.Targetlist = out
         end,
@@ -414,7 +424,7 @@ local function Build(Group, prefix, aim, config)
     end
 end
 
--- ===== PLAYER LIST LIVE REFRESH ===== --
+-- ===== PLAYER LIST REFRESH ===== --
 local function SetupPlayerListRefresh(Players, prefix)
     local function collect()
         local names = {}
@@ -426,15 +436,7 @@ local function SetupPlayerListRefresh(Players, prefix)
         return names
     end
 
-    if Options[prefix.."Whitelist"] then
-        Options[prefix.."Whitelist"]:SetValues(collect())
-    end
-    if Options[prefix.."PriorityTarget"] then
-        Options[prefix.."PriorityTarget"]:SetValues(collect())
-    end
-
-    Players.PlayerAdded:Connect(function()
-        task.wait(0.2)
+    local function refresh()
         local names = collect()
         if Options[prefix.."Whitelist"] then
             Options[prefix.."Whitelist"]:SetValues(names)
@@ -442,17 +444,18 @@ local function SetupPlayerListRefresh(Players, prefix)
         if Options[prefix.."PriorityTarget"] then
             Options[prefix.."PriorityTarget"]:SetValues(names)
         end
+    end
+
+    refresh()
+
+    Players.PlayerAdded:Connect(function()
+        task.wait(0.2)
+        refresh()
     end)
 
     Players.PlayerRemoving:Connect(function()
         task.wait(0.2)
-        local names = collect()
-        if Options[prefix.."Whitelist"] then
-            Options[prefix.."Whitelist"]:SetValues(names)
-        end
-        if Options[prefix.."PriorityTarget"] then
-            Options[prefix.."PriorityTarget"]:SetValues(names)
-        end
+        refresh()
     end)
 end
 
