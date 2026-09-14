@@ -1,0 +1,466 @@
+-- ===== AIMLOCK ===== --
+local Aimlock = {}
+Aimlock.__index = Aimlock
+
+function Aimlock.new(playersService, localPlayer, camera, settings)
+    settings = settings or {}
+    local self = setmetatable({}, Aimlock)
+    self.Players = playersService
+    self.LocalPlayer = localPlayer
+    self.Camera = camera
+
+    self.AimlockName = settings.AimlockName or "Aimlock"
+    self.Enabled = false
+    self.LockAnywhere = settings.LockAnywhere or false
+    self.TargetPlayers = settings.TargetPlayers ~= false
+    self.TeamCheck = settings.TeamCheck or false
+    self.TeamCheckFunc = settings.TeamCheckFunc or nil
+    self.MaxDistance = settings.MaxDistance
+
+    self.FOVSize = settings.FOVSize or 500
+    self.CrossOffset = settings.CrossOffset or Vector2.new(0, 0)
+    self.Gui = nil
+    self.FOVCircle = nil
+    self.CrossV = nil
+    self.CrossH = nil
+    self.FOVStroke = nil
+    self.FOVRainbowEnabled = settings.FOVRainbowEnabled ~= false
+    self.CrosshairRainbowEnabled = settings.CrosshairRainbowEnabled ~= false
+
+    self.PredictionXZ = settings.PredictionXZ or 0
+    self.PredictionY = settings.PredictionY or 0
+    self.AutoPredictionEnabled = settings.AutoPredictionEnabled or false
+
+    self.AimPartPreference = settings.AimPartPreference or {"Head", "Torso", "Other Parts"}
+    self.SampleMode = settings.SampleMode or 2
+    self.HeadChance = settings.HeadChance or 50
+
+    local builtInWhitelist = settings.BuiltInWhitelist or {}
+    local externalWhitelist = settings.Whitelist or {}
+    if settings.RespectBuiltInWhitelist ~= false then
+        self.Whitelist = {}
+        for _, name in ipairs(builtInWhitelist) do table.insert(self.Whitelist, name) end
+        for _, name in ipairs(externalWhitelist) do
+            if not table.find(self.Whitelist, name) then table.insert(self.Whitelist, name) end
+        end
+    else
+        self.Whitelist = externalWhitelist
+    end
+
+    self.Targetlist = settings.Targetlist or {}
+
+    self.TargetSources = {}
+    if settings.TargetSources then
+        for name, src in pairs(settings.TargetSources) do
+            self.TargetSources[name] = {
+                Enabled = src.Enabled ~= false,
+                GetEntities = src.GetEntities
+            }
+        end
+    end
+
+    self.LoopConnection = nil
+    self.PriorityTarget = nil
+    self._pointCache = {}
+
+    return self
+end
+
+function Aimlock:AddTargetSource(name, getEntitiesFunc, startEnabled)
+    self.TargetSources[name] = {
+        Enabled = startEnabled ~= false,
+        GetEntities = getEntitiesFunc
+    }
+end
+
+function Aimlock:CreateFOV(parent)
+    if self.Gui then self.Gui:Destroy() end
+    local gui = Instance.new("ScreenGui", parent or self.LocalPlayer.PlayerGui)
+    gui.Name = self.AimlockName .. "FOV"
+    gui.IgnoreGuiInset = true
+    gui.ResetOnSpawn = false
+
+    local function mk(pos, size)
+        local f = Instance.new("Frame", gui)
+        f.AnchorPoint = Vector2.new(0.5, 0.5)
+        f.Position = pos
+        f.Size = size
+        f.BackgroundColor3 = Color3.new(1, 1, 1)
+        f.BorderSizePixel = 0
+        return f
+    end
+
+    self.CrossV = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, 2, 0, 14))
+    self.CrossH = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, 14, 0, 2))
+    self.FOVCircle = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, self.FOVSize, 0, self.FOVSize))
+    self.FOVCircle.BackgroundTransparency = 1
+    Instance.new("UICorner", self.FOVCircle).CornerRadius = UDim.new(1, 0)
+
+    local stroke = Instance.new("UIStroke", self.FOVCircle)
+    stroke.Thickness = 2
+    self.FOVStroke = stroke
+
+    task.spawn(function()
+        while self.FOVCircle and self.FOVCircle.Parent do
+            local h = (os.clock() * 60) % 360
+            local c = Color3.fromHSV(h / 360, 1, 1)
+            if self.FOVRainbowEnabled and self.FOVStroke and self.FOVCircle.Visible then
+                self.FOVStroke.Color = c
+            end
+            if self.CrosshairRainbowEnabled then
+                if self.CrossV and self.CrossV.Visible then
+                    self.CrossV.BackgroundColor3 = c
+                end
+                if self.CrossH and self.CrossH.Visible then
+                    self.CrossH.BackgroundColor3 = c
+                end
+            end
+            task.wait(0.03)
+        end
+    end)
+
+    self.Gui = gui
+end
+
+function Aimlock:SetVisibility(visible)
+    if self.FOVCircle then self.FOVCircle.Visible = visible end
+    if self.CrossV then self.CrossV.Visible = visible end
+    if self.CrossH then self.CrossH.Visible = visible end
+end
+
+function Aimlock:UpdateFOVSize(size)
+    self.FOVSize = size
+    if self.FOVCircle then
+        self.FOVCircle.Size = UDim2.new(0, size, 0, size)
+        self.FOVCircle.Position = UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y)
+    end
+end
+
+function Aimlock:UpdateCrossOffset(offset)
+    self.CrossOffset = offset
+    if self.FOVCircle then self.FOVCircle.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
+    if self.CrossV then self.CrossV.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
+    if self.CrossH then self.CrossH.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
+end
+
+function Aimlock:GetPredictedPos(point, vel, targetChar)
+    if self.AutoPredictionEnabled then
+        local ping = self.LocalPlayer:GetNetworkPing()
+        local g = workspace.Gravity
+        local hum = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+        local airborne = hum and hum.FloorMaterial == Enum.Material.Air
+
+        local predX = vel.X * ping
+        local predZ = vel.Z * ping
+        local predY
+        if airborne then
+            predY = vel.Y * ping - 0.5 * g * ping * ping
+        else
+            predY = 0
+        end
+        return point + Vector3.new(predX, predY, predZ)
+    end
+
+    if self.PredictionXZ == 0 and self.PredictionY == 0 then return point end
+    return point + Vector3.new(
+        vel.X * self.PredictionXZ,
+        vel.Y * self.PredictionY,
+        vel.Z * self.PredictionXZ
+    )
+end
+
+function Aimlock:IsSameTeam(plr)
+    if not self.TeamCheck then return false end
+    if self.TeamCheckFunc then
+        local ok, result = pcall(self.TeamCheckFunc, plr, self.LocalPlayer)
+        if ok then return result end
+    end
+    return plr.TeamColor == self.LocalPlayer.TeamColor
+end
+
+function Aimlock:GetSurfacePoints(size, divisions)
+    local key = size.X .. "_" .. size.Y .. "_" .. size.Z .. "_" .. divisions
+    local cached = self._pointCache[key]
+    if cached then return cached end
+
+    local points = {}
+    local half = size / 2
+
+    if divisions == 2 then
+        for ix = -1, 1, 2 do
+            for iy = -1, 1, 2 do
+                for iz = -1, 1, 2 do
+                    table.insert(points, Vector3.new(ix * half.X, iy * half.Y, iz * half.Z))
+                end
+            end
+        end
+    elseif divisions == 3 then
+        for ix = -1, 1 do
+            for iy = -1, 1 do
+                for iz = -1, 1 do
+                    if not (ix == 0 and iy == 0 and iz == 0) then
+                        table.insert(points, Vector3.new(ix * half.X, iy * half.Y, iz * half.Z))
+                    end
+                end
+            end
+        end
+    end
+
+    self._pointCache[key] = points
+    return points
+end
+
+function Aimlock:GetClosestVisiblePoint(part, targetChar, camPos, ignoreChar)
+    if not part or not part:IsA("BasePart") then return nil, math.huge end
+
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {ignoreChar}
+    params.IgnoreWater = true
+
+    local centerOffset = part.Position - camPos
+    local centerResult = workspace:Raycast(camPos, centerOffset, params)
+    local centerHit = centerResult and centerResult.Instance
+
+    if centerHit and (centerHit == part or centerHit:IsDescendantOf(targetChar)) then
+        return part.Position, centerOffset.Magnitude
+    end
+
+    if self.SampleMode == 1 then
+        return nil, math.huge
+    end
+
+    local divisions = self.SampleMode == 2 and 2 or 3
+    local points = self:GetSurfacePoints(part.Size, divisions)
+
+    local closestPoint = nil
+    local closestDist = math.huge
+
+    for _, offset in ipairs(points) do
+        local checkPoint = part.Position + offset
+        local dir = checkPoint - camPos
+        local dist = dir.Magnitude
+        local result = workspace:Raycast(camPos, dir, params)
+        local hit = result and result.Instance
+
+        if hit and (hit == part or hit:IsDescendantOf(targetChar)) then
+            if dist < closestDist then
+                closestDist = dist
+                closestPoint = checkPoint
+            end
+        end
+    end
+
+    return closestPoint, closestDist
+end
+
+function Aimlock:ResolveBucket(entity, bucket)
+    if bucket == "Head" then
+        local p = entity:FindFirstChild("Head")
+        return p and p:IsA("BasePart") and p or nil
+    end
+
+    if bucket == "Torso" then
+        for _, name in ipairs({"UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso"}) do
+            local p = entity:FindFirstChild(name)
+            if p and p:IsA("BasePart") then return p end
+        end
+        return nil
+    end
+
+    if bucket == "Other Parts" then
+        for _, c in ipairs(entity:GetChildren()) do
+            if c:IsA("BasePart") then return c end
+        end
+        for _, c in ipairs(entity:GetChildren()) do
+            if c:IsA("Model") then
+                local p = c:FindFirstChildWhichIsA("BasePart")
+                if p then return p end
+            end
+        end
+        return entity:FindFirstChildWhichIsA("BasePart")
+    end
+
+    return nil
+end
+
+function Aimlock:GetAimPart(entity)
+    local preference = self.AimPartPreference
+    if not preference or #preference == 0 then
+        return entity:FindFirstChildWhichIsA("BasePart")
+    end
+
+    local roll = math.random() * 100
+    local rolledBucket = (roll < self.HeadChance) and "Head" or "Torso"
+
+    local part = self:ResolveBucket(entity, rolledBucket)
+    if part then return part end
+
+    if rolledBucket == "Torso" then
+        part = self:ResolveBucket(entity, "Other Parts")
+        if part then return part end
+    end
+
+    for _, name in ipairs(preference) do
+        if name ~= rolledBucket then
+            part = self:ResolveBucket(entity, name)
+            if part then return part end
+        end
+    end
+
+    return nil
+end
+
+function Aimlock:FindBestTarget()
+    local char = self.LocalPlayer.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local camPos = self.Camera.CFrame.Position
+    local bestTargetPos = nil
+    local bestDist = math.huge
+
+    local function evaluateTarget(aimPart, targetChar)
+        local point, partDist = self:GetClosestVisiblePoint(aimPart, targetChar, camPos, char)
+        if not point then return nil, nil end
+
+        if self.MaxDistance and partDist > self.MaxDistance then return nil, nil end
+
+        local vel = aimPart.Velocity
+        local predicted = self:GetPredictedPos(point, vel, targetChar)
+
+        local screenPos, onScreen = self.Camera:WorldToViewportPoint(predicted)
+        if not onScreen then return nil, nil end
+
+        local fPos = Vector2.new(
+            self.Camera.ViewportSize.X / 2 + self.CrossOffset.X,
+            self.Camera.ViewportSize.Y / 2 + self.CrossOffset.Y
+        )
+        local dx = screenPos.X - fPos.X
+        local dy = screenPos.Y - fPos.Y
+        local screenDist = math.sqrt(dx * dx + dy * dy)
+
+        if self.LockAnywhere then return predicted, 0 end
+        if screenDist <= self.FOVSize / 2 then return predicted, screenDist end
+        return nil, nil
+    end
+
+    if self.TargetPlayers and self.PriorityTarget and self.PriorityTarget.Character then
+        local pChar = self.PriorityTarget.Character
+        local hum = pChar:FindFirstChild("Humanoid")
+        if hum and hum.Health > 0 and not table.find(self.Whitelist, self.PriorityTarget.Name) then
+            if not self:IsSameTeam(self.PriorityTarget) then
+                local aimPart = self:GetAimPart(pChar)
+                if aimPart then
+                    local pos = evaluateTarget(aimPart, pChar)
+                    if pos then return pos end
+                end
+            end
+        end
+    end
+
+    if self.TargetPlayers and #self.Targetlist > 0 then
+        for _, plr in ipairs(self.Players:GetPlayers()) do
+            if plr == self.LocalPlayer then continue end
+            if not table.find(self.Targetlist, plr.Name) then continue end
+            if table.find(self.Whitelist, plr.Name) then continue end
+            if self:IsSameTeam(plr) then continue end
+            local pChar = plr.Character
+            if not pChar then continue end
+            local hum = pChar:FindFirstChild("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+            local aimPart = self:GetAimPart(pChar)
+            if aimPart then
+                local pos, dist = evaluateTarget(aimPart, pChar)
+                if pos and dist < bestDist then
+                    bestTargetPos = pos
+                    bestDist = dist
+                end
+            end
+        end
+        if bestTargetPos then return bestTargetPos end
+    end
+
+    if self.TargetPlayers then
+        for _, plr in ipairs(self.Players:GetPlayers()) do
+            if plr == self.LocalPlayer then continue end
+            if table.find(self.Whitelist, plr.Name) then continue end
+            if self:IsSameTeam(plr) then continue end
+            local pChar = plr.Character
+            if not pChar then continue end
+            local hum = pChar:FindFirstChild("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+            local aimPart = self:GetAimPart(pChar)
+            if aimPart then
+                local pos, dist = evaluateTarget(aimPart, pChar)
+                if pos and dist < bestDist then
+                    bestTargetPos = pos
+                    bestDist = dist
+                end
+            end
+        end
+    end
+
+    for name, src in pairs(self.TargetSources) do
+        if not src.Enabled then continue end
+        local entities = src.GetEntities()
+        if not entities then continue end
+        for _, entity in ipairs(entities) do
+            if not entity:IsA("Model") then continue end
+            local hum = entity:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+            local aimPart = self:GetAimPart(entity)
+            if aimPart then
+                local pos, dist = evaluateTarget(aimPart, entity)
+                if pos and dist < bestDist then
+                    bestTargetPos = pos
+                    bestDist = dist
+                end
+            end
+        end
+    end
+
+    return bestTargetPos
+end
+
+function Aimlock:Start()
+    if self.LoopConnection then return end
+    self.LoopConnection = game:GetService("RunService").RenderStepped:Connect(function()
+        if not self.Enabled then return end
+        local targetPos = self:FindBestTarget()
+        if not targetPos then return end
+        local camPos = self.Camera.CFrame.Position
+        local lookAt = CFrame.lookAt(camPos, targetPos)
+        local fovRad = math.rad(self.Camera.FieldOfView)
+        local screenWidth = self.Camera.ViewportSize.X
+        local screenHeight = self.Camera.ViewportSize.Y
+        local anglePerPixelX = fovRad / screenWidth
+        local anglePerPixelY = fovRad / screenHeight
+
+        if self.CrossOffset.X ~= 0 then
+            local yawAngle = -self.CrossOffset.X * anglePerPixelX
+            lookAt = lookAt * CFrame.Angles(0, yawAngle, 0)
+        end
+        if self.CrossOffset.Y ~= 0 then
+            local pitchAngle = -self.CrossOffset.Y * anglePerPixelY
+            lookAt = lookAt * CFrame.Angles(pitchAngle, 0, 0)
+        end
+        self.Camera.CFrame = lookAt
+    end)
+end
+
+function Aimlock:Stop()
+    if self.LoopConnection then
+        self.LoopConnection:Disconnect()
+        self.LoopConnection = nil
+    end
+end
+
+function Aimlock:SetEnabled(state)
+    self.Enabled = state
+    self:SetVisibility(state)
+    if state then self:Start() else self:Stop() end
+end
+
+return Aimlock
