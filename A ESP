@@ -254,6 +254,7 @@ function ESP:CreateText(entry)
     label.Font = Enum.Font.SourceSansSemibold
     label.TextSize = self.TextSize
     label.TextColor3 = self:TextDrawColor()
+    label.TextTransparency = self.TextTransparency
     label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
     label.TextYAlignment = Enum.TextYAlignment.Bottom
     label.Text = "Name: " .. entry.Model.Name
@@ -287,6 +288,7 @@ function ESP:UpdateText(data, entry)
     data.Label.Text = table.concat(parts, " | ")
     data.Label.TextColor3 = self:TextDrawColor()
     data.Label.TextSize = self.TextSize
+    data.Label.TextTransparency = self.TextTransparency
     data.Label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
 end
 
