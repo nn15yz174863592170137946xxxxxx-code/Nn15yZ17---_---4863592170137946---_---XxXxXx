@@ -1,0 +1,413 @@
+-- ===== AIMLOCK ===== --
+local Aimlock = loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'aimlock"))()
+
+-- ===== DEFAULTS ===== --
+local DEFAULTS = {
+    Enabled = false,
+    LockAnywhere = false,
+    TeamCheck = false,
+    MaxDistance = nil,
+
+    FOVSize = 500,
+    CrossOffset = Vector2.new(0, 0),
+    FOVRainbowEnabled = true,
+    CrosshairRainbowEnabled = true,
+
+    PredictionXZ = 0,
+    PredictionY = 0,
+    AutoPredictionEnabled = false,
+
+    AimPartPreference = {"Head", "Torso", "Other Parts"},
+    SampleMode = 2,
+    HeadChance = 80,
+}
+
+local DEFAULT_FEATURES = {
+    Enabled = true,
+    Sources = true,
+    FOV = true,
+    Prediction = true,
+    Targeting = true,
+    Lists = true,
+}
+
+-- ===== MERGE ===== --
+local function merge(a, b)
+    local out = {}
+    for k, v in pairs(a) do out[k] = v end
+    if b then for k, v in pairs(b) do out[k] = v end end
+    return out
+end
+
+-- ===== BUILDERS ===== --
+local B = {}
+
+B.EnabledToggle = function(g, p, e)
+    g:AddToggle(p.."Enabled", {
+        Text = "Aimlock",
+        Default = e.Enabled,
+        Callback = function(v) e:SetEnabled(v) end,
+    })
+end
+
+B.LockAnywhere = function(g, p, e)
+    g:AddCheckbox(p.."LockAnywhere", {
+        Text = "Lock Anywhere",
+        Default = e.LockAnywhere,
+        Callback = function(v) e.LockAnywhere = v end,
+    })
+end
+
+B.TeamCheck = function(g, p, e)
+    g:AddCheckbox(p.."TeamCheck", {
+        Text = "Team Check",
+        Default = e.TeamCheck,
+        Callback = function(v) e.TeamCheck = v end,
+    })
+end
+
+B.MaxDistance = function(g, p, e)
+    g:AddInput(p.."MaxDistance", {
+        Text = "Max Distance", Default = e.MaxDistance and tostring(e.MaxDistance) or "",
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "inf",
+        Callback = function(v)
+            local n = tonumber(v)
+            e.MaxDistance = (n and n > 0) and n or nil
+        end,
+    })
+end
+
+B.SourceCheckbox = function(g, p, e)
+    for name, src in pairs(e.TargetSources) do
+        g:AddCheckbox(p.."Source_"..name, {
+            Text = "Target "..name,
+            Default = src.Enabled,
+            Callback = function(v) src.Enabled = v end,
+        })
+    end
+end
+
+B.FOVSize = function(g, p, e)
+    g:AddSlider(p.."FOVSize", {
+        Text = "FOV Size",
+        Default = e.FOVSize,
+        Min = 50, Max = 1000, Rounding = 0,
+        Callback = function(v) e:UpdateFOVSize(v) end,
+    })
+end
+
+B.CrossOffsetX = function(g, p, e)
+    g:AddInput(p.."CrossOffsetX", {
+        Text = "Cross Offset X", Default = tostring(e.CrossOffset.X),
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "0",
+        Callback = function(v)
+            local n = tonumber(v) or 0
+            e:UpdateCrossOffset(Vector2.new(n, e.CrossOffset.Y))
+        end,
+    })
+end
+
+B.CrossOffsetY = function(g, p, e)
+    g:AddInput(p.."CrossOffsetY", {
+        Text = "Cross Offset Y", Default = tostring(e.CrossOffset.Y),
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "0",
+        Callback = function(v)
+            local n = tonumber(v) or 0
+            e:UpdateCrossOffset(Vector2.new(e.CrossOffset.X, n))
+        end,
+    })
+end
+
+B.FOVRainbowEnabled = function(g, p, e)
+    g:AddCheckbox(p.."FOVRainbowEnabled", {
+        Text = "Rainbow FOV",
+        Default = e.FOVRainbowEnabled,
+        Callback = function(v) e.FOVRainbowEnabled = v end,
+    })
+end
+
+B.CrosshairRainbowEnabled = function(g, p, e)
+    g:AddCheckbox(p.."CrosshairRainbowEnabled", {
+        Text = "Rainbow Crosshair",
+        Default = e.CrosshairRainbowEnabled,
+        Callback = function(v) e.CrosshairRainbowEnabled = v end,
+    })
+end
+
+B.PredictionXZ = function(g, p, e)
+    g:AddInput(p.."PredictionXZ", {
+        Text = "Prediction XZ", Default = tostring(e.PredictionXZ),
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "0",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.PredictionXZ = n end
+        end,
+    })
+end
+
+B.PredictionY = function(g, p, e)
+    g:AddInput(p.."PredictionY", {
+        Text = "Prediction Y", Default = tostring(e.PredictionY),
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "0",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.PredictionY = n end
+        end,
+    })
+end
+
+B.AutoPredictionEnabled = function(g, p, e)
+    g:AddCheckbox(p.."AutoPredictionEnabled", {
+        Text = "Auto",
+        Default = e.AutoPredictionEnabled,
+        Callback = function(v) e.AutoPredictionEnabled = v end,
+    })
+end
+
+B.SampleMode = function(g, p, e)
+    g:AddDropdown(p.."SampleMode", {
+        Text = "Grid Mode",
+        Values = {"1", "2", "3"},
+        Default = tostring(e.SampleMode),
+        Callback = function(v) e.SampleMode = tonumber(v) end,
+    })
+end
+
+B.AimPartPreference = function(g, p, e)
+    local shadowOrder = {"Head", "Torso", "Other Parts"}
+
+    g:AddDropdown(p.."AimPartPreference", {
+        Text = "Aim Part Order",
+        Values = {"Head", "Torso", "Other Parts"},
+        Default = {"Head", "Torso", "Other Parts"},
+        Multi = true,
+        Callback = function(selected)
+            local newOrder = {}
+            for _, name in ipairs(shadowOrder) do
+                if selected[name] then table.insert(newOrder, name) end
+            end
+            for name, checked in pairs(selected) do
+                if checked and not table.find(newOrder, name) then
+                    table.insert(newOrder, name)
+                end
+            end
+            shadowOrder = newOrder
+            e.AimPartPreference = newOrder
+        end,
+    })
+end
+
+B.HeadChance = function(g, p, e)
+    local updating = false
+
+    g:AddSlider(p.."HeadChance", {
+        Text = "Head %",
+        Default = e.HeadChance,
+        Min = 0, Max = 100, Rounding = 0,
+        Callback = function(v)
+            if updating then return end
+            updating = true
+            e.HeadChance = v
+            local other = Options[p.."TorsoChance"]
+            if other then other:SetValue(100 - v) end
+            updating = false
+        end,
+    })
+
+    g:AddSlider(p.."TorsoChance", {
+        Text = "Torso/Other Parts %",
+        Default = 100 - e.HeadChance,
+        Min = 0, Max = 100, Rounding = 0,
+        Callback = function(v)
+            if updating then return end
+            updating = true
+            e.HeadChance = 100 - v
+            local other = Options[p.."HeadChance"]
+            if other then other:SetValue(100 - v) end
+            updating = false
+        end,
+    })
+end
+
+B.Whitelist = function(g, p, e)
+    g:AddDropdown(p.."Whitelist", {
+        Text = "Whitelist",
+        Values = {},
+        Default = {},
+        Multi = true,
+        Callback = function(selected)
+            local out = {}
+            for name, checked in pairs(selected) do
+                if checked then table.insert(out, name) end
+            end
+            e.Whitelist = out
+        end,
+    })
+end
+
+B.PriorityTarget = function(g, p, e)
+    g:AddDropdown(p.."PriorityTarget", {
+        Text = "Priority Target",
+        Values = {},
+        Default = {},
+        Multi = true,
+        Callback = function(selected)
+            local out = {}
+            for name, checked in pairs(selected) do
+                if checked then table.insert(out, name) end
+            end
+            e.Targetlist = out
+        end,
+    })
+end
+
+-- ===== SECTIONS ===== --
+local SECTIONS = {
+    Enabled = {
+        {"EnabledToggle"},
+        {"LockAnywhere"},
+        {"TeamCheck"},
+        {"MaxDistance"},
+    },
+    Sources = {
+        {"SourceCheckbox"},
+    },
+    FOV = {
+        {"FOVSize"},
+        {"CrossOffsetX"},
+        {"CrossOffsetY"},
+        {"FOVRainbowEnabled"},
+        {"CrosshairRainbowEnabled"},
+    },
+    Prediction = {
+        {"PredictionXZ"},
+        {"PredictionY"},
+        {"AutoPredictionEnabled"},
+    },
+    Targeting = {
+        {"SampleMode"},
+        {"AimPartPreference"},
+        {"HeadChance"},
+    },
+    Lists = {
+        {"Whitelist"},
+        {"PriorityTarget"},
+    },
+}
+
+local SECTION_ORDER = {
+    "Enabled",
+    "Sources",
+    "FOV",
+    "Prediction",
+    "Targeting",
+    "Lists",
+}
+
+-- ===== BUILD ===== --
+local function Build(Group, prefix, aim, config)
+    config = config or {}
+    local features = merge(DEFAULT_FEATURES, config.Features)
+
+    local exclude = {}
+    for _, id in ipairs(config.Exclude or {}) do
+        exclude[id] = true
+    end
+
+    local sectionsBuilt = 0
+
+    for _, sectionName in ipairs(SECTION_ORDER) do
+        if features[sectionName] ~= false then
+            local toRun = {}
+
+            for _, entry in ipairs(SECTIONS[sectionName]) do
+                local id = entry[1]
+                if not exclude[id] then
+                    table.insert(toRun, id)
+                end
+            end
+
+            if #toRun > 0 then
+                if sectionsBuilt > 0 then
+                    Group:AddDivider()
+                end
+                for _, id in ipairs(toRun) do
+                    if B[id] then B[id](Group, prefix, aim) end
+                end
+                sectionsBuilt = sectionsBuilt + 1
+            end
+        end
+    end
+end
+
+-- ===== PLAYER LIST REFRESH ===== --
+local function SetupPlayerListRefresh(Players, prefix, aim)
+    local function collect()
+        local names = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= Players.LocalPlayer then
+                table.insert(names, plr.Name)
+            end
+        end
+        return names
+    end
+
+    task.spawn(function()
+        local lastCount = -1
+        while true do
+            task.wait(1)
+            local names = collect()
+            if #names ~= lastCount then
+                lastCount = #names
+                if Options[prefix.."Whitelist"] then
+                    Options[prefix.."Whitelist"]:SetValues(names)
+                end
+                if Options[prefix.."PriorityTarget"] then
+                    Options[prefix.."PriorityTarget"]:SetValues(names)
+                end
+            end
+        end
+    end)
+
+    if Options[prefix.."Whitelist"] then
+        Options[prefix.."Whitelist"]:SetValues(collect())
+    end
+    if Options[prefix.."PriorityTarget"] then
+        Options[prefix.."PriorityTarget"]:SetValues(collect())
+    end
+end
+
+-- ===== FACTORY ===== --
+local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sources)
+    config = config or {}
+
+    local settings = merge(DEFAULTS, config.Settings)
+    local aim = Aimlock.new(Players, LocalPlayer, Camera, settings)
+    aim:CreateFOV()
+
+    if sources then
+        for _, src in ipairs(sources) do
+            aim:AddTargetSource(src.Name, src.Getter, src.Enabled ~= false)
+        end
+    end
+
+    Build(Group, prefix, aim, config)
+    SetupPlayerListRefresh(Players, prefix, aim)
+
+    return aim
+end
+
+-- ===== RETURN ===== --
+return {
+    Aimlock = Aimlock,
+    Build = Build,
+    Create = Create,
+    Builders = B,
+    DEFAULTS = DEFAULTS,
+    DEFAULT_FEATURES = DEFAULT_FEATURES,
+}
