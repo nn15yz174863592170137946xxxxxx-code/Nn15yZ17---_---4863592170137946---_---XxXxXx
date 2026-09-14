@@ -1,630 +1,468 @@
--- ===== ESP MODULE ===== --
-local ESP = {}
-ESP.__index = ESP
+-- ===== ESP ===== --
+local ESP = loadstring(game:HttpGet(""https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'template"))()
+-- ===== DEFAULTS ===== --
+local DEFAULTS = {
+    Enabled = false,
+    TextESPEnabled = true,
+    BoxESPEnabled = true,
+    HealthESPEnabled = true,
+    SkeletonESPEnabled = true,
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
-local LocalPlayer = Players.LocalPlayer
+    TextColor = Color3.new(1, 1, 1),
+    TextSize = 20,
+    TextTransparency = 0,
+    ShowName = true,
+    ShowHealth = true,
+    ShowDistance = true,
+    TextStroke = true,
+    TextStrokeTransparency = 0,
 
-local function round(num, places)
-    local mult = 10 ^ (places or 0)
-    return math.floor(num * mult + 0.5) / mult
-end
+    BoxColor = Color3.new(1, 1, 1),
+    BoxThickness = 1,
+    BoxTransparency = 0,
+    BoxFilled = false,
+    BoxFillTransparency = 0.5,
 
-local bodyConnections = {
-    R15 = {
-        {"Head", "UpperTorso"},
-        {"UpperTorso", "LowerTorso"},
-        {"LowerTorso", "LeftUpperLeg"},
-        {"LowerTorso", "RightUpperLeg"},
-        {"LeftUpperLeg", "LeftLowerLeg"},
-        {"LeftLowerLeg", "LeftFoot"},
-        {"RightUpperLeg", "RightLowerLeg"},
-        {"RightLowerLeg", "RightFoot"},
-        {"UpperTorso", "LeftUpperArm"},
-        {"UpperTorso", "RightUpperArm"},
-        {"LeftUpperArm", "LeftLowerArm"},
-        {"LeftLowerArm", "LeftHand"},
-        {"RightUpperArm", "RightLowerArm"},
-        {"RightLowerArm", "RightHand"}
-    },
-    R6 = {
-        {"Head", "Torso"},
-        {"Torso", "Left Arm"},
-        {"Torso", "Right Arm"},
-        {"Torso", "Left Leg"},
-        {"Torso", "Right Leg"}
-    }
+    HealthColor = Color3.new(0, 1, 0),
+    LowHealthColor = Color3.new(1, 0, 0),
+    HealthTransparency = 0,
+    HealthBarWidth = 5,
+    HealthBarPosition = "Left",
+    HealthBarOffset = 2,
+
+    SkeletonColor = Color3.new(1, 1, 1),
+    SkeletonThickness = 1,
+    SkeletonTransparency = 0,
+
+    MaxDistance = nil,
+    MaxEntities = nil,
+    UpdateRate = 1,
+    VisibleOnly = false,
+    RainbowEnabled = false,
+    RainbowSpeed = 1,
 }
 
--- ===== CONSTRUCTOR ===== --
-function ESP.new(settings)
-    settings = settings or {}
-    local self = setmetatable({}, ESP)
+local DEFAULT_FEATURES = {
+    Enabled = true,
+    Text = true,
+    Box = true,
+    Health = true,
+    Skeleton = true,
+    Performance = true,
+}
 
-    self.Enabled = settings.Enabled or false
-    self.TextESPEnabled = settings.TextESPEnabled ~= false
-    self.BoxESPEnabled = settings.BoxESPEnabled ~= false
-    self.HealthESPEnabled = settings.HealthESPEnabled ~= false
-    self.SkeletonESPEnabled = settings.SkeletonESPEnabled ~= false
-
-    self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
-    self.TextSize = settings.TextSize or 20
-    self.TextTransparency = settings.TextTransparency or 0
-    self.TextStroke = settings.TextStroke ~= false
-    self.TextStrokeTransparency = settings.TextStrokeTransparency or 0
-    self.ShowName = settings.ShowName ~= false
-    self.ShowHealth = settings.ShowHealth ~= false
-    self.ShowDistance = settings.ShowDistance ~= false
-
-    self.BoxColor = settings.BoxColor or Color3.new(1, 1, 1)
-    self.BoxThickness = settings.BoxThickness or 1
-    self.BoxTransparency = settings.BoxTransparency or 0
-    self.BoxFilled = settings.BoxFilled or false
-    self.BoxFillTransparency = settings.BoxFillTransparency or 0.5
-
-    self.HealthColor = settings.HealthColor or Color3.new(0, 1, 0)
-    self.LowHealthColor = settings.LowHealthColor or Color3.new(1, 0, 0)
-    self.HealthTransparency = settings.HealthTransparency or 0
-    self.HealthBarWidth = settings.HealthBarWidth or 5
-    self.HealthBarPosition = settings.HealthBarPosition or "Left"
-    self.HealthBarOffset = settings.HealthBarOffset or 2
-
-    self.SkeletonColor = settings.SkeletonColor or Color3.new(1, 1, 1)
-    self.SkeletonThickness = settings.SkeletonThickness or 1
-    self.SkeletonTransparency = settings.SkeletonTransparency or 0
-
-    self.MaxDistance = settings.MaxDistance or nil
-    self.MaxEntities = settings.MaxEntities or nil
-    self.UpdateRate = settings.UpdateRate or 1
-    self.VisibleOnly = settings.VisibleOnly or false
-    self.RainbowEnabled = settings.RainbowEnabled or false
-    self.RainbowSpeed = settings.RainbowSpeed or 1
-
-    self.Sources = {}
-    self.Cache = {}
-    self.FrameCounter = 0
-    self.LoopConnection = nil
-    self._rainbow = Color3.new(1, 1, 1)
-
-    return self
+-- ===== MERGE ===== --
+local function merge(a, b)
+    local out = {}
+    for k, v in pairs(a) do out[k] = v end
+    if b then for k, v in pairs(b) do out[k] = v end end
+    return out
 end
 
--- ===== COLORS ===== --
-function ESP:ApplyRainbow()
-    if not self.RainbowEnabled then return end
-    local hue = (os.clock() * self.RainbowSpeed) % 1
-    self._rainbow = Color3.fromHSV(hue, 1, 1)
+-- ===== BUILDERS ===== --
+local B = {}
+
+B.EnabledToggle = function(g, p, e)
+    g:AddToggle(p.."Enabled", {
+        Text = "ESP",
+        Default = e.Enabled,
+        Callback = function(v) e:SetEnabled(v) end,
+    })
 end
 
-function ESP:BoxDrawColor()
-    return self.RainbowEnabled and self._rainbow or self.BoxColor
+B.TextCheckbox = function(g, p, e)
+    g:AddCheckbox(p.."TextESPEnabled", {
+        Text = "Text ESP", Default = e.TextESPEnabled,
+        Callback = function(v) e.TextESPEnabled = v end,
+    })
 end
 
-function ESP:SkeletonDrawColor()
-    return self.RainbowEnabled and self._rainbow or self.SkeletonColor
+B.BoxCheckbox = function(g, p, e)
+    g:AddCheckbox(p.."BoxESPEnabled", {
+        Text = "Box ESP", Default = e.BoxESPEnabled,
+        Callback = function(v) e.BoxESPEnabled = v end,
+    })
 end
 
-function ESP:TextDrawColor()
-    return self.RainbowEnabled and self._rainbow or self.TextColor
+B.HealthCheckbox = function(g, p, e)
+    g:AddCheckbox(p.."HealthBarEnabled", {
+        Text = "HealthBar ESP", Default = e.HealthESPEnabled,
+        Callback = function(v) e.HealthESPEnabled = v end,
+    })
 end
 
-function ESP:HealthDrawColor(frac)
-    local baseColor = self.RainbowEnabled and self._rainbow or self.HealthColor
-    if frac < 0.3 then return self.LowHealthColor end
-    if frac < 0.6 then
-        local t = (frac - 0.3) / 0.3
-        return baseColor:Lerp(self.LowHealthColor, 1 - t)
+B.SkeletonCheckbox = function(g, p, e)
+    g:AddCheckbox(p.."SkeletonESPEnabled", {
+        Text = "Skeleton ESP", Default = e.SkeletonESPEnabled,
+        Callback = function(v) e.SkeletonESPEnabled = v end,
+    })
+end
+
+B.TextColor = function(g, p, e)
+    g:AddLabel("Text Color"):AddColorPicker(p.."TextColor", {
+        Default = e.TextColor,
+        Callback = function(v) e.TextColor = v end,
+    })
+end
+
+B.TextSize = function(g, p, e)
+    g:AddInput(p.."TextSize", {
+        Text = "Text Size", Default = tostring(e.TextSize),
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "20",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.TextSize = n end
+        end,
+    })
+end
+
+B.TextTransparency = function(g, p, e)
+    g:AddSlider(p.."TextTransparency", {
+        Text = "Text Transparency", Default = e.TextTransparency,
+        Min = 0, Max = 1, Rounding = 1,
+        Callback = function(v) e.TextTransparency = v end,
+    })
+end
+
+B.ShowName = function(g, p, e)
+    g:AddCheckbox(p.."ShowName", {
+        Text = "Show Name", Default = e.ShowName,
+        Callback = function(v) e.ShowName = v end,
+    })
+end
+
+B.ShowHealth = function(g, p, e)
+    g:AddCheckbox(p.."ShowHealth", {
+        Text = "Show Health", Default = e.ShowHealth,
+        Callback = function(v) e.ShowHealth = v end,
+    })
+end
+
+B.ShowDistance = function(g, p, e)
+    g:AddCheckbox(p.."ShowDistance", {
+        Text = "Show Distance", Default = e.ShowDistance,
+        Callback = function(v) e.ShowDistance = v end,
+    })
+end
+
+B.TextStroke = function(g, p, e)
+    g:AddCheckbox(p.."TextStroke", {
+        Text = "Text Stroke", Default = e.TextStroke,
+        Callback = function(v) e.TextStroke = v end,
+    })
+end
+
+B.TextStrokeTransparency = function(g, p, e)
+    g:AddSlider(p.."TextStrokeTransparency", {
+        Text = "Text Stroke Transparency", Default = e.TextStrokeTransparency,
+        Min = 0, Max = 1, Rounding = 1,
+        Callback = function(v) e.TextStrokeTransparency = v end,
+    })
+end
+
+B.BoxColor = function(g, p, e)
+    g:AddLabel("Box Color"):AddColorPicker(p.."BoxColor", {
+        Default = e.BoxColor,
+        Callback = function(v) e.BoxColor = v end,
+    })
+end
+
+B.BoxThickness = function(g, p, e)
+    g:AddInput(p.."BoxThickness", {
+        Text = "Box Thickness", Default = tostring(e.BoxThickness),
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "1",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.BoxThickness = n end
+        end,
+    })
+end
+
+B.BoxTransparency = function(g, p, e)
+    g:AddSlider(p.."BoxTransparency", {
+        Text = "Box Transparency", Default = e.BoxTransparency,
+        Min = 0, Max = 1, Rounding = 1,
+        Callback = function(v) e.BoxTransparency = v end,
+    })
+end
+
+B.BoxFilled = function(g, p, e)
+    g:AddCheckbox(p.."BoxFilled", {
+        Text = "Box Filled", Default = e.BoxFilled,
+        Callback = function(v) e.BoxFilled = v end,
+    })
+end
+
+B.BoxFillTransparency = function(g, p, e)
+    g:AddSlider(p.."BoxFillTransparency", {
+        Text = "Box Fill Transparency", Default = e.BoxFillTransparency,
+        Min = 0, Max = 1, Rounding = 1,
+        Callback = function(v) e.BoxFillTransparency = v end,
+    })
+end
+
+B.HealthColor = function(g, p, e)
+    g:AddLabel("Health Color"):AddColorPicker(p.."HealthColor", {
+        Default = e.HealthColor,
+        Callback = function(v) e.HealthColor = v end,
+    })
+end
+
+B.LowHealthColor = function(g, p, e)
+    g:AddLabel("Low Health Color"):AddColorPicker(p.."LowHealthColor", {
+        Default = e.LowHealthColor,
+        Callback = function(v) e.LowHealthColor = v end,
+    })
+end
+
+B.HealthTransparency = function(g, p, e)
+    g:AddSlider(p.."HealthTransparency", {
+        Text = "Health Transparency", Default = e.HealthTransparency,
+        Min = 0, Max = 1, Rounding = 1,
+        Callback = function(v) e.HealthTransparency = v end,
+    })
+end
+
+B.HealthBarWidth = function(g, p, e)
+    g:AddInput(p.."HealthBarWidth", {
+        Text = "Health Bar Width", Default = tostring(e.HealthBarWidth),
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "5",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.HealthBarWidth = n end
+        end,
+    })
+end
+
+B.HealthBarPosition = function(g, p, e)
+    g:AddDropdown(p.."HealthBarPosition", {
+        Text = "Health Bar Position",
+        Values = {"Left", "Right", "Top", "Bottom"},
+        Default = e.HealthBarPosition,
+        Callback = function(v) e.HealthBarPosition = v end,
+    })
+end
+
+B.HealthBarOffset = function(g, p, e)
+    g:AddInput(p.."HealthBarOffset", {
+        Text = "Health Bar Offset", Default = tostring(e.HealthBarOffset),
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "2",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.HealthBarOffset = n end
+        end,
+    })
+end
+
+B.SkeletonColor = function(g, p, e)
+    g:AddLabel("Skeleton Color"):AddColorPicker(p.."SkeletonColor", {
+        Default = e.SkeletonColor,
+        Callback = function(v) e.SkeletonColor = v end,
+    })
+end
+
+B.SkeletonThickness = function(g, p, e)
+    g:AddInput(p.."SkeletonThickness", {
+        Text = "Skeleton Thickness", Default = tostring(e.SkeletonThickness),
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "1",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.SkeletonThickness = n end
+        end,
+    })
+end
+
+B.SkeletonTransparency = function(g, p, e)
+    g:AddSlider(p.."SkeletonTransparency", {
+        Text = "Skeleton Transparency", Default = e.SkeletonTransparency,
+        Min = 0, Max = 1, Rounding = 1,
+        Callback = function(v) e.SkeletonTransparency = v end,
+    })
+end
+
+B.MaxDistance = function(g, p, e)
+    g:AddInput(p.."MaxDistance", {
+        Text = "Max Distance", Default = "",
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "inf",
+        Callback = function(v)
+            local n = tonumber(v)
+            e.MaxDistance = (n and n > 0) and n or nil
+        end,
+    })
+end
+
+B.MaxEntities = function(g, p, e)
+    g:AddInput(p.."MaxEntities", {
+        Text = "Max Entities", Default = "",
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "inf",
+        Callback = function(v)
+            local n = tonumber(v)
+            e.MaxEntities = (n and n > 0) and n or nil
+        end,
+    })
+end
+
+B.UpdateRate = function(g, p, e)
+    g:AddSlider(p.."UpdateRate", {
+        Text = "Update Rate (Per frame)", Default = e.UpdateRate,
+        Min = 1, Max = 60, Rounding = 0,
+        Callback = function(v) e.UpdateRate = v end,
+    })
+end
+
+B.VisibleOnly = function(g, p, e)
+    g:AddCheckbox(p.."VisibleOnly", {
+        Text = "Visible Only", Default = e.VisibleOnly,
+        Callback = function(v) e.VisibleOnly = v end,
+    })
+end
+
+B.RainbowEnabled = function(g, p, e)
+    g:AddCheckbox(p.."RainbowEnabled", {
+        Text = "Rainbow", Default = e.RainbowEnabled,
+        Callback = function(v) e.RainbowEnabled = v end,
+    })
+end
+
+B.RainbowSpeed = function(g, p, e)
+    g:AddInput(p.."RainbowSpeed", {
+        Text = "Rainbow Speed", Default = tostring(e.RainbowSpeed),
+        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Placeholder = "1",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.RainbowSpeed = n end
+        end,
+    })
+end
+
+-- ===== SECTIONS ===== --
+local SECTIONS = {
+    Enabled = {
+        {"EnabledToggle"},
+        {"TextCheckbox", requires = "Text"},
+        {"BoxCheckbox", requires = "Box"},
+        {"HealthCheckbox", requires = "Health"},
+        {"SkeletonCheckbox", requires = "Skeleton"},
+    },
+    Text = {
+        {"TextColor"},
+        {"TextSize"},
+        {"TextTransparency"},
+        {"ShowName"},
+        {"ShowHealth"},
+        {"ShowDistance"},
+        {"TextStroke"},
+        {"TextStrokeTransparency"},
+    },
+    Box = {
+        {"BoxColor"},
+        {"BoxThickness"},
+        {"BoxTransparency"},
+        {"BoxFilled"},
+        {"BoxFillTransparency"},
+    },
+    Health = {
+        {"HealthColor"},
+        {"LowHealthColor"},
+        {"HealthTransparency"},
+        {"HealthBarWidth"},
+        {"HealthBarPosition"},
+        {"HealthBarOffset"},
+    },
+    Skeleton = {
+        {"SkeletonColor"},
+        {"SkeletonThickness"},
+        {"SkeletonTransparency"},
+    },
+    Performance = {
+        {"MaxDistance"},
+        {"MaxEntities"},
+        {"UpdateRate"},
+        {"VisibleOnly"},
+        {"RainbowEnabled"},
+        {"RainbowSpeed"},
+    },
+}
+
+local SECTION_ORDER = {
+    "Enabled",
+    "Text",
+    "Box",
+    "Health",
+    "Skeleton",
+    "Performance",
+}
+
+-- ===== BUILD ===== --
+local function Build(Group, prefix, esp, config)
+    config = config or {}
+    local features = merge(DEFAULT_FEATURES, config.Features)
+
+    local exclude = {}
+    for _, id in ipairs(config.Exclude or {}) do
+        exclude[id] = true
     end
-    return baseColor
-end
 
--- ===== SOURCES ===== --
-function ESP:AddSource(name, getter, isPlayer, startEnabled)
-    self.Sources[name] = {
-        Enabled = startEnabled ~= false,
-        Getter = getter,
-        IsPlayer = isPlayer or false
-    }
-end
+    local sectionsBuilt = 0
 
-function ESP:SetSourceEnabled(name, enabled)
-    if self.Sources[name] then
-        self.Sources[name].Enabled = enabled
-    end
-end
+    for _, sectionName in ipairs(SECTION_ORDER) do
+        if features[sectionName] ~= false then
+            local toRun = {}
 
--- ===== HELPERS ===== --
-function ESP:GetRoot(model)
-    return model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model:FindFirstChild("Head")
-end
+            for _, entry in ipairs(SECTIONS[sectionName]) do
+                local id = entry[1]
+                local requires = entry.requires
 
-function ESP:GetHead(model)
-    return model:FindFirstChild("Head") or self:GetRoot(model)
-end
-
-function ESP:IsVisible(part, camPos)
-    local pos = part.Position
-    local dir = (pos - camPos).Unit
-    local dist = (pos - camPos).Magnitude
-    local ray = Ray.new(camPos, dir * dist)
-    local ignore = {LocalPlayer.Character, Camera}
-    local hit = workspace:FindPartOnRayWithIgnoreList(ray, ignore, false, true)
-    if not hit then return false end
-    local character = part
-    while character and not character:IsA("Model") do character = character.Parent end
-    return character and hit:IsDescendantOf(character)
-end
-
-function ESP:BuildList()
-    local list = {}
-    local camPos = Camera.CFrame.Position
-    local localChar = LocalPlayer.Character
-    local seen = {}
-
-    for srcName, src in pairs(self.Sources) do
-        if src.Enabled then
-            local ok, entities = pcall(src.Getter)
-            if ok and entities then
-                for _, entity in ipairs(entities) do
-                    local model, playerObj
-                    if typeof(entity) == "Instance" and entity:IsA("Player") then
-                        playerObj = entity
-                        model = entity.Character
-                    elseif typeof(entity) == "Instance" and entity:IsA("Model") then
-                        model = entity
-                    end
-
-                    if model and model ~= localChar and model.Parent then
-                        local hum = model:FindFirstChildOfClass("Humanoid")
-                        local root = self:GetRoot(model)
-                        if hum and hum.Health > 0 and root and not seen[model] then
-                            local dist = (camPos - root.Position).Magnitude
-                            if not self.MaxDistance or dist <= self.MaxDistance then
-                                if not self.VisibleOnly or self:IsVisible(root, camPos) then
-                                    seen[model] = true
-                                    table.insert(list, {
-                                        Model = model,
-                                        Player = playerObj,
-                                        Root = root,
-                                        Distance = dist,
-                                        SourceName = srcName,
-                                    })
-                                end
-                            end
-                        end
-                    end
+                if not exclude[id] and (not requires or features[requires] ~= false) then
+                    table.insert(toRun, id)
                 end
             end
-        end
-    end
 
-    table.sort(list, function(a, b) return a.Distance < b.Distance end)
-    if self.MaxEntities and #list > self.MaxEntities then
-        for i = self.MaxEntities + 1, #list do list[i] = nil end
-    end
-    return list
-end
-
-function ESP:GetKey(entry)
-    if entry.Player then return "P_" .. entry.Player.Name end
-    return "M_" .. entry.Model.Name .. "_" .. tostring(entry.Model:GetDebugId())
-end
-
--- ===== BOX SIZING ===== --
-function ESP:GetBoxRect(entry)
-    local screenPos, onScreen = Camera:WorldToViewportPoint(entry.Root.Position)
-    if not onScreen then return nil end
-
-    local sw, sh = Camera.ViewportSize.X, Camera.ViewportSize.Y
-    local factor = 1 / (screenPos.Z * math.tan(math.rad(Camera.FieldOfView * 0.5)) * 2) * 100
-    local w = math.floor(sh / 20 * factor)
-    local h = math.floor(sw / 30 * factor)
-
-    return {
-        Position = Vector2.new(screenPos.X - w / 2, screenPos.Y - h / 2),
-        Size = Vector2.new(w, h),
-        Center = Vector2.new(screenPos.X, screenPos.Y),
-        ScreenPos = screenPos
-    }
-end
-
--- ===== TEXT ===== --
-function ESP:CreateText(entry)
-    local head = self:GetHead(entry.Model)
-    if not head or not head.Parent then return nil end
-
-    local holder = Instance.new("Folder")
-    holder.Name = entry.Model.Name .. "_ESP"
-    holder.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = entry.Model.Name
-    billboard.Parent = holder
-    billboard.Size = UDim2.new(0, 100, 0, 150)
-    billboard.StudsOffset = Vector3.new(0, 1, 0)
-    billboard.AlwaysOnTop = true
-
-    local label = Instance.new("TextLabel")
-    label.Parent = billboard
-    label.BackgroundTransparency = 1
-    label.Position = UDim2.new(0, 0, 0, -50)
-    label.Size = UDim2.new(0, 100, 0, 100)
-    label.Font = Enum.Font.SourceSansSemibold
-    label.TextSize = self.TextSize
-    label.TextColor3 = self:TextDrawColor()
-    label.TextTransparency = self.TextTransparency
-    label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
-    label.TextYAlignment = Enum.TextYAlignment.Bottom
-    label.Text = "Name: " .. entry.Model.Name
-    label.ZIndex = 10
-
-    pcall(function() billboard.Adornee = head end)
-
-    return {Holder = holder, Label = label, Billboard = billboard}
-end
-
-function ESP:UpdateText(data, entry)
-    if not data or not data.Label then return end
-    if not data.Holder or not data.Holder.Parent then return end
-
-    local adornee = data.Billboard and data.Billboard.Adornee
-    if not adornee or not adornee.Parent then return end
-
-    local hum = entry.Model:FindFirstChildOfClass("Humanoid")
-    local localRoot = LocalPlayer.Character and self:GetRoot(LocalPlayer.Character)
-    if not hum or not localRoot then return end
-
-    local dist = math.floor((localRoot.Position - entry.Root.Position).Magnitude)
-    local health = round(hum.Health, 1)
-    local name = entry.Player and entry.Player.Name or entry.Model.Name
-
-    local parts = {}
-    if self.ShowName then table.insert(parts, "Name: " .. name) end
-    if self.ShowHealth then table.insert(parts, "Health: " .. health) end
-    if self.ShowDistance then table.insert(parts, "Studs: " .. dist) end
-
-    data.Label.Text = table.concat(parts, " | ")
-    data.Label.TextColor3 = self:TextDrawColor()
-    data.Label.TextSize = self.TextSize
-    data.Label.TextTransparency = self.TextTransparency
-    data.Label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
-end
-
-function ESP:DestroyText(data)
-    if data and data.Holder then data.Holder:Destroy() end
-end
-
--- ===== BOX ===== --
-function ESP:CreateBox()
-    local outline = Drawing.new("Square")
-    outline.Thickness = self.BoxThickness
-    outline.Transparency = 1 - self.BoxTransparency
-    outline.Color = self:BoxDrawColor()
-    outline.Filled = false
-    outline.Visible = false
-
-    local fill = Drawing.new("Square")
-    fill.Thickness = 0
-    fill.Transparency = 1 - self.BoxFillTransparency
-    fill.Color = self:BoxDrawColor()
-    fill.Filled = true
-    fill.Visible = false
-
-    return {Outline = outline, Fill = fill}
-end
-
-function ESP:UpdateBox(data, entry)
-    local rect = self:GetBoxRect(entry)
-    if not rect then
-        data.Outline.Visible = false
-        data.Fill.Visible = false
-        return
-    end
-
-    local color = self:BoxDrawColor()
-
-    data.Outline.Size = rect.Size
-    data.Outline.Position = rect.Position
-    data.Outline.Color = color
-    data.Outline.Thickness = self.BoxThickness
-    data.Outline.Transparency = 1 - self.BoxTransparency
-    data.Outline.Visible = true
-
-    if self.BoxFilled then
-        data.Fill.Size = rect.Size
-        data.Fill.Position = rect.Position
-        data.Fill.Color = color
-        data.Fill.Transparency = 1 - self.BoxFillTransparency
-        data.Fill.Visible = true
-    else
-        data.Fill.Visible = false
-    end
-end
-
-function ESP:DestroyBox(data)
-    if not data then return end
-    if data.Outline then data.Outline:Remove() end
-    if data.Fill then data.Fill:Remove() end
-end
-
--- ===== HEALTH ===== --
-function ESP:CreateHealth()
-    return {
-        Outline = Drawing.new("Square"),
-        Fill = Drawing.new("Square")
-    }
-end
-
-function ESP:UpdateHealth(data, entry, rect)
-    local hum = entry.Model:FindFirstChildOfClass("Humanoid")
-    if not hum then
-        data.Outline.Visible = false
-        data.Fill.Visible = false
-        return
-    end
-
-    local frac = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
-    local color = self:HealthDrawColor(frac)
-    local alpha = 1 - self.HealthTransparency
-
-    local pos = self.HealthBarPosition
-    local ox = self.HealthBarOffset
-    local bw = self.HealthBarWidth
-    local x, y, w, h
-
-    if pos == "Right" then
-        w = bw
-        h = rect.Size.Y
-        x = rect.Position.X + rect.Size.X + ox
-        y = rect.Position.Y
-    elseif pos == "Top" then
-        w = rect.Size.X
-        h = 6
-        x = rect.Position.X
-        y = rect.Position.Y - ox - h
-    elseif pos == "Bottom" then
-        w = rect.Size.X
-        h = 6
-        x = rect.Position.X
-        y = rect.Position.Y + rect.Size.Y + ox
-    else
-        w = bw
-        h = rect.Size.Y
-        x = rect.Position.X - bw - ox
-        y = rect.Position.Y
-    end
-
-    data.Outline.Size = Vector2.new(w, h)
-    data.Outline.Position = Vector2.new(x, y)
-    data.Outline.Color = Color3.new(0, 0, 0)
-    data.Outline.Filled = true
-    data.Outline.Transparency = alpha
-    data.Outline.Visible = true
-
-    if pos == "Top" or pos == "Bottom" then
-        data.Fill.Size = Vector2.new(math.max((w - 2) * frac, 0), math.max(h - 2, 0))
-        data.Fill.Position = Vector2.new(x + 1, y + 1)
-    else
-        data.Fill.Size = Vector2.new(math.max(w - 2, 0), math.max((h - 2) * frac, 0))
-        data.Fill.Position = Vector2.new(x + 1, y + 1 + (h - 2) * (1 - frac))
-    end
-
-    data.Fill.Color = color
-    data.Fill.Filled = true
-    data.Fill.Transparency = alpha
-    data.Fill.Visible = true
-end
-
-function ESP:DestroyHealth(data)
-    if not data then return end
-    if data.Outline then data.Outline:Remove() end
-    if data.Fill then data.Fill:Remove() end
-end
-
--- ===== SKELETON ===== --
-function ESP:CreateSkeleton()
-    return {Lines = {}, Rig = nil}
-end
-
-function ESP:UpdateSkeleton(data, entry)
-    local hum = entry.Model:FindFirstChildOfClass("Humanoid")
-    if not hum then
-        for _, line in pairs(data.Lines) do line.Visible = false end
-        return
-    end
-
-    local rig = hum.RigType.Name
-    if data.Rig ~= rig then
-        for _, line in pairs(data.Lines) do line:Remove() end
-        data.Lines = {}
-        data.Rig = rig
-    end
-
-    local conns = bodyConnections[rig] or bodyConnections.R15
-    local activeKeys = {}
-    local alpha = 1 - self.SkeletonTransparency
-
-    for _, connection in ipairs(conns) do
-        local key = connection[1] .. "-" .. connection[2]
-        activeKeys[key] = true
-
-        if not data.Lines[key] then
-            local line = Drawing.new("Line")
-            line.Thickness = self.SkeletonThickness
-            line.Transparency = alpha
-            line.Color = self:SkeletonDrawColor()
-            line.Visible = false
-            data.Lines[key] = line
-        end
-
-        local line = data.Lines[key]
-        local partA = entry.Model:FindFirstChild(connection[1])
-        local partB = entry.Model:FindFirstChild(connection[2])
-
-        if partA and partB then
-            local posA, onA = Camera:WorldToViewportPoint(partA.Position)
-            local posB, onB = Camera:WorldToViewportPoint(partB.Position)
-            if onA and onB then
-                line.From = Vector2.new(posA.X, posA.Y)
-                line.To = Vector2.new(posB.X, posB.Y)
-                line.Color = self:SkeletonDrawColor()
-                line.Transparency = alpha
-                line.Thickness = self.SkeletonThickness
-                line.Visible = true
-            else
-                line.Visible = false
-            end
-        else
-            line.Visible = false
-        end
-    end
-
-    for key, line in pairs(data.Lines) do
-        if not activeKeys[key] then line.Visible = false end
-    end
-end
-
-function ESP:DestroySkeleton(data)
-    if not data then return end
-    for _, line in pairs(data.Lines) do line:Remove() end
-end
-
--- ===== ENTRY ===== --
-function ESP:DestroyEntry(data)
-    self:DestroyText(data.Text)
-    self:DestroyBox(data.Box)
-    self:DestroyHealth(data.Health)
-    self:DestroySkeleton(data.Skeleton)
-end
-
--- ===== MAIN LOOP ===== --
-function ESP:Step()
-    self.FrameCounter = self.FrameCounter + 1
-    if self.FrameCounter % self.UpdateRate ~= 0 then return end
-    if not self.Enabled then return end
-
-    self:ApplyRainbow()
-
-    local list = self:BuildList()
-    local active = {}
-
-    for _, entry in ipairs(list) do
-        local key = self:GetKey(entry)
-        active[key] = true
-
-        local data = self.Cache[key]
-        if not data or data.Model ~= entry.Model then
-            if data then self:DestroyEntry(data) end
-            data = { Model = entry.Model }
-            self.Cache[key] = data
-        end
-
-        if self.TextESPEnabled then
-            if data.Text then
-                local adornee = data.Text.Billboard and data.Text.Billboard.Adornee
-                if not data.Text.Holder or not data.Text.Holder.Parent or not adornee or not adornee.Parent then
-                    self:DestroyText(data.Text)
-                    data.Text = nil
+            if #toRun > 0 then
+                if sectionsBuilt > 0 then
+                    Group:AddDivider()
                 end
+                for _, id in ipairs(toRun) do
+                    if B[id] then B[id](Group, prefix, esp) end
+                end
+                sectionsBuilt = sectionsBuilt + 1
             end
-            if not data.Text then
-                data.Text = self:CreateText(entry)
-            end
-        else
-            if data.Text then
-                self:DestroyText(data.Text)
-                data.Text = nil
-            end
-        end
-
-        if self.BoxESPEnabled then
-            if not data.Box then data.Box = self:CreateBox() end
-        else
-            if data.Box then
-                self:DestroyBox(data.Box)
-                data.Box = nil
-            end
-        end
-
-        if self.HealthESPEnabled then
-            if not data.Health then data.Health = self:CreateHealth() end
-        else
-            if data.Health then
-                self:DestroyHealth(data.Health)
-                data.Health = nil
-            end
-        end
-
-        if self.SkeletonESPEnabled then
-            if not data.Skeleton then data.Skeleton = self:CreateSkeleton() end
-        else
-            if data.Skeleton then
-                self:DestroySkeleton(data.Skeleton)
-                data.Skeleton = nil
-            end
-        end
-
-        local rect = self:GetBoxRect(entry)
-
-        if data.Text then
-            self:UpdateText(data.Text, entry)
-        end
-
-        if data.Box then
-            self:UpdateBox(data.Box, entry)
-        end
-
-        if data.Health then
-            if rect then
-                self:UpdateHealth(data.Health, entry, rect)
-            else
-                data.Health.Outline.Visible = false
-                data.Health.Fill.Visible = false
-            end
-        end
-
-        if data.Skeleton then
-            self:UpdateSkeleton(data.Skeleton, entry)
-        end
-    end
-
-    for key, data in pairs(self.Cache) do
-        if not active[key] then
-            self:DestroyEntry(data)
-            self.Cache[key] = nil
         end
     end
 end
 
-function ESP:Start()
-    if self.LoopConnection then return end
-    self.LoopConnection = RunService.RenderStepped:Connect(function() self:Step() end)
-end
+-- ===== FACTORY ===== --
+local function Create(Group, prefix, config, sources)
+    config = config or {}
 
-function ESP:Stop()
-    if self.LoopConnection then
-        self.LoopConnection:Disconnect()
-        self.LoopConnection = nil
+    local settings = merge(DEFAULTS, config.Settings)
+    local esp = ESP.new(settings)
+
+    if sources then
+        for _, src in ipairs(sources) do
+            esp:AddSource(src.Name, src.Getter, src.IsPlayer or false, src.Enabled ~= false)
+        end
     end
-    for _, data in pairs(self.Cache) do
-        self:DestroyEntry(data)
-    end
-    self.Cache = {}
+
+    Build(Group, prefix, esp, config)
+
+    return esp
 end
 
-function ESP:SetEnabled(state)
-    self.Enabled = state
-    if state then
-        self:Start()
-    else
-        self:Stop()
-    end
-end
-
-function ESP:Destroy()
-    self:Stop()
-end
-
-return ESP
+-- ===== RETURN ===== --
+return {
+    ESP = ESP,
+    Build = Build,
+    Create = Create,
+    Builders = B,
+    DEFAULTS = DEFAULTS,
+    DEFAULT_FEATURES = DEFAULT_FEATURES,
+}
