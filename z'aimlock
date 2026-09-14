@@ -26,6 +26,7 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     self.FOVStroke = nil
     self.FOVRainbowEnabled = settings.FOVRainbowEnabled ~= false
     self.CrosshairRainbowEnabled = settings.CrosshairRainbowEnabled ~= false
+    self.RainbowSpeed = settings.RainbowSpeed or 1
 
     self.PredictionXZ = settings.PredictionXZ or 0
     self.PredictionY = settings.PredictionY or 0
@@ -34,6 +35,11 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     self.AimPartPreference = settings.AimPartPreference or {"Head", "Torso", "Other Parts"}
     self.SampleMode = settings.SampleMode or 2
     self.HeadChance = settings.HeadChance or 50
+
+    self.MobileButtonEnabled = settings.MobileButtonEnabled ~= false
+    self.MobileButton = nil
+    self.MobileButtonGui = nil
+    self.OnStateChanged = nil
 
     local builtInWhitelist = settings.BuiltInWhitelist or {}
     local externalWhitelist = settings.Whitelist or {}
@@ -87,6 +93,7 @@ function Aimlock:CreateFOV(parent)
         f.Size = size
         f.BackgroundColor3 = Color3.new(1, 1, 1)
         f.BorderSizePixel = 0
+        f.Visible = false
         return f
     end
 
@@ -101,8 +108,10 @@ function Aimlock:CreateFOV(parent)
     self.FOVStroke = stroke
 
     task.spawn(function()
+        local h = 0
         while self.FOVCircle and self.FOVCircle.Parent do
-            local h = (os.clock() * 60) % 360
+            task.wait(0.03)
+            h = (h + 3 * (self.RainbowSpeed or 1)) % 360
             local c = Color3.fromHSV(h / 360, 1, 1)
             if self.FOVRainbowEnabled and self.FOVStroke and self.FOVCircle.Visible then
                 self.FOVStroke.Color = c
@@ -115,7 +124,6 @@ function Aimlock:CreateFOV(parent)
                     self.CrossH.BackgroundColor3 = c
                 end
             end
-            task.wait(0.03)
         end
     end)
 
@@ -290,19 +298,37 @@ function Aimlock:GetAimPart(entity)
         return entity:FindFirstChildWhichIsA("BasePart")
     end
 
+    local headChance = self.HeadChance or 50
+    local torsoChance = 100 - headChance
     local roll = math.random() * 100
-    local rolledBucket = (roll < self.HeadChance) and "Head" or "Torso"
 
-    local part = self:ResolveBucket(entity, rolledBucket)
-    if part then return part end
-
-    if rolledBucket == "Torso" then
-        part = self:ResolveBucket(entity, "Other Parts")
-        if part then return part end
+    local allowed = {}
+    for _, name in ipairs(preference) do
+        if name == "Head" and headChance > 0 then
+            allowed[name] = true
+        elseif name ~= "Head" and torsoChance > 0 then
+            allowed[name] = true
+        end
     end
 
+    local primary
+    if roll < headChance and allowed["Head"] then
+        primary = "Head"
+    elseif allowed["Torso"] then
+        primary = "Torso"
+    elseif allowed["Other Parts"] then
+        primary = "Other Parts"
+    elseif allowed["Head"] then
+        primary = "Head"
+    else
+        return nil
+    end
+
+    local part = self:ResolveBucket(entity, primary)
+    if part then return part end
+
     for _, name in ipairs(preference) do
-        if name ~= rolledBucket then
+        if allowed[name] and name ~= primary then
             part = self:ResolveBucket(entity, name)
             if part then return part end
         end
@@ -458,9 +484,69 @@ function Aimlock:Stop()
 end
 
 function Aimlock:SetEnabled(state)
+    if self.Enabled == state then
+        self:UpdateMobileButton()
+        return
+    end
     self.Enabled = state
     self:SetVisibility(state)
     if state then self:Start() else self:Stop() end
+    self:UpdateMobileButton()
+    if self.OnStateChanged then
+        pcall(self.OnStateChanged, state)
+    end
+end
+
+function Aimlock:CreateMobileButton()
+    if self.MobileButtonGui then return end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = self.AimlockName .. "MobileToggle"
+    gui.IgnoreGuiInset = true
+    gui.ResetOnSpawn = false
+    gui.Parent = self.LocalPlayer:WaitForChild("PlayerGui")
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 140, 0, 40)
+    btn.Position = UDim2.new(0.875, 0, 0.125, 0)
+    btn.Text = "Aimlock : OFF"
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.BackgroundColor3 = Color3.new(0, 0, 0)
+    btn.TextScaled = true
+    btn.Font = Enum.Font.SourceSansBold
+    btn.Draggable = true
+    btn.Active = true
+    btn.Parent = gui
+
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+
+    self.MobileButton = btn
+    self.MobileButtonGui = gui
+
+    btn.MouseButton1Click:Connect(function()
+        self:SetEnabled(not self.Enabled)
+    end)
+
+    self:UpdateMobileButton()
+end
+
+function Aimlock:DestroyMobileButton()
+    if self.MobileButtonGui then
+        self.MobileButtonGui:Destroy()
+        self.MobileButtonGui = nil
+        self.MobileButton = nil
+    end
+end
+
+function Aimlock:UpdateMobileButton()
+    if not self.MobileButton then return end
+    if self.Enabled then
+        self.MobileButton.Text = "Aimlock : ON"
+        self.MobileButton.BackgroundColor3 = Color3.fromRGB(255, 128, 0)
+    else
+        self.MobileButton.Text = "Aimlock : OFF"
+        self.MobileButton.BackgroundColor3 = Color3.new(0, 0, 0)
+    end
 end
 
 return Aimlock
