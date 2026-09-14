@@ -1,3 +1,314 @@
+-- ===== AIMLOCK ===== --
+local Aimlock = {}
+Aimlock.__index = Aimlock
+
+function Aimlock.new(playersService, localPlayer, camera, settings)
+    settings = settings or {}
+    local self = setmetatable({}, Aimlock)
+    self.Players = playersService
+    self.LocalPlayer = localPlayer
+    self.Camera = camera
+
+    self.AimlockName = settings.AimlockName or "Aimlock"
+    self.Enabled = false
+    self.LockAnywhere = settings.LockAnywhere or false
+    self.TargetPlayers = settings.TargetPlayers ~= false
+    self.TeamCheck = settings.TeamCheck or false
+    self.MaxDistance = settings.MaxDistance
+
+    self.FOVSize = settings.FOVSize or 500
+    self.CrossOffset = settings.CrossOffset or Vector2.new(0, 0)
+    self.Gui = nil
+    self.FOVCircle = nil
+    self.CrossV = nil
+    self.CrossH = nil
+    self.FOVAnimationEnabled = false
+
+    self.PredictionXZ = settings.PredictionXZ or 0
+    self.PredictionY = settings.PredictionY or 0
+
+    self.AimPartPreference = settings.AimPartPreference or {"Head", "HumanoidRootPart", "BasePart"}
+
+    local builtInWhitelist = settings.BuiltInWhitelist or {}
+    local externalWhitelist = settings.Whitelist or {}
+    if settings.RespectBuiltInWhitelist ~= false then
+        self.Whitelist = {}
+        for _, name in ipairs(builtInWhitelist) do table.insert(self.Whitelist, name) end
+        for _, name in ipairs(externalWhitelist) do
+            if not table.find(self.Whitelist, name) then table.insert(self.Whitelist, name) end
+        end
+    else
+        self.Whitelist = externalWhitelist
+    end
+
+    self.Targetlist = settings.Targetlist or {}
+
+    self.TargetSources = {}
+    if settings.TargetSources then
+        for name, src in pairs(settings.TargetSources) do
+            self.TargetSources[name] = {
+                Enabled = src.Enabled or false,
+                GetEntities = src.GetEntities
+            }
+        end
+    end
+
+    self.LoopConnection = nil
+    self.PriorityTarget = nil
+
+    return self
+end
+
+function Aimlock:AddTargetSource(name, getEntitiesFunc, startEnabled)
+    self.TargetSources[name] = {
+        Enabled = startEnabled or false,
+        GetEntities = getEntitiesFunc
+    }
+end
+
+function Aimlock:CreateFOV(parent)
+    if self.Gui then self.Gui:Destroy() end
+    local gui = Instance.new("ScreenGui", parent or self.LocalPlayer.PlayerGui)
+    gui.Name = self.AimlockName .. "FOV"
+    gui.IgnoreGuiInset = true
+    gui.ResetOnSpawn = false
+
+    local function mk(pos, size)
+        local f = Instance.new("Frame", gui)
+        f.AnchorPoint = Vector2.new(0.5, 0.5)
+        f.Position = pos
+        f.Size = size
+        f.BackgroundColor3 = Color3.new(1, 1, 1)
+        f.BorderSizePixel = 0
+        return f
+    end
+
+    self.CrossV = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, 2, 0, 14))
+    self.CrossH = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, 14, 0, 2))
+    self.FOVCircle = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, self.FOVSize, 0, self.FOVSize))
+    self.FOVCircle.BackgroundTransparency = 1
+    Instance.new("UICorner", self.FOVCircle).CornerRadius = UDim.new(1, 0)
+
+    local stroke = Instance.new("UIStroke", self.FOVCircle)
+    stroke.Thickness = 2
+
+    task.spawn(function()
+        while self.FOVCircle and self.FOVCircle.Parent do
+            if self.FOVAnimationEnabled and self.FOVCircle.Visible then
+                local h = (os.clock() * 60) % 360
+                stroke.Color = Color3.fromHSV(h / 360, 1, 1)
+            end
+            task.wait(0.03)
+        end
+    end)
+
+    self.Gui = gui
+end
+
+function Aimlock:SetVisibility(visible)
+    if self.FOVCircle then self.FOVCircle.Visible = visible end
+    if self.CrossV then self.CrossV.Visible = visible end
+    if self.CrossH then self.CrossH.Visible = visible end
+end
+
+function Aimlock:UpdateFOVSize(size)
+    self.FOVSize = size
+    if self.FOVCircle then
+        self.FOVCircle.Size = UDim2.new(0, size, 0, size)
+        self.FOVCircle.Position = UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y)
+    end
+end
+
+function Aimlock:UpdateCrossOffset(offset)
+    self.CrossOffset = offset
+    if self.FOVCircle then self.FOVCircle.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
+    if self.CrossV then self.CrossV.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
+    if self.CrossH then self.CrossH.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
+end
+
+function Aimlock:GetPredictedPos(part)
+    if self.PredictionXZ == 0 and self.PredictionY == 0 then return part.Position end
+    local vel = part.Velocity
+    return part.Position + Vector3.new(vel.X * self.PredictionXZ, vel.Y * self.PredictionY, vel.Z * self.PredictionXZ)
+end
+
+function Aimlock:IsVisible(part, camPos, ignoreList)
+    local pos = part.Position
+    local dir = (pos - camPos).Unit
+    local dist = (pos - camPos).Magnitude
+    local ray = Ray.new(camPos, dir * dist)
+    local hit = workspace:FindPartOnRayWithIgnoreList(ray, ignoreList or {}, false, true)
+    if not hit then return false end
+    local character = part
+    while character and not character:IsA("Model") do character = character.Parent end
+    return character and hit:IsDescendantOf(character)
+end
+
+function Aimlock:GetAimPart(entity)
+    for _, partName in ipairs(self.AimPartPreference) do
+        local part = entity:FindFirstChild(partName)
+        if part and part:IsA("BasePart") then return part end
+    end
+    return entity:FindFirstChildWhichIsA("BasePart")
+end
+
+function Aimlock:FindBestTarget()
+    local char = self.LocalPlayer.Character
+    if not char then return nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local camPos = self.Camera.CFrame.Position
+    local bestTargetPos = nil
+    local bestDist = math.huge
+
+    local function evaluateTarget(aimPart)
+        local predicted = self:GetPredictedPos(aimPart)
+        local screenPos, onScreen = self.Camera:WorldToViewportPoint(predicted)
+        if not onScreen then return nil, nil end
+        local fPos = Vector2.new(
+            self.Camera.ViewportSize.X / 2 + self.CrossOffset.X,
+            self.Camera.ViewportSize.Y / 2 + self.CrossOffset.Y
+        )
+        local dx = screenPos.X - fPos.X
+        local dy = screenPos.Y - fPos.Y
+        local dist = math.sqrt(dx*dx + dy*dy)
+
+        if self.MaxDistance and (aimPart.Position - camPos).Magnitude > self.MaxDistance then
+            return nil, nil
+        end
+
+        if self.LockAnywhere then
+            if self:IsVisible(aimPart, camPos, {char}) then return predicted, 0 end
+            return nil, nil
+        end
+        if dist <= self.FOVSize / 2 and self:IsVisible(aimPart, camPos, {char}) then
+            return predicted, dist
+        end
+        return nil, nil
+    end
+
+    if self.TargetPlayers and self.PriorityTarget and self.PriorityTarget.Character then
+        local pChar = self.PriorityTarget.Character
+        local hum = pChar:FindFirstChild("Humanoid")
+        if hum and hum.Health > 0 and not table.find(self.Whitelist, self.PriorityTarget.Name) then
+            if self.TeamCheck and self.PriorityTarget.TeamColor == self.LocalPlayer.TeamColor then
+            else
+                local aimPart = self:GetAimPart(pChar)
+                if aimPart then
+                    local pos, dist = evaluateTarget(aimPart)
+                    if pos then return pos end
+                end
+            end
+        end
+    end
+
+    if self.TargetPlayers and #self.Targetlist > 0 then
+        for _, plr in ipairs(self.Players:GetPlayers()) do
+            if plr == self.LocalPlayer then continue end
+            if not table.find(self.Targetlist, plr.Name) then continue end
+            if table.find(self.Whitelist, plr.Name) then continue end
+            if self.TeamCheck and plr.TeamColor == self.LocalPlayer.TeamColor then continue end
+            local pChar = plr.Character
+            if not pChar then continue end
+            local hum = pChar:FindFirstChild("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+            local aimPart = self:GetAimPart(pChar)
+            if aimPart then
+                local pos, dist = evaluateTarget(aimPart)
+                if pos and dist < bestDist then
+                    bestTargetPos = pos
+                    bestDist = dist
+                end
+            end
+        end
+        if bestTargetPos then return bestTargetPos end
+    end
+
+    if self.TargetPlayers then
+        for _, plr in ipairs(self.Players:GetPlayers()) do
+            if plr == self.LocalPlayer then continue end
+            if table.find(self.Whitelist, plr.Name) then continue end
+            if self.TeamCheck and plr.TeamColor == self.LocalPlayer.TeamColor then continue end
+            local pChar = plr.Character
+            if not pChar then continue end
+            local hum = pChar:FindFirstChild("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+            local aimPart = self:GetAimPart(pChar)
+            if aimPart then
+                local pos, dist = evaluateTarget(aimPart)
+                if pos and dist < bestDist then
+                    bestTargetPos = pos
+                    bestDist = dist
+                end
+            end
+        end
+    end
+
+    for name, src in pairs(self.TargetSources) do
+        if not src.Enabled then continue end
+        local entities = src.GetEntities()
+        if not entities then continue end
+        for _, entity in ipairs(entities) do
+            if not entity:IsA("Model") then continue end
+            local hum = entity:FindFirstChild("Humanoid") or entity:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+            local aimPart = self:GetAimPart(entity)
+            if aimPart then
+                local pos, dist = evaluateTarget(aimPart)
+                if pos and dist < bestDist then
+                    bestTargetPos = pos
+                    bestDist = dist
+                end
+            end
+        end
+    end
+
+    return bestTargetPos
+end
+
+function Aimlock:Start()
+    if self.LoopConnection then return end
+    self.LoopConnection = game:GetService("RunService").RenderStepped:Connect(function()
+        if not self.Enabled then return end
+        local targetPos = self:FindBestTarget()
+        if not targetPos then return end
+        local camPos = self.Camera.CFrame.Position
+        local lookAt = CFrame.lookAt(camPos, targetPos)
+        local fovRad = math.rad(self.Camera.FieldOfView)
+        local screenWidth = self.Camera.ViewportSize.X
+        local screenHeight = self.Camera.ViewportSize.Y
+        local anglePerPixelX = fovRad / screenWidth
+        local anglePerPixelY = fovRad / screenHeight
+
+        if self.CrossOffset.X ~= 0 then
+            local yawAngle = -self.CrossOffset.X * anglePerPixelX
+            lookAt = lookAt * CFrame.Angles(0, yawAngle, 0)
+        end
+        if self.CrossOffset.Y ~= 0 then
+            local pitchAngle = -self.CrossOffset.Y * anglePerPixelY
+            lookAt = lookAt * CFrame.Angles(pitchAngle, 0, 0)
+        end
+        self.Camera.CFrame = lookAt
+    end)
+end
+
+function Aimlock:Stop()
+    if self.LoopConnection then
+        self.LoopConnection:Disconnect()
+        self.LoopConnection = nil
+    end
+end
+
+function Aimlock:SetEnabled(state)
+    self.Enabled = state
+    self:SetVisibility(state)
+    self.FOVAnimationEnabled = state
+    if state then self:Start() else self:Stop() end
+end
+
+return Aimlock
+
 -- ===== ESP MODULE ===== --
 local ESP = {}
 ESP.__index = ESP
@@ -6,6 +317,11 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+
+local function round(num, places)
+    local mult = 10 ^ (places or 0)
+    return math.floor(num * mult + 0.5) / mult
+end
 
 local bodyConnections = {
     R15 = {
@@ -38,6 +354,38 @@ function ESP.new(settings)
     settings = settings or {}
     local self = setmetatable({}, ESP)
 
+    self.Enabled = settings.Enabled or false
+    self.TextESPEnabled = settings.TextESPEnabled ~= false
+    self.BoxESPEnabled = settings.BoxESPEnabled ~= false
+    self.HealthESPEnabled = settings.HealthESPEnabled ~= false
+    self.SkeletonESPEnabled = settings.SkeletonESPEnabled ~= false
+
+    self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
+    self.TextSize = settings.TextSize or 20
+    self.TextTransparency = settings.TextTransparency or 0
+    self.TextStroke = settings.TextStroke ~= false
+    self.TextStrokeTransparency = settings.TextStrokeTransparency or 0
+    self.ShowName = settings.ShowName ~= false
+    self.ShowHealth = settings.ShowHealth ~= false
+    self.ShowDistance = settings.ShowDistance ~= false
+
+    self.BoxColor = settings.BoxColor or Color3.new(1, 1, 1)
+    self.BoxThickness = settings.BoxThickness or 1
+    self.BoxTransparency = settings.BoxTransparency or 0
+    self.BoxFilled = settings.BoxFilled or false
+    self.BoxFillTransparency = settings.BoxFillTransparency or 0.5
+
+    self.HealthColor = settings.HealthColor or Color3.new(0, 1, 0)
+    self.LowHealthColor = settings.LowHealthColor or Color3.new(1, 0, 0)
+    self.HealthTransparency = settings.HealthTransparency or 0
+    self.HealthBarWidth = settings.HealthBarWidth or 5
+    self.HealthBarPosition = settings.HealthBarPosition or "Left"
+    self.HealthBarOffset = settings.HealthBarOffset or 2
+
+    self.SkeletonColor = settings.SkeletonColor or Color3.new(1, 1, 1)
+    self.SkeletonThickness = settings.SkeletonThickness or 1
+    self.SkeletonTransparency = settings.SkeletonTransparency or 0
+
     self.MaxDistance = settings.MaxDistance or nil
     self.MaxEntities = settings.MaxEntities or nil
     self.UpdateRate = settings.UpdateRate or 1
@@ -45,42 +393,11 @@ function ESP.new(settings)
     self.RainbowEnabled = settings.RainbowEnabled or false
     self.RainbowSpeed = settings.RainbowSpeed or 1
 
-    self.TextColor = settings.TextColor or Color3.fromRGB(255, 255, 255)
-    self.TextSize = settings.TextSize or 16
-    self.TextTransparency = settings.TextTransparency or 0
-    self.TextStroke = settings.TextStroke ~= false
-    self.TextStrokeTransparency = settings.TextStrokeTransparency or 0.3
-    self.ShowName = settings.ShowName ~= false
-    self.ShowHealth = settings.ShowHealth ~= false
-    self.ShowDistance = settings.ShowDistance ~= false
-
-    self.BoxColor = settings.BoxColor or Color3.fromRGB(255, 255, 255)
-    self.BoxThickness = settings.BoxThickness or 1
-    self.BoxTransparency = settings.BoxTransparency or 0
-    self.BoxFilled = settings.BoxFilled or false
-    self.BoxFillTransparency = settings.BoxFillTransparency or 0.5
-
-    self.HealthColor = settings.HealthColor or Color3.fromRGB(0, 255, 0)
-    self.LowHealthColor = settings.LowHealthColor or Color3.fromRGB(255, 0, 0)
-    self.HealthTransparency = settings.HealthTransparency or 0
-    self.HealthBarWidth = settings.HealthBarWidth or 3
-    self.HealthBarOffset = settings.HealthBarOffset or 2
-
-    self.SkeletonColor = settings.SkeletonColor or Color3.fromRGB(255, 255, 255)
-    self.SkeletonThickness = settings.SkeletonThickness or 1
-    self.SkeletonTransparency = settings.SkeletonTransparency or 0
-
-    self.TextESPEnabled = false
-    self.BoxESPEnabled = false
-    self.HealthESPEnabled = false
-    self.SkeletonESPEnabled = false
-    self.Enabled = false
-
     self.Sources = {}
     self.Cache = {}
     self.FrameCounter = 0
     self.LoopConnection = nil
-    self._rainbow = Color3.fromRGB(255, 255, 255)
+    self._rainbow = Color3.new(1, 1, 1)
 
     return self
 end
@@ -170,7 +487,7 @@ function ESP:BuildList()
                         model = entity
                     end
 
-                    if model and model ~= localChar then
+                    if model and model ~= localChar and model.Parent then
                         local hum = model:FindFirstChildOfClass("Humanoid")
                         local root = self:GetRoot(model)
                         if hum and hum.Health > 0 and root and not seen[model] then
@@ -211,19 +528,14 @@ function ESP:GetBoxRect(entry)
     local screenPos, onScreen = Camera:WorldToViewportPoint(entry.Root.Position)
     if not onScreen then return nil end
 
-    local viewport = Camera.ViewportSize
-    local dist = math.max(screenPos.Z, 0.1)
-    local fovScale = math.tan(math.rad(Camera.FieldOfView * 0.5))
-
-    local height = (viewport.Y / dist) / (2 * fovScale) * 4.5
-    local width = height * 0.55
-
-    height = math.clamp(math.floor(height), 10, 2000)
-    width = math.clamp(math.floor(width), 5, 1000)
+    local sw, sh = Camera.ViewportSize.X, Camera.ViewportSize.Y
+    local factor = 1 / (screenPos.Z * math.tan(math.rad(Camera.FieldOfView * 0.5)) * 2) * 100
+    local w = math.floor(sh / 20 * factor)
+    local h = math.floor(sw / 30 * factor)
 
     return {
-        Position = Vector2.new(screenPos.X - width * 0.5, screenPos.Y - height * 0.5),
-        Size = Vector2.new(width, height),
+        Position = Vector2.new(screenPos.X - w / 2, screenPos.Y - h / 2),
+        Size = Vector2.new(w, h),
         Center = Vector2.new(screenPos.X, screenPos.Y),
         ScreenPos = screenPos
     }
@@ -232,53 +544,57 @@ end
 -- ===== TEXT ===== --
 function ESP:CreateText(entry)
     local head = self:GetHead(entry.Model)
-    if not head then return nil end
+    if not head or not head.Parent then return nil end
 
-    local holder = Instance.new("BillboardGui")
-    holder.Name = "ESP_Text"
-    holder.Adornee = head
-    holder.Size = UDim2.new(0, 300, 0, 40)
-    holder.StudsOffset = Vector3.new(0, 2, 0)
-    holder.AlwaysOnTop = true
-    holder.ResetOnSpawn = false
+    local holder = Instance.new("Folder")
+    holder.Name = entry.Model.Name .. "_ESP"
     holder.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-    local label = Instance.new("TextLabel", holder)
-    label.Size = UDim2.fromScale(1, 1)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = entry.Model.Name
+    billboard.Parent = holder
+    billboard.Size = UDim2.new(0, 100, 0, 150)
+    billboard.StudsOffset = Vector3.new(0, 1, 0)
+    billboard.AlwaysOnTop = true
+
+    local label = Instance.new("TextLabel")
+    label.Parent = billboard
     label.BackgroundTransparency = 1
-    label.Font = Enum.Font.SourceSansBold
+    label.Position = UDim2.new(0, 0, 0, -50)
+    label.Size = UDim2.new(0, 100, 0, 100)
+    label.Font = Enum.Font.SourceSansSemibold
     label.TextSize = self.TextSize
     label.TextColor3 = self:TextDrawColor()
     label.TextTransparency = self.TextTransparency
-    label.TextStrokeColor3 = Color3.new(0, 0, 0)
     label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
-    label.TextWrapped = true
-    label.RichText = true
+    label.TextYAlignment = Enum.TextYAlignment.Bottom
+    label.Text = "Name: " .. entry.Model.Name
+    label.ZIndex = 10
 
-    return {Holder = holder, Label = label}
+    pcall(function() billboard.Adornee = head end)
+
+    return {Holder = holder, Label = label, Billboard = billboard}
 end
 
 function ESP:UpdateText(data, entry)
     if not data or not data.Label then return end
-    if not data.Holder.Parent or not data.Holder.Adornee then return end
+    if not data.Holder or not data.Holder.Parent then return end
+
+    local adornee = data.Billboard and data.Billboard.Adornee
+    if not adornee or not adornee.Parent then return end
 
     local hum = entry.Model:FindFirstChildOfClass("Humanoid")
     local localRoot = LocalPlayer.Character and self:GetRoot(LocalPlayer.Character)
     if not hum or not localRoot then return end
 
     local dist = math.floor((localRoot.Position - entry.Root.Position).Magnitude)
-    local parts = {}
+    local health = round(hum.Health, 1)
+    local name = entry.Player and entry.Player.Name or entry.Model.Name
 
-    if self.ShowName then
-        local n = entry.Player and entry.Player.Name or entry.Model.Name
-        table.insert(parts, "<b>" .. n .. "</b>")
-    end
-    if self.ShowHealth then
-        table.insert(parts, "HP: " .. math.floor(hum.Health))
-    end
-    if self.ShowDistance then
-        table.insert(parts, math.floor(dist) .. "m")
-    end
+    local parts = {}
+    if self.ShowName then table.insert(parts, "Name: " .. name) end
+    if self.ShowHealth then table.insert(parts, "Health: " .. health) end
+    if self.ShowDistance then table.insert(parts, "Studs: " .. dist) end
 
     data.Label.Text = table.concat(parts, " | ")
     data.Label.TextColor3 = self:TextDrawColor()
@@ -287,28 +603,61 @@ function ESP:UpdateText(data, entry)
     data.Label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
 end
 
--- ===== BOX ===== --
-function ESP:CreateBox()
-    local box = Drawing.new("Square")
-    box.Thickness = self.BoxThickness
-    box.Color = self:BoxDrawColor()
-    box.Transparency = self.BoxTransparency
-    box.Filled = self.BoxFilled
-    box.Visible = false
-    return box
+function ESP:DestroyText(data)
+    if data and data.Holder then data.Holder:Destroy() end
 end
 
-function ESP:UpdateBox(box, entry)
-    local rect = self:GetBoxRect(entry)
-    if not rect then box.Visible = false; return end
+-- ===== BOX ===== --
+function ESP:CreateBox()
+    local outline = Drawing.new("Square")
+    outline.Thickness = self.BoxThickness
+    outline.Transparency = 1 - self.BoxTransparency
+    outline.Color = self:BoxDrawColor()
+    outline.Filled = false
+    outline.Visible = false
 
-    box.Size = rect.Size
-    box.Position = rect.Position
-    box.Thickness = self.BoxThickness
-    box.Color = self:BoxDrawColor()
-    box.Filled = self.BoxFilled
-    box.Transparency = self.BoxFilled and self.BoxFillTransparency or self.BoxTransparency
-    box.Visible = true
+    local fill = Drawing.new("Square")
+    fill.Thickness = 0
+    fill.Transparency = 1 - self.BoxFillTransparency
+    fill.Color = self:BoxDrawColor()
+    fill.Filled = true
+    fill.Visible = false
+
+    return {Outline = outline, Fill = fill}
+end
+
+function ESP:UpdateBox(data, entry)
+    local rect = self:GetBoxRect(entry)
+    if not rect then
+        data.Outline.Visible = false
+        data.Fill.Visible = false
+        return
+    end
+
+    local color = self:BoxDrawColor()
+
+    data.Outline.Size = rect.Size
+    data.Outline.Position = rect.Position
+    data.Outline.Color = color
+    data.Outline.Thickness = self.BoxThickness
+    data.Outline.Transparency = 1 - self.BoxTransparency
+    data.Outline.Visible = true
+
+    if self.BoxFilled then
+        data.Fill.Size = rect.Size
+        data.Fill.Position = rect.Position
+        data.Fill.Color = color
+        data.Fill.Transparency = 1 - self.BoxFillTransparency
+        data.Fill.Visible = true
+    else
+        data.Fill.Visible = false
+    end
+end
+
+function ESP:DestroyBox(data)
+    if not data then return end
+    if data.Outline then data.Outline:Remove() end
+    if data.Fill then data.Fill:Remove() end
 end
 
 -- ===== HEALTH ===== --
@@ -329,25 +678,60 @@ function ESP:UpdateHealth(data, entry, rect)
 
     local frac = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
     local color = self:HealthDrawColor(frac)
+    local alpha = 1 - self.HealthTransparency
 
-    local w = self.HealthBarWidth
-    local x = rect.Position.X - w - self.HealthBarOffset
-    local y = rect.Position.Y
-    local h = rect.Size.Y
+    local pos = self.HealthBarPosition
+    local ox = self.HealthBarOffset
+    local bw = self.HealthBarWidth
+    local x, y, w, h
+
+    if pos == "Right" then
+        w = bw
+        h = rect.Size.Y
+        x = rect.Position.X + rect.Size.X + ox
+        y = rect.Position.Y
+    elseif pos == "Top" then
+        w = rect.Size.X
+        h = 6
+        x = rect.Position.X
+        y = rect.Position.Y - ox - h
+    elseif pos == "Bottom" then
+        w = rect.Size.X
+        h = 6
+        x = rect.Position.X
+        y = rect.Position.Y + rect.Size.Y + ox
+    else
+        w = bw
+        h = rect.Size.Y
+        x = rect.Position.X - bw - ox
+        y = rect.Position.Y
+    end
 
     data.Outline.Size = Vector2.new(w, h)
     data.Outline.Position = Vector2.new(x, y)
     data.Outline.Color = Color3.new(0, 0, 0)
     data.Outline.Filled = true
-    data.Outline.Transparency = self.HealthTransparency
+    data.Outline.Transparency = alpha
     data.Outline.Visible = true
 
-    data.Fill.Size = Vector2.new(math.max(w - 2, 0), math.max((h - 2) * frac, 0))
-    data.Fill.Position = Vector2.new(x + 1, y + 1 + (h - 2) * (1 - frac))
+    if pos == "Top" or pos == "Bottom" then
+        data.Fill.Size = Vector2.new(math.max((w - 2) * frac, 0), math.max(h - 2, 0))
+        data.Fill.Position = Vector2.new(x + 1, y + 1)
+    else
+        data.Fill.Size = Vector2.new(math.max(w - 2, 0), math.max((h - 2) * frac, 0))
+        data.Fill.Position = Vector2.new(x + 1, y + 1 + (h - 2) * (1 - frac))
+    end
+
     data.Fill.Color = color
     data.Fill.Filled = true
-    data.Fill.Transparency = self.HealthTransparency
+    data.Fill.Transparency = alpha
     data.Fill.Visible = true
+end
+
+function ESP:DestroyHealth(data)
+    if not data then return end
+    if data.Outline then data.Outline:Remove() end
+    if data.Fill then data.Fill:Remove() end
 end
 
 -- ===== SKELETON ===== --
@@ -371,33 +755,34 @@ function ESP:UpdateSkeleton(data, entry)
 
     local conns = bodyConnections[rig] or bodyConnections.R15
     local activeKeys = {}
+    local alpha = 1 - self.SkeletonTransparency
 
-    for _, conn in ipairs(conns) do
-        local key = conn[1] .. "-" .. conn[2]
+    for _, connection in ipairs(conns) do
+        local key = connection[1] .. "-" .. connection[2]
         activeKeys[key] = true
 
         if not data.Lines[key] then
             local line = Drawing.new("Line")
             line.Thickness = self.SkeletonThickness
+            line.Transparency = alpha
             line.Color = self:SkeletonDrawColor()
-            line.Transparency = self.SkeletonTransparency
             line.Visible = false
             data.Lines[key] = line
         end
 
         local line = data.Lines[key]
-        local a = entry.Model:FindFirstChild(conn[1])
-        local b = entry.Model:FindFirstChild(conn[2])
+        local partA = entry.Model:FindFirstChild(connection[1])
+        local partB = entry.Model:FindFirstChild(connection[2])
 
-        if a and b then
-            local pa, onA = Camera:WorldToViewportPoint(a.Position)
-            local pb, onB = Camera:WorldToViewportPoint(b.Position)
+        if partA and partB then
+            local posA, onA = Camera:WorldToViewportPoint(partA.Position)
+            local posB, onB = Camera:WorldToViewportPoint(partB.Position)
             if onA and onB then
-                line.From = Vector2.new(pa.X, pa.Y)
-                line.To = Vector2.new(pb.X, pb.Y)
-                line.Thickness = self.SkeletonThickness
+                line.From = Vector2.new(posA.X, posA.Y)
+                line.To = Vector2.new(posB.X, posB.Y)
                 line.Color = self:SkeletonDrawColor()
-                line.Transparency = self.SkeletonTransparency
+                line.Transparency = alpha
+                line.Thickness = self.SkeletonThickness
                 line.Visible = true
             else
                 line.Visible = false
@@ -412,33 +797,23 @@ function ESP:UpdateSkeleton(data, entry)
     end
 end
 
--- ===== ENTRY ===== --
-function ESP:CreateEntry(entry)
-    return {
-        Text = self.TextESPEnabled and self:CreateText(entry) or nil,
-        Box = self.BoxESPEnabled and self:CreateBox() or nil,
-        Health = self.HealthESPEnabled and self:CreateHealth() or nil,
-        Skeleton = self.SkeletonESPEnabled and self:CreateSkeleton() or nil,
-    }
+function ESP:DestroySkeleton(data)
+    if not data then return end
+    for _, line in pairs(data.Lines) do line:Remove() end
 end
 
+-- ===== ENTRY ===== --
 function ESP:DestroyEntry(data)
-    if data.Text and data.Text.Holder then data.Text.Holder:Destroy() end
-    if data.Box then data.Box:Remove() end
-    if data.Health then
-        data.Health.Outline:Remove()
-        data.Health.Fill:Remove()
-    end
-    if data.Skeleton then
-        for _, line in pairs(data.Skeleton.Lines) do line:Remove() end
-    end
+    self:DestroyText(data.Text)
+    self:DestroyBox(data.Box)
+    self:DestroyHealth(data.Health)
+    self:DestroySkeleton(data.Skeleton)
 end
 
 -- ===== MAIN LOOP ===== --
 function ESP:Step()
     self.FrameCounter = self.FrameCounter + 1
     if self.FrameCounter % self.UpdateRate ~= 0 then return end
-
     if not self.Enabled then return end
 
     self:ApplyRainbow()
@@ -451,14 +826,62 @@ function ESP:Step()
         active[key] = true
 
         local data = self.Cache[key]
-        if not data then
-            data = self:CreateEntry(entry)
+        if not data or data.Model ~= entry.Model then
+            if data then self:DestroyEntry(data) end
+            data = { Model = entry.Model }
             self.Cache[key] = data
+        end
+
+        if self.TextESPEnabled then
+            if data.Text then
+                local adornee = data.Text.Billboard and data.Text.Billboard.Adornee
+                if not data.Text.Holder or not data.Text.Holder.Parent or not adornee or not adornee.Parent then
+                    self:DestroyText(data.Text)
+                    data.Text = nil
+                end
+            end
+            if not data.Text then
+                data.Text = self:CreateText(entry)
+            end
+        else
+            if data.Text then
+                self:DestroyText(data.Text)
+                data.Text = nil
+            end
+        end
+
+        if self.BoxESPEnabled then
+            if not data.Box then data.Box = self:CreateBox() end
+        else
+            if data.Box then
+                self:DestroyBox(data.Box)
+                data.Box = nil
+            end
+        end
+
+        if self.HealthESPEnabled then
+            if not data.Health then data.Health = self:CreateHealth() end
+        else
+            if data.Health then
+                self:DestroyHealth(data.Health)
+                data.Health = nil
+            end
+        end
+
+        if self.SkeletonESPEnabled then
+            if not data.Skeleton then data.Skeleton = self:CreateSkeleton() end
+        else
+            if data.Skeleton then
+                self:DestroySkeleton(data.Skeleton)
+                data.Skeleton = nil
+            end
         end
 
         local rect = self:GetBoxRect(entry)
 
-        if data.Text then self:UpdateText(data.Text, entry) end
+        if data.Text then
+            self:UpdateText(data.Text, entry)
+        end
 
         if data.Box then
             self:UpdateBox(data.Box, entry)
