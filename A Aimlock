@@ -28,10 +28,10 @@ local DEFAULTS = {
 local DEFAULT_FEATURES = {
     Enabled = true,
     Sources = true,
+    Lists = true,
     FOV = true,
     Prediction = true,
     Targeting = true,
-    Lists = true,
 }
 
 -- ===== MERGE ===== --
@@ -119,6 +119,48 @@ B.SourceCheckbox = function(g, p, e)
             Callback = function(v) src.Enabled = v end,
         })
     end
+end
+
+B.Whitelist = function(g, p, e)
+    g:AddDropdown(p.."Whitelist", {
+        Text = "Whitelist",
+        Values = {},
+        Default = {},
+        Multi = true,
+        Searchable = true,
+        Callback = function(selected)
+            local out = {}
+            if type(selected) == "table" then
+                for name, checked in pairs(selected) do
+                    if checked then table.insert(out, name) end
+                end
+            elseif type(selected) == "string" then
+                table.insert(out, selected)
+            end
+            e.Whitelist = out
+        end,
+    })
+end
+
+B.PriorityTarget = function(g, p, e)
+    g:AddDropdown(p.."PriorityTarget", {
+        Text = "Priority Target",
+        Values = {},
+        Default = {},
+        Multi = true,
+        Searchable = true,
+        Callback = function(selected)
+            local out = {}
+            if type(selected) == "table" then
+                for name, checked in pairs(selected) do
+                    if checked then table.insert(out, name) end
+                end
+            elseif type(selected) == "string" then
+                table.insert(out, selected)
+            end
+            e.Targetlist = out
+        end,
+    })
 end
 
 B.FOVSize = function(g, p, e)
@@ -269,19 +311,14 @@ B.AimPartPreference = function(g, p, e)
 end
 
 B.HeadChance = function(g, p, e)
-    local updating = false
-
     g:AddSlider(p.."HeadChance", {
         Text = "Head %",
         Default = e.HeadChance,
         Min = 0, Max = 100, Rounding = 0,
         Callback = function(v)
-            if updating then return end
-            updating = true
             e.HeadChance = v
             local other = Options[p.."TorsoChance"]
             if other then other:SetValue(100 - v) end
-            updating = false
         end,
     })
 
@@ -290,54 +327,9 @@ B.HeadChance = function(g, p, e)
         Default = 100 - e.HeadChance,
         Min = 0, Max = 100, Rounding = 0,
         Callback = function(v)
-            if updating then return end
-            updating = true
             e.HeadChance = 100 - v
             local other = Options[p.."HeadChance"]
             if other then other:SetValue(100 - v) end
-            updating = false
-        end,
-    })
-end
-
-B.Whitelist = function(g, p, e)
-    g:AddDropdown(p.."Whitelist", {
-        Text = "Whitelist",
-        SpecialType = "Player",
-        ExcludeLocalPlayer = true,
-        Multi = true,
-        Searchable = true,
-        Callback = function(selected)
-            local out = {}
-            if type(selected) == "table" then
-                for name, checked in pairs(selected) do
-                    if checked then table.insert(out, name) end
-                end
-            elseif type(selected) == "string" then
-                table.insert(out, selected)
-            end
-            e.Whitelist = out
-        end,
-    })
-end
-
-B.PriorityTarget = function(g, p, e)
-    g:AddDropdown(p.."PriorityTarget", {
-        Text = "Priority Target",
-        SpecialType = "Player",
-        ExcludeLocalPlayer = true,
-        Multi = true,
-        Searchable = true,
-        Callback = function(selected)
-            local out = {}
-            if type(selected) == "table" then
-                for name, checked in pairs(selected) do
-                    if checked then table.insert(out, name) end
-                end
-            elseif type(selected) == "string" then
-                table.insert(out, selected)
-            end
-            e.Targetlist = out
         end,
     })
 end
@@ -354,6 +346,10 @@ local SECTIONS = {
     },
     Sources = {
         {"SourceCheckbox"},
+    },
+    Lists = {
+        {"Whitelist"},
+        {"PriorityTarget"},
     },
     FOV = {
         {"FOVSize"},
@@ -373,19 +369,15 @@ local SECTIONS = {
         {"AimPartPreference"},
         {"HeadChance"},
     },
-    Lists = {
-        {"Whitelist"},
-        {"PriorityTarget"},
-    },
 }
 
 local SECTION_ORDER = {
     "Enabled",
     "Sources",
+    "Lists",
     "FOV",
     "Prediction",
     "Targeting",
-    "Lists",
 }
 
 -- ===== BUILD ===== --
@@ -436,14 +428,17 @@ local function SetupPlayerListRefresh(Players, prefix)
         return names
     end
 
+    local function safeSet(idx, names)
+        local opt = Options[idx]
+        if opt and type(opt.SetValues) == "function" then
+            pcall(function() opt:SetValues(names) end)
+        end
+    end
+
     local function refresh()
         local names = collect()
-        if Options[prefix.."Whitelist"] then
-            Options[prefix.."Whitelist"]:SetValues(names)
-        end
-        if Options[prefix.."PriorityTarget"] then
-            Options[prefix.."PriorityTarget"]:SetValues(names)
-        end
+        safeSet(prefix.."Whitelist", names)
+        safeSet(prefix.."PriorityTarget", names)
     end
 
     refresh()
@@ -483,13 +478,13 @@ local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sourc
         end
     end
 
-    Build(Group, prefix, aim, config)
-    SetupStateSync(prefix, aim)
-    SetupPlayerListRefresh(Players, prefix)
-
     if aim.MobileButtonEnabled then
         aim:CreateMobileButton()
     end
+
+    Build(Group, prefix, aim, config)
+    SetupStateSync(prefix, aim)
+    pcall(SetupPlayerListRefresh, Players, prefix)
 
     return aim
 end
