@@ -386,6 +386,45 @@ function Aimlock:GetAimPart(entity)
     return parts[1]
 end
 
+-- ===== CANDIDATE SCORING ===== --
+function Aimlock:GetCandidateRoot(entity)
+    return entity:FindFirstChild("HumanoidRootPart")
+        or entity:FindFirstChild("Head")
+        or entity:FindFirstChildWhichIsA("BasePart")
+end
+
+-- Priority values: 1 = PriorityTarget, 2 = Targetlist, 3 = Normal
+-- Lower priority number wins. Within the same priority class, closest to crosshair wins.
+function Aimlock:ScoreCandidate(entity, priority, camPos, fPos, maxScreenDist)
+    if not entity then return nil end
+
+    local hum = entity:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return nil end
+
+    local root = self:GetCandidateRoot(entity)
+    if not root then return nil end
+
+    local worldDist = (camPos - root.Position).Magnitude
+    if self.MaxDistance and worldDist > self.MaxDistance then return nil end
+
+    local screenPos, onScreen = self.Camera:WorldToViewportPoint(root.Position)
+    if not onScreen then return nil end
+
+    local dx = screenPos.X - fPos.X
+    local dy = screenPos.Y - fPos.Y
+    local screenDist = math.sqrt(dx * dx + dy * dy)
+
+    if not self.LockAnywhere and screenDist > maxScreenDist then return nil end
+
+    return {
+        Entity = entity,
+        Root = root,
+        ScreenDist = screenDist,
+        WorldDist = worldDist,
+        Score = screenDist + (priority - 1) * 1000000,
+    }
+end
+
 -- ===== TARGET SEARCH ===== --
 function Aimlock:FindBestTarget()
     local char = self.LocalPlayer.Character
@@ -394,51 +433,26 @@ function Aimlock:FindBestTarget()
     if not hrp then return nil end
 
     local camPos = self.Camera.CFrame.Position
-    local bestTargetPos = nil
-    local bestDist = math.huge
+    local fPos = Vector2.new(
+        self.Camera.ViewportSize.X / 2 + self.CrossOffset.X,
+        self.Camera.ViewportSize.Y / 2 + self.CrossOffset.Y
+    )
+    local maxScreenDist = self.FOVSize / 2
 
-    local function evaluateTarget(parts, targetChar)
-        if not parts or #parts == 0 then return nil, nil end
+    -- PHASE 1: Collect candidates by screen position only, no raycasts
+    local bestCandidate = nil
 
-        for _, aimPart in ipairs(parts) do
-            local point, partDist = self:GetClosestVisiblePoint(aimPart, targetChar, camPos, char)
-            if point and (not self.MaxDistance or partDist <= self.MaxDistance) then
-                local vel = aimPart.Velocity
-                local predicted = self:GetPredictedPos(point, vel, targetChar)
-
-                if self.LockAnywhere then
-                    return predicted, 0
-                end
-
-                local screenPos, onScreen = self.Camera:WorldToViewportPoint(predicted)
-                if onScreen then
-                    local fPos = Vector2.new(
-                        self.Camera.ViewportSize.X / 2 + self.CrossOffset.X,
-                        self.Camera.ViewportSize.Y / 2 + self.CrossOffset.Y
-                    )
-                    local dx = screenPos.X - fPos.X
-                    local dy = screenPos.Y - fPos.Y
-                    local screenDist = math.sqrt(dx * dx + dy * dy)
-
-                    if screenDist <= self.FOVSize / 2 then
-                        return predicted, screenDist
-                    end
-                end
-            end
+    local function consider(entity, priority)
+        local c = self:ScoreCandidate(entity, priority, camPos, fPos, maxScreenDist)
+        if c and (not bestCandidate or c.Score < bestCandidate.Score) then
+            bestCandidate = c
         end
-
-        return nil, nil
     end
 
     if self.TargetPlayers and self.PriorityTarget and self.PriorityTarget.Character then
-        local pChar = self.PriorityTarget.Character
-        local hum = pChar:FindFirstChild("Humanoid")
-        if hum and hum.Health > 0 and not table.find(self.Whitelist, self.PriorityTarget.Name) then
-            if not self:IsSameTeam(self.PriorityTarget) then
-                local parts = self:GetAimParts(pChar)
-                local pos = evaluateTarget(parts, pChar)
-                if pos then return pos end
-            end
+        if not table.find(self.Whitelist, self.PriorityTarget.Name)
+            and not self:IsSameTeam(self.PriorityTarget) then
+            consider(self.PriorityTarget.Character, 1)
         end
     end
 
@@ -448,18 +462,8 @@ function Aimlock:FindBestTarget()
             if not table.find(self.Targetlist, plr.Name) then continue end
             if table.find(self.Whitelist, plr.Name) then continue end
             if self:IsSameTeam(plr) then continue end
-            local pChar = plr.Character
-            if not pChar then continue end
-            local hum = pChar:FindFirstChild("Humanoid")
-            if not hum or hum.Health <= 0 then continue end
-            local parts = self:GetAimParts(pChar)
-            local pos, dist = evaluateTarget(parts, pChar)
-            if pos and dist < bestDist then
-                bestTargetPos = pos
-                bestDist = dist
-            end
+            consider(plr.Character, 2)
         end
-        if bestTargetPos then return bestTargetPos end
     end
 
     if self.TargetPlayers then
@@ -467,16 +471,7 @@ function Aimlock:FindBestTarget()
             if plr == self.LocalPlayer then continue end
             if table.find(self.Whitelist, plr.Name) then continue end
             if self:IsSameTeam(plr) then continue end
-            local pChar = plr.Character
-            if not pChar then continue end
-            local hum = pChar:FindFirstChild("Humanoid")
-            if not hum or hum.Health <= 0 then continue end
-            local parts = self:GetAimParts(pChar)
-            local pos, dist = evaluateTarget(parts, pChar)
-            if pos and dist < bestDist then
-                bestTargetPos = pos
-                bestDist = dist
-            end
+            consider(plr.Character, 3)
         end
     end
 
@@ -485,19 +480,41 @@ function Aimlock:FindBestTarget()
         local entities = src.GetEntities()
         if not entities then continue end
         for _, entity in ipairs(entities) do
-            if not entity:IsA("Model") then continue end
-            local hum = entity:FindFirstChildOfClass("Humanoid")
-            if not hum or hum.Health <= 0 then continue end
-            local parts = self:GetAimParts(entity)
-            local pos, dist = evaluateTarget(parts, entity)
-            if pos and dist < bestDist then
-                bestTargetPos = pos
-                bestDist = dist
+            if entity:IsA("Model") then
+                consider(entity, 3)
             end
         end
     end
 
-    return bestTargetPos
+    if not bestCandidate then return nil end
+
+    -- PHASE 2: Full part resolution + grid calculation on that single target
+    local entity = bestCandidate.Entity
+    local parts = self:GetAimParts(entity)
+
+    for _, aimPart in ipairs(parts) do
+        local point, partDist = self:GetClosestVisiblePoint(aimPart, entity, camPos, char)
+        if point and (not self.MaxDistance or partDist <= self.MaxDistance) then
+            local vel = aimPart.Velocity
+            local predicted = self:GetPredictedPos(point, vel, entity)
+
+            if self.LockAnywhere then
+                return predicted
+            end
+
+            local screenPos, onScreen = self.Camera:WorldToViewportPoint(predicted)
+            if onScreen then
+                local dx = screenPos.X - fPos.X
+                local dy = screenPos.Y - fPos.Y
+                local screenDist = math.sqrt(dx * dx + dy * dy)
+                if screenDist <= maxScreenDist then
+                    return predicted
+                end
+            end
+        end
+    end
+
+    return nil
 end
 
 -- ===== LOOP ===== --
