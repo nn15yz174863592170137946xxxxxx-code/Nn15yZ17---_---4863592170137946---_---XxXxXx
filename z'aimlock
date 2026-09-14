@@ -2,6 +2,7 @@
 local Aimlock = {}
 Aimlock.__index = Aimlock
 
+-- ===== CONSTRUCTOR ===== --
 function Aimlock.new(playersService, localPlayer, camera, settings)
     settings = settings or {}
     local self = setmetatable({}, Aimlock)
@@ -72,6 +73,7 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     return self
 end
 
+-- ===== SOURCES ===== --
 function Aimlock:AddTargetSource(name, getEntitiesFunc, startEnabled)
     self.TargetSources[name] = {
         Enabled = startEnabled ~= false,
@@ -79,6 +81,7 @@ function Aimlock:AddTargetSource(name, getEntitiesFunc, startEnabled)
     }
 end
 
+-- ===== FOV ===== --
 function Aimlock:CreateFOV(parent)
     if self.Gui then self.Gui:Destroy() end
     local gui = Instance.new("ScreenGui", parent or self.LocalPlayer.PlayerGui)
@@ -151,6 +154,7 @@ function Aimlock:UpdateCrossOffset(offset)
     if self.CrossH then self.CrossH.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
 end
 
+-- ===== PREDICTION ===== --
 function Aimlock:GetPredictedPos(point, vel, targetChar)
     if self.AutoPredictionEnabled then
         local ping = self.LocalPlayer:GetNetworkPing()
@@ -177,6 +181,7 @@ function Aimlock:GetPredictedPos(point, vel, targetChar)
     )
 end
 
+-- ===== TEAM ===== --
 function Aimlock:IsSameTeam(plr)
     if not self.TeamCheck then return false end
     if self.TeamCheckFunc then
@@ -186,6 +191,7 @@ function Aimlock:IsSameTeam(plr)
     return plr.TeamColor == self.LocalPlayer.TeamColor
 end
 
+-- ===== GRID SAMPLING ===== --
 function Aimlock:GetSurfacePoints(size, divisions)
     local key = size.X .. "_" .. size.Y .. "_" .. size.Z .. "_" .. divisions
     local cached = self._pointCache[key]
@@ -262,81 +268,125 @@ function Aimlock:GetClosestVisiblePoint(part, targetChar, camPos, ignoreChar)
     return closestPoint, closestDist
 end
 
-function Aimlock:ResolveBucket(entity, bucket)
+-- ===== BUCKET RESOLUTION ===== --
+function Aimlock:ResolveBucketList(entity, bucket)
+    local parts = {}
+    if not entity or not entity:IsA("Model") then return parts end
+
     if bucket == "Head" then
         local p = entity:FindFirstChild("Head")
-        return p and p:IsA("BasePart") and p or nil
+        if p and p:IsA("BasePart") then table.insert(parts, p) end
+        return parts
     end
 
     if bucket == "Torso" then
         for _, name in ipairs({"UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso"}) do
             local p = entity:FindFirstChild(name)
-            if p and p:IsA("BasePart") then return p end
+            if p and p:IsA("BasePart") then table.insert(parts, p) end
         end
-        return nil
+        return parts
     end
 
     if bucket == "Other Parts" then
-        for _, c in ipairs(entity:GetChildren()) do
-            if c:IsA("BasePart") then return c end
+        for _, name in ipairs({
+            "LeftUpperArm", "LeftLowerArm", "LeftHand",
+            "RightUpperArm", "RightLowerArm", "RightHand",
+            "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+            "RightUpperLeg", "RightLowerLeg", "RightFoot"
+        }) do
+            local p = entity:FindFirstChild(name)
+            if p and p:IsA("BasePart") then table.insert(parts, p) end
         end
+
+        for _, name in ipairs({"Left Arm", "Right Arm", "Left Leg", "Right Leg"}) do
+            local p = entity:FindFirstChild(name)
+            if p and p:IsA("BasePart") then table.insert(parts, p) end
+        end
+
         for _, c in ipairs(entity:GetChildren()) do
-            if c:IsA("Model") then
-                local p = c:FindFirstChildWhichIsA("BasePart")
-                if p then return p end
+            if c:IsA("BasePart") and not table.find(parts, c) then
+                local lower = c.Name:lower()
+                local skip = lower:find("head") or lower:find("torso") or lower:find("humanoidrootpart")
+                if not skip then table.insert(parts, c) end
             end
         end
-        return entity:FindFirstChildWhichIsA("BasePart")
+
+        if #parts == 0 then
+            for _, c in ipairs(entity:GetDescendants()) do
+                if c:IsA("BasePart") then table.insert(parts, c) end
+            end
+        end
+
+        return parts
     end
 
-    return nil
+    return parts
 end
 
-function Aimlock:GetAimPart(entity)
+function Aimlock:ResolveBucket(entity, bucket)
+    local list = self:ResolveBucketList(entity, bucket)
+    return list[1]
+end
+
+-- ===== AIM PARTS ===== --
+function Aimlock:GetAimParts(entity)
+    if not entity then return {} end
+
     local preference = self.AimPartPreference
     if not preference or #preference == 0 then
-        return entity:FindFirstChildWhichIsA("BasePart")
+        local p = entity:FindFirstChildWhichIsA("BasePart")
+        return p and {p} or {}
     end
 
     local headChance = self.HeadChance or 50
-    local torsoChance = 100 - headChance
     local roll = math.random() * 100
 
-    local allowed = {}
-    for _, name in ipairs(preference) do
-        if name == "Head" and headChance > 0 then
-            allowed[name] = true
-        elseif name ~= "Head" and torsoChance > 0 then
-            allowed[name] = true
-        end
-    end
-
     local primary
-    if roll < headChance and allowed["Head"] then
+    if roll < headChance and table.find(preference, "Head") then
         primary = "Head"
-    elseif allowed["Torso"] then
+    elseif table.find(preference, "Torso") then
         primary = "Torso"
-    elseif allowed["Other Parts"] then
+    elseif table.find(preference, "Other Parts") then
         primary = "Other Parts"
-    elseif allowed["Head"] then
+    elseif table.find(preference, "Head") then
         primary = "Head"
     else
-        return nil
+        primary = preference[1]
     end
 
-    local part = self:ResolveBucket(entity, primary)
-    if part then return part end
-
+    local bucketOrder = {primary}
     for _, name in ipairs(preference) do
-        if allowed[name] and name ~= primary then
-            part = self:ResolveBucket(entity, name)
-            if part then return part end
+        if name ~= primary then
+            table.insert(bucketOrder, name)
         end
     end
 
-    return nil
+    local result = {}
+    local seen = {}
+    for _, bucket in ipairs(bucketOrder) do
+        local bucketParts = self:ResolveBucketList(entity, bucket)
+        for _, p in ipairs(bucketParts) do
+            if not seen[p] then
+                seen[p] = true
+                table.insert(result, p)
+            end
+        end
+    end
+
+    if #result == 0 then
+        local p = entity:FindFirstChildWhichIsA("BasePart")
+        if p then table.insert(result, p) end
+    end
+
+    return result
 end
 
+function Aimlock:GetAimPart(entity)
+    local parts = self:GetAimParts(entity)
+    return parts[1]
+end
+
+-- ===== TARGET SEARCH ===== --
 function Aimlock:FindBestTarget()
     local char = self.LocalPlayer.Character
     if not char then return nil end
@@ -347,31 +397,36 @@ function Aimlock:FindBestTarget()
     local bestTargetPos = nil
     local bestDist = math.huge
 
-    local function evaluateTarget(aimPart, targetChar)
-        local point, partDist = self:GetClosestVisiblePoint(aimPart, targetChar, camPos, char)
-        if not point then return nil, nil end
+    local function evaluateTarget(parts, targetChar)
+        if not parts or #parts == 0 then return nil, nil end
 
-        if self.MaxDistance and partDist > self.MaxDistance then return nil, nil end
+        for _, aimPart in ipairs(parts) do
+            local point, partDist = self:GetClosestVisiblePoint(aimPart, targetChar, camPos, char)
+            if point and (not self.MaxDistance or partDist <= self.MaxDistance) then
+                local vel = aimPart.Velocity
+                local predicted = self:GetPredictedPos(point, vel, targetChar)
 
-        local vel = aimPart.Velocity
-        local predicted = self:GetPredictedPos(point, vel, targetChar)
+                if self.LockAnywhere then
+                    return predicted, 0
+                end
 
-        if self.LockAnywhere then
-            return predicted, 0
+                local screenPos, onScreen = self.Camera:WorldToViewportPoint(predicted)
+                if onScreen then
+                    local fPos = Vector2.new(
+                        self.Camera.ViewportSize.X / 2 + self.CrossOffset.X,
+                        self.Camera.ViewportSize.Y / 2 + self.CrossOffset.Y
+                    )
+                    local dx = screenPos.X - fPos.X
+                    local dy = screenPos.Y - fPos.Y
+                    local screenDist = math.sqrt(dx * dx + dy * dy)
+
+                    if screenDist <= self.FOVSize / 2 then
+                        return predicted, screenDist
+                    end
+                end
+            end
         end
 
-        local screenPos, onScreen = self.Camera:WorldToViewportPoint(predicted)
-        if not onScreen then return nil, nil end
-
-        local fPos = Vector2.new(
-            self.Camera.ViewportSize.X / 2 + self.CrossOffset.X,
-            self.Camera.ViewportSize.Y / 2 + self.CrossOffset.Y
-        )
-        local dx = screenPos.X - fPos.X
-        local dy = screenPos.Y - fPos.Y
-        local screenDist = math.sqrt(dx * dx + dy * dy)
-
-        if screenDist <= self.FOVSize / 2 then return predicted, screenDist end
         return nil, nil
     end
 
@@ -380,11 +435,9 @@ function Aimlock:FindBestTarget()
         local hum = pChar:FindFirstChild("Humanoid")
         if hum and hum.Health > 0 and not table.find(self.Whitelist, self.PriorityTarget.Name) then
             if not self:IsSameTeam(self.PriorityTarget) then
-                local aimPart = self:GetAimPart(pChar)
-                if aimPart then
-                    local pos = evaluateTarget(aimPart, pChar)
-                    if pos then return pos end
-                end
+                local parts = self:GetAimParts(pChar)
+                local pos = evaluateTarget(parts, pChar)
+                if pos then return pos end
             end
         end
     end
@@ -399,13 +452,11 @@ function Aimlock:FindBestTarget()
             if not pChar then continue end
             local hum = pChar:FindFirstChild("Humanoid")
             if not hum or hum.Health <= 0 then continue end
-            local aimPart = self:GetAimPart(pChar)
-            if aimPart then
-                local pos, dist = evaluateTarget(aimPart, pChar)
-                if pos and dist < bestDist then
-                    bestTargetPos = pos
-                    bestDist = dist
-                end
+            local parts = self:GetAimParts(pChar)
+            local pos, dist = evaluateTarget(parts, pChar)
+            if pos and dist < bestDist then
+                bestTargetPos = pos
+                bestDist = dist
             end
         end
         if bestTargetPos then return bestTargetPos end
@@ -420,13 +471,11 @@ function Aimlock:FindBestTarget()
             if not pChar then continue end
             local hum = pChar:FindFirstChild("Humanoid")
             if not hum or hum.Health <= 0 then continue end
-            local aimPart = self:GetAimPart(pChar)
-            if aimPart then
-                local pos, dist = evaluateTarget(aimPart, pChar)
-                if pos and dist < bestDist then
-                    bestTargetPos = pos
-                    bestDist = dist
-                end
+            local parts = self:GetAimParts(pChar)
+            local pos, dist = evaluateTarget(parts, pChar)
+            if pos and dist < bestDist then
+                bestTargetPos = pos
+                bestDist = dist
             end
         end
     end
@@ -439,13 +488,11 @@ function Aimlock:FindBestTarget()
             if not entity:IsA("Model") then continue end
             local hum = entity:FindFirstChildOfClass("Humanoid")
             if not hum or hum.Health <= 0 then continue end
-            local aimPart = self:GetAimPart(entity)
-            if aimPart then
-                local pos, dist = evaluateTarget(aimPart, entity)
-                if pos and dist < bestDist then
-                    bestTargetPos = pos
-                    bestDist = dist
-                end
+            local parts = self:GetAimParts(entity)
+            local pos, dist = evaluateTarget(parts, entity)
+            if pos and dist < bestDist then
+                bestTargetPos = pos
+                bestDist = dist
             end
         end
     end
@@ -453,6 +500,7 @@ function Aimlock:FindBestTarget()
     return bestTargetPos
 end
 
+-- ===== LOOP ===== --
 function Aimlock:Start()
     if self.LoopConnection then return end
     self.LoopConnection = game:GetService("RunService").RenderStepped:Connect(function()
@@ -500,6 +548,7 @@ function Aimlock:SetEnabled(state)
     end
 end
 
+-- ===== MOBILE BUTTON ===== --
 function Aimlock:CreateMobileButton()
     if self.MobileButtonGui then
         self.MobileButtonGui.Enabled = true
