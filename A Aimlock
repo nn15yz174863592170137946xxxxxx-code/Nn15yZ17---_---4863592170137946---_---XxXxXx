@@ -42,6 +42,17 @@ local function merge(a, b)
     return out
 end
 
+-- ===== HELPERS ===== --
+local function collectPlayerNames(Players, LocalPlayer)
+    local names = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(names, plr.Name)
+        end
+    end
+    return names
+end
+
 -- ===== BUILDERS ===== --
 local B = {}
 
@@ -122,9 +133,11 @@ B.SourceCheckbox = function(g, p, e)
 end
 
 B.Whitelist = function(g, p, e)
+    local names = collectPlayerNames(e.Players, e.LocalPlayer)
+
     g:AddDropdown(p.."Whitelist", {
         Text = "Whitelist",
-        Values = {},
+        Values = names,
         Default = {},
         Multi = true,
         Searchable = true,
@@ -143,9 +156,11 @@ B.Whitelist = function(g, p, e)
 end
 
 B.PriorityTarget = function(g, p, e)
+    local names = collectPlayerNames(e.Players, e.LocalPlayer)
+
     g:AddDropdown(p.."PriorityTarget", {
         Text = "Priority Target",
-        Values = {},
+        Values = names,
         Default = {},
         Multi = true,
         Searchable = true,
@@ -290,7 +305,7 @@ B.AimPartPreference = function(g, p, e)
     local order = {"Head", "Torso", "Other Parts"}
 
     g:AddDropdown(p.."AimPartPreference", {
-        Text = "Aim Part Order",
+        Text = "Aim Part",
         Values = {"Head", "Torso", "Other Parts"},
         Default = {"Head", "Torso", "Other Parts"},
         Multi = true,
@@ -315,23 +330,23 @@ B.HeadChance = function(g, p, e)
         Text = "Head %",
         Default = e.HeadChance,
         Min = 0, Max = 100, Rounding = 0,
-        Callback = function(v)
-            e.HeadChance = v
-            local other = Options[p.."TorsoChance"]
-            if other then other:SetValue(100 - v) end
-        end,
     })
 
     g:AddSlider(p.."TorsoChance", {
         Text = "Torso/Other Parts %",
         Default = 100 - e.HeadChance,
         Min = 0, Max = 100, Rounding = 0,
-        Callback = function(v)
-            e.HeadChance = 100 - v
-            local other = Options[p.."HeadChance"]
-            if other then other:SetValue(100 - v) end
-        end,
     })
+
+    Options[p.."HeadChance"]:OnChanged(function(v)
+        e.HeadChance = v
+        Options[p.."TorsoChance"]:SetValue(100 - v)
+    end)
+
+    Options[p.."TorsoChance"]:OnChanged(function(v)
+        e.HeadChance = 100 - v
+        Options[p.."HeadChance"]:SetValue(100 - v)
+    end)
 end
 
 -- ===== SECTIONS ===== --
@@ -417,31 +432,20 @@ local function Build(Group, prefix, aim, config)
 end
 
 -- ===== PLAYER LIST REFRESH ===== --
-local function SetupPlayerListRefresh(Players, prefix)
-    local function collect()
-        local names = {}
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= Players.LocalPlayer then
-                table.insert(names, plr.Name)
-            end
-        end
-        return names
-    end
-
-    local function safeSet(idx, names)
-        local opt = Options[idx]
-        if opt and type(opt.SetValues) == "function" then
-            pcall(function() opt:SetValues(names) end)
-        end
-    end
-
+local function SetupPlayerListRefresh(Players, LocalPlayer, prefix)
     local function refresh()
-        local names = collect()
-        safeSet(prefix.."Whitelist", names)
-        safeSet(prefix.."PriorityTarget", names)
-    end
+        local names = collectPlayerNames(Players, LocalPlayer)
 
-    refresh()
+        local wl = Options[prefix.."Whitelist"]
+        if wl and wl.SetValues then
+            wl:SetValues(names)
+        end
+
+        local pt = Options[prefix.."PriorityTarget"]
+        if pt and pt.SetValues then
+            pt:SetValues(names)
+        end
+    end
 
     Players.PlayerAdded:Connect(function()
         task.wait(0.2)
@@ -480,11 +484,12 @@ local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sourc
 
     if aim.MobileButtonEnabled then
         aim:CreateMobileButton()
+        aim:SetMobileButtonVisible(true)
     end
 
     Build(Group, prefix, aim, config)
     SetupStateSync(prefix, aim)
-    pcall(SetupPlayerListRefresh, Players, prefix)
+    SetupPlayerListRefresh(Players, LocalPlayer, prefix)
 
     return aim
 end
