@@ -1,6 +1,8 @@
 -- ===== AIMLOCK ===== --
 local Aimlock = loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'aimlock"))()
 
+local Options = getgenv().Options
+
 -- ===== DEFAULTS ===== --
 local DEFAULTS = {
     Enabled = false,
@@ -41,7 +43,7 @@ local function merge(a, b)
     return out
 end
 
--- ===== PLAYER LIST HELPER ===== --
+-- ===== HELPERS ===== --
 local function buildPlayerOptions(Players, LocalPlayer)
     local names = {"None"}
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -52,7 +54,6 @@ local function buildPlayerOptions(Players, LocalPlayer)
     return names
 end
 
--- ===== STATE ===== --
 local function setupStateSync(prefix, aim)
     aim.OnStateChanged = function(state)
         local uiToggle = Options[prefix.."Enabled"]
@@ -280,27 +281,35 @@ B.AimPart = function(g, p, e)
 end
 
 B.HeadChance = function(g, p, e)
+    local updating = false
+
     g:AddSlider(p.."HeadChance", {
         Text = "Head %",
         Default = e.HeadChance,
         Min = 0, Max = 100, Rounding = 0,
+        Callback = function(v)
+            if updating then return end
+            updating = true
+            e.HeadChance = v
+            local other = Options[p.."TorsoChance"]
+            if other then other:SetValue(100 - v) end
+            updating = false
+        end,
     })
 
     g:AddSlider(p.."TorsoChance", {
         Text = "Torso/Other Parts %",
         Default = 100 - e.HeadChance,
         Min = 0, Max = 100, Rounding = 0,
+        Callback = function(v)
+            if updating then return end
+            updating = true
+            e.HeadChance = 100 - v
+            local other = Options[p.."HeadChance"]
+            if other then other:SetValue(100 - v) end
+            updating = false
+        end,
     })
-
-    Options[p.."HeadChance"]:OnChanged(function(v)
-        e.HeadChance = v
-        Options[p.."TorsoChance"]:SetValue(100 - v)
-    end)
-
-    Options[p.."TorsoChance"]:OnChanged(function(v)
-        e.HeadChance = 100 - v
-        Options[p.."HeadChance"]:SetValue(100 - v)
-    end)
 end
 
 B.FOVSize = function(g, p, e)
