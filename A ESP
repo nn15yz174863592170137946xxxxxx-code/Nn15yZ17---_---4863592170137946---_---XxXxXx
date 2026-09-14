@@ -66,7 +66,7 @@ function ESP.new(settings)
 
     self.HealthColor = settings.HealthColor or Color3.new(0, 1, 0)
     self.LowHealthColor = settings.LowHealthColor or Color3.new(1, 0, 0)
-    self.HealthTransparency = settings.HealthTransparency or 0.5
+    self.HealthTransparency = settings.HealthTransparency or 0
     self.HealthBarWidth = settings.HealthBarWidth or 5
     self.HealthBarPosition = settings.HealthBarPosition or "Left"
     self.HealthBarOffset = settings.HealthBarOffset or 2
@@ -298,30 +298,55 @@ end
 
 -- ===== BOX ===== --
 function ESP:CreateBox()
-    local box = Drawing.new("Square")
-    box.Thickness = self.BoxThickness
-    box.Transparency = self.BoxTransparency
-    box.Color = self:BoxDrawColor()
-    box.Filled = self.BoxFilled
-    box.Visible = false
-    return box
+    local outline = Drawing.new("Square")
+    outline.Thickness = self.BoxThickness
+    outline.Transparency = 1 - self.BoxTransparency
+    outline.Color = self:BoxDrawColor()
+    outline.Filled = false
+    outline.Visible = false
+
+    local fill = Drawing.new("Square")
+    fill.Thickness = 0
+    fill.Transparency = 1 - self.BoxFillTransparency
+    fill.Color = self:BoxDrawColor()
+    fill.Filled = true
+    fill.Visible = false
+
+    return {Outline = outline, Fill = fill}
 end
 
-function ESP:UpdateBox(box, entry)
+function ESP:UpdateBox(data, entry)
     local rect = self:GetBoxRect(entry)
-    if not rect then box.Visible = false; return end
+    if not rect then
+        data.Outline.Visible = false
+        data.Fill.Visible = false
+        return
+    end
 
-    box.Size = rect.Size
-    box.Position = rect.Position
-    box.Color = self:BoxDrawColor()
-    box.Filled = self.BoxFilled
-    box.Transparency = self.BoxFilled and self.BoxFillTransparency or self.BoxTransparency
-    box.Thickness = self.BoxThickness
-    box.Visible = true
+    local color = self:BoxDrawColor()
+
+    data.Outline.Size = rect.Size
+    data.Outline.Position = rect.Position
+    data.Outline.Color = color
+    data.Outline.Thickness = self.BoxThickness
+    data.Outline.Transparency = 1 - self.BoxTransparency
+    data.Outline.Visible = true
+
+    if self.BoxFilled then
+        data.Fill.Size = rect.Size
+        data.Fill.Position = rect.Position
+        data.Fill.Color = color
+        data.Fill.Transparency = 1 - self.BoxFillTransparency
+        data.Fill.Visible = true
+    else
+        data.Fill.Visible = false
+    end
 end
 
-function ESP:DestroyBox(box)
-    if box then box:Remove() end
+function ESP:DestroyBox(data)
+    if not data then return end
+    if data.Outline then data.Outline:Remove() end
+    if data.Fill then data.Fill:Remove() end
 end
 
 -- ===== HEALTH ===== --
@@ -342,6 +367,7 @@ function ESP:UpdateHealth(data, entry, rect)
 
     local frac = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
     local color = self:HealthDrawColor(frac)
+    local alpha = 1 - self.HealthTransparency
 
     local pos = self.HealthBarPosition
     local ox = self.HealthBarOffset
@@ -374,7 +400,7 @@ function ESP:UpdateHealth(data, entry, rect)
     data.Outline.Position = Vector2.new(x, y)
     data.Outline.Color = Color3.new(0, 0, 0)
     data.Outline.Filled = true
-    data.Outline.Transparency = self.HealthTransparency
+    data.Outline.Transparency = alpha
     data.Outline.Visible = true
 
     if pos == "Top" or pos == "Bottom" then
@@ -387,7 +413,7 @@ function ESP:UpdateHealth(data, entry, rect)
 
     data.Fill.Color = color
     data.Fill.Filled = true
-    data.Fill.Transparency = self.HealthTransparency
+    data.Fill.Transparency = alpha
     data.Fill.Visible = true
 end
 
@@ -418,6 +444,7 @@ function ESP:UpdateSkeleton(data, entry)
 
     local conns = bodyConnections[rig] or bodyConnections.R15
     local activeKeys = {}
+    local alpha = 1 - self.SkeletonTransparency
 
     for _, connection in ipairs(conns) do
         local key = connection[1] .. "-" .. connection[2]
@@ -426,7 +453,7 @@ function ESP:UpdateSkeleton(data, entry)
         if not data.Lines[key] then
             local line = Drawing.new("Line")
             line.Thickness = self.SkeletonThickness
-            line.Transparency = self.SkeletonTransparency
+            line.Transparency = alpha
             line.Color = self:SkeletonDrawColor()
             line.Visible = false
             data.Lines[key] = line
@@ -443,7 +470,7 @@ function ESP:UpdateSkeleton(data, entry)
                 line.From = Vector2.new(posA.X, posA.Y)
                 line.To = Vector2.new(posB.X, posB.Y)
                 line.Color = self:SkeletonDrawColor()
-                line.Transparency = self.SkeletonTransparency
+                line.Transparency = alpha
                 line.Thickness = self.SkeletonThickness
                 line.Visible = true
             else
