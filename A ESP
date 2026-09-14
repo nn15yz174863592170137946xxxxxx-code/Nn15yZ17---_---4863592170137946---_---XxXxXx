@@ -1,5 +1,5 @@
 -- ===== ESP ===== --
-local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'template"))()
+local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'esp"))()
 -- ===== DEFAULTS ===== --
 local DEFAULTS = {
     Enabled = false,
