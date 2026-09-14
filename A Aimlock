@@ -8,10 +8,13 @@ local DEFAULTS = {
     TeamCheck = false,
     MaxDistance = nil,
 
+    MobileButtonEnabled = true,
+
     FOVSize = 500,
     CrossOffset = Vector2.new(0, 0),
     FOVRainbowEnabled = true,
     CrosshairRainbowEnabled = true,
+    RainbowSpeed = 1,
 
     PredictionXZ = 0,
     PredictionY = 0,
@@ -68,12 +71,46 @@ end
 
 B.MaxDistance = function(g, p, e)
     g:AddInput(p.."MaxDistance", {
-        Text = "Max Distance", Default = e.MaxDistance and tostring(e.MaxDistance) or "",
-        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Text = "Max Distance",
+        Default = e.MaxDistance and tostring(e.MaxDistance) or "",
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
         Placeholder = "inf",
         Callback = function(v)
             local n = tonumber(v)
             e.MaxDistance = (n and n > 0) and n or nil
+        end,
+    })
+end
+
+B.MobileQuickToggle = function(g, p, e)
+    g:AddCheckbox(p.."MobileQuickToggle", {
+        Text = "Mobile Quick Toggle",
+        Default = e.MobileButtonEnabled,
+        Callback = function(v)
+            e.MobileButtonEnabled = v
+            if v then
+                e:CreateMobileButton()
+            else
+                e:DestroyMobileButton()
+            end
+        end,
+    })
+end
+
+B.Keybind = function(g, p, e)
+    g:AddLabel("Keybind"):AddKeyPicker(p.."Keybind", {
+        Default = "E",
+        Mode = "Press",
+        Text = "Aimlock Keybind",
+        Callback = function()
+            local uiToggle = Options[p.."Enabled"]
+            if uiToggle then
+                uiToggle:SetValue(not uiToggle.Value)
+            else
+                e:SetEnabled(not e.Enabled)
+            end
         end,
     })
 end
@@ -99,8 +136,11 @@ end
 
 B.CrossOffsetX = function(g, p, e)
     g:AddInput(p.."CrossOffsetX", {
-        Text = "Cross Offset X", Default = tostring(e.CrossOffset.X),
-        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Text = "Cross Offset X",
+        Default = tostring(e.CrossOffset.X),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
         Placeholder = "0",
         Callback = function(v)
             local n = tonumber(v) or 0
@@ -111,8 +151,11 @@ end
 
 B.CrossOffsetY = function(g, p, e)
     g:AddInput(p.."CrossOffsetY", {
-        Text = "Cross Offset Y", Default = tostring(e.CrossOffset.Y),
-        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Text = "Cross Offset Y",
+        Default = tostring(e.CrossOffset.Y),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
         Placeholder = "0",
         Callback = function(v)
             local n = tonumber(v) or 0
@@ -137,10 +180,28 @@ B.CrosshairRainbowEnabled = function(g, p, e)
     })
 end
 
+B.RainbowSpeed = function(g, p, e)
+    g:AddInput(p.."RainbowSpeed", {
+        Text = "Rainbow Speed",
+        Default = tostring(e.RainbowSpeed),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "1",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.RainbowSpeed = n end
+        end,
+    })
+end
+
 B.PredictionXZ = function(g, p, e)
     g:AddInput(p.."PredictionXZ", {
-        Text = "Prediction XZ", Default = tostring(e.PredictionXZ),
-        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Text = "Prediction XZ",
+        Default = tostring(e.PredictionXZ),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
         Placeholder = "0",
         Callback = function(v)
             local n = tonumber(v)
@@ -151,8 +212,11 @@ end
 
 B.PredictionY = function(g, p, e)
     g:AddInput(p.."PredictionY", {
-        Text = "Prediction Y", Default = tostring(e.PredictionY),
-        Numeric = true, Finished = false, ClearTextOnFocus = false,
+        Text = "Prediction Y",
+        Default = tostring(e.PredictionY),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
         Placeholder = "0",
         Callback = function(v)
             local n = tonumber(v)
@@ -179,7 +243,7 @@ B.SampleMode = function(g, p, e)
 end
 
 B.AimPartPreference = function(g, p, e)
-    local shadowOrder = {"Head", "Torso", "Other Parts"}
+    local order = {"Head", "Torso", "Other Parts"}
 
     g:AddDropdown(p.."AimPartPreference", {
         Text = "Aim Part Order",
@@ -188,7 +252,7 @@ B.AimPartPreference = function(g, p, e)
         Multi = true,
         Callback = function(selected)
             local newOrder = {}
-            for _, name in ipairs(shadowOrder) do
+            for _, name in ipairs(order) do
                 if selected[name] then table.insert(newOrder, name) end
             end
             for name, checked in pairs(selected) do
@@ -196,7 +260,7 @@ B.AimPartPreference = function(g, p, e)
                     table.insert(newOrder, name)
                 end
             end
-            shadowOrder = newOrder
+            order = newOrder
             e.AimPartPreference = newOrder
         end,
     })
@@ -240,6 +304,7 @@ B.Whitelist = function(g, p, e)
         Values = {},
         Default = {},
         Multi = true,
+        Searchable = true,
         Callback = function(selected)
             local out = {}
             for name, checked in pairs(selected) do
@@ -256,6 +321,7 @@ B.PriorityTarget = function(g, p, e)
         Values = {},
         Default = {},
         Multi = true,
+        Searchable = true,
         Callback = function(selected)
             local out = {}
             for name, checked in pairs(selected) do
@@ -273,6 +339,8 @@ local SECTIONS = {
         {"LockAnywhere"},
         {"TeamCheck"},
         {"MaxDistance"},
+        {"MobileQuickToggle"},
+        {"Keybind"},
     },
     Sources = {
         {"SourceCheckbox"},
@@ -283,6 +351,7 @@ local SECTIONS = {
         {"CrossOffsetY"},
         {"FOVRainbowEnabled"},
         {"CrosshairRainbowEnabled"},
+        {"RainbowSpeed"},
     },
     Prediction = {
         {"PredictionXZ"},
@@ -345,8 +414,8 @@ local function Build(Group, prefix, aim, config)
     end
 end
 
--- ===== PLAYER LIST REFRESH ===== --
-local function SetupPlayerListRefresh(Players, prefix, aim)
+-- ===== PLAYER LIST LIVE REFRESH ===== --
+local function SetupPlayerListRefresh(Players, prefix)
     local function collect()
         local names = {}
         for _, plr in ipairs(Players:GetPlayers()) do
@@ -357,28 +426,43 @@ local function SetupPlayerListRefresh(Players, prefix, aim)
         return names
     end
 
-    task.spawn(function()
-        local lastCount = -1
-        while true do
-            task.wait(1)
-            local names = collect()
-            if #names ~= lastCount then
-                lastCount = #names
-                if Options[prefix.."Whitelist"] then
-                    Options[prefix.."Whitelist"]:SetValues(names)
-                end
-                if Options[prefix.."PriorityTarget"] then
-                    Options[prefix.."PriorityTarget"]:SetValues(names)
-                end
-            end
-        end
-    end)
-
     if Options[prefix.."Whitelist"] then
         Options[prefix.."Whitelist"]:SetValues(collect())
     end
     if Options[prefix.."PriorityTarget"] then
         Options[prefix.."PriorityTarget"]:SetValues(collect())
+    end
+
+    Players.PlayerAdded:Connect(function()
+        task.wait(0.2)
+        local names = collect()
+        if Options[prefix.."Whitelist"] then
+            Options[prefix.."Whitelist"]:SetValues(names)
+        end
+        if Options[prefix.."PriorityTarget"] then
+            Options[prefix.."PriorityTarget"]:SetValues(names)
+        end
+    end)
+
+    Players.PlayerRemoving:Connect(function()
+        task.wait(0.2)
+        local names = collect()
+        if Options[prefix.."Whitelist"] then
+            Options[prefix.."Whitelist"]:SetValues(names)
+        end
+        if Options[prefix.."PriorityTarget"] then
+            Options[prefix.."PriorityTarget"]:SetValues(names)
+        end
+    end)
+end
+
+-- ===== STATE SYNC ===== --
+local function SetupStateSync(prefix, aim)
+    aim.OnStateChanged = function(state)
+        local uiToggle = Options[prefix.."Enabled"]
+        if uiToggle and uiToggle.Value ~= state then
+            uiToggle:SetValue(state)
+        end
     end
 end
 
@@ -397,7 +481,12 @@ local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sourc
     end
 
     Build(Group, prefix, aim, config)
-    SetupPlayerListRefresh(Players, prefix, aim)
+    SetupStateSync(prefix, aim)
+    SetupPlayerListRefresh(Players, prefix)
+
+    if aim.MobileButtonEnabled then
+        aim:CreateMobileButton()
+    end
 
     return aim
 end
