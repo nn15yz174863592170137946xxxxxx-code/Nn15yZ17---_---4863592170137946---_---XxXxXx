@@ -1,643 +1,539 @@
 -- ===== AIMLOCK ===== --
-local Aimlock = {}
-Aimlock.__index = Aimlock
+local Aimlock = loadstring(game:HttpGet("https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/z'aimlock"))()
 
--- ===== CONSTRUCTOR ===== --
-function Aimlock.new(playersService, localPlayer, camera, settings)
-    settings = settings or {}
-    local self = setmetatable({}, Aimlock)
-    self.Players = playersService
-    self.LocalPlayer = localPlayer
-    self.Camera = camera
+-- ===== DEFAULTS ===== --
+local DEFAULTS = {
+    Enabled = false,
+    LockAnywhere = false,
+    TeamCheck = false,
+    MaxDistance = nil,
+    MobileButtonEnabled = true,
 
-    self.AimlockName = settings.AimlockName or "Aimlock"
-    self.Enabled = false
-    self.LockAnywhere = settings.LockAnywhere or false
-    self.TargetPlayers = settings.TargetPlayers ~= false
-    self.TeamCheck = settings.TeamCheck or false
-    self.TeamCheckFunc = settings.TeamCheckFunc or nil
-    self.MaxDistance = settings.MaxDistance
+    FOVSize = 500,
+    CrossOffset = Vector2.new(0, 0),
+    FOVRainbowEnabled = true,
+    CrosshairRainbowEnabled = true,
+    RainbowSpeed = 1,
 
-    self.FOVSize = settings.FOVSize or 500
-    self.CrossOffset = settings.CrossOffset or Vector2.new(0, 0)
-    self.Gui = nil
-    self.FOVCircle = nil
-    self.CrossV = nil
-    self.CrossH = nil
-    self.FOVStroke = nil
-    self.FOVRainbowEnabled = settings.FOVRainbowEnabled ~= false
-    self.CrosshairRainbowEnabled = settings.CrosshairRainbowEnabled ~= false
-    self.RainbowSpeed = settings.RainbowSpeed or 1
+    PredictionXZ = 0,
+    PredictionY = 0,
+    AutoPredictionEnabled = false,
 
-    self.PredictionXZ = settings.PredictionXZ or 0
-    self.PredictionY = settings.PredictionY or 0
-    self.AutoPredictionEnabled = settings.AutoPredictionEnabled or false
+    AimPartPreference = {"Head", "Torso", "Other Parts"},
+    SampleMode = 2,
+    HeadChance = 80,
+}
 
-    self.AimPartPreference = settings.AimPartPreference or {"Head", "Torso", "Other Parts"}
-    self.SampleMode = settings.SampleMode or 2
-    self.HeadChance = settings.HeadChance or 50
+local DEFAULT_FEATURES = {
+    Enabled = true,
+    Target = true,
+    Lists = true,
+    Prediction = true,
+    Targeting = true,
+    FOV = true,
+}
 
-    self.MobileButtonEnabled = settings.MobileButtonEnabled ~= false
-    self.MobileButton = nil
-    self.MobileButtonGui = nil
-    self.OnStateChanged = nil
-
-    local builtInWhitelist = settings.BuiltInWhitelist or {}
-    local externalWhitelist = settings.Whitelist or {}
-    if settings.RespectBuiltInWhitelist ~= false then
-        self.Whitelist = {}
-        for _, name in ipairs(builtInWhitelist) do table.insert(self.Whitelist, name) end
-        for _, name in ipairs(externalWhitelist) do
-            if not table.find(self.Whitelist, name) then table.insert(self.Whitelist, name) end
-        end
-    else
-        self.Whitelist = externalWhitelist
-    end
-
-    self.Targetlist = settings.Targetlist or {}
-
-    self.TargetSources = {}
-    if settings.TargetSources then
-        for name, src in pairs(settings.TargetSources) do
-            self.TargetSources[name] = {
-                Enabled = src.Enabled ~= false,
-                GetEntities = src.GetEntities
-            }
-        end
-    end
-
-    self.LoopConnection = nil
-    self.PriorityTarget = nil
-    self._pointCache = {}
-
-    return self
+-- ===== MERGE ===== --
+local function merge(a, b)
+    local out = {}
+    for k, v in pairs(a) do out[k] = v end
+    if b then for k, v in pairs(b) do out[k] = v end end
+    return out
 end
 
--- ===== SOURCES ===== --
-function Aimlock:AddTargetSource(name, getEntitiesFunc, startEnabled)
-    self.TargetSources[name] = {
-        Enabled = startEnabled ~= false,
-        GetEntities = getEntitiesFunc
-    }
+-- ===== HELPERS ===== --
+local function buildPlayerOptions(Players, LocalPlayer)
+    local names = {"None"}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(names, plr.Name)
+        end
+    end
+    return names
 end
 
--- ===== FOV ===== --
-function Aimlock:CreateFOV(parent)
-    if self.Gui then self.Gui:Destroy() end
-    local gui = Instance.new("ScreenGui", parent or self.LocalPlayer.PlayerGui)
-    gui.Name = self.AimlockName .. "FOV"
-    gui.IgnoreGuiInset = true
-    gui.ResetOnSpawn = false
+-- ===== BUILDERS ===== --
+local B = {}
 
-    local function mk(pos, size)
-        local f = Instance.new("Frame", gui)
-        f.AnchorPoint = Vector2.new(0.5, 0.5)
-        f.Position = pos
-        f.Size = size
-        f.BackgroundColor3 = Color3.new(1, 1, 1)
-        f.BorderSizePixel = 0
-        f.Visible = false
-        return f
+B.EnabledToggle = function(g, p, e)
+    e._uiToggle = g:AddToggle(p.."Enabled", {
+        Text = "Aimlock",
+        Default = e.Enabled,
+        Callback = function(v) e:SetEnabled(v) end,
+    })
+end
+
+B.LockAnywhere = function(g, p, e)
+    g:AddCheckbox(p.."LockAnywhere", {
+        Text = "Lock Anywhere",
+        Default = e.LockAnywhere,
+        Callback = function(v) e.LockAnywhere = v end,
+    })
+end
+
+B.TeamCheck = function(g, p, e)
+    g:AddCheckbox(p.."TeamCheck", {
+        Text = "Team Check",
+        Default = e.TeamCheck,
+        Callback = function(v) e.TeamCheck = v end,
+    })
+end
+
+B.MaxDistance = function(g, p, e)
+    g:AddInput(p.."MaxDistance", {
+        Text = "Max Distance",
+        Default = e.MaxDistance and tostring(e.MaxDistance) or "",
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "inf",
+        Callback = function(v)
+            local n = tonumber(v)
+            e.MaxDistance = (n and n > 0) and n or nil
+        end,
+    })
+end
+
+B.MobileQuickToggle = function(g, p, e)
+    g:AddCheckbox(p.."MobileQuickToggle", {
+        Text = "Mobile Quick Toggle",
+        Default = e.MobileButtonEnabled,
+        Callback = function(v)
+            e.MobileButtonEnabled = v
+            e:SetMobileButtonVisible(v)
+        end,
+    })
+end
+
+B.Keybind = function(g, p, e)
+    g:AddLabel("Keybind"):AddKeyPicker(p.."Keybind", {
+        Default = "E",
+        Mode = "Press",
+        Text = "Aimlock Keybind",
+        Callback = function()
+            local uiToggle = e._uiToggle
+            if uiToggle then
+                uiToggle:SetValue(not uiToggle.Value)
+            end
+        end,
+    })
+end
+
+B.TargetPlayers = function(g, p, e)
+    if e.TargetSources["Players"] then
+        g:AddCheckbox(p.."Target_Players", {
+            Text = "Target Players",
+            Default = e.TargetSources["Players"].Enabled,
+            Callback = function(v)
+                e.TargetPlayers = v
+                e.TargetSources["Players"].Enabled = v
+            end,
+        })
+    end
+end
+
+B.TargetCustom = function(g, p, e)
+    for name, src in pairs(e.TargetSources) do
+        if name ~= "Players" then
+            g:AddCheckbox(p.."Target_"..name, {
+                Text = "Target "..name,
+                Default = src.Enabled,
+                Callback = function(v)
+                    src.Enabled = v
+                end,
+            })
+        end
+    end
+end
+
+B.Whitelist = function(g, p, e)
+    local names = buildPlayerOptions(e.Players, e.LocalPlayer)
+    local dropdown
+
+    dropdown = g:AddDropdown(p.."Whitelist", {
+        Text = "Whitelist",
+        Values = names,
+        Multi = true,
+        Default = {},
+        Searchable = true,
+        Callback = function(selection)
+            if selection["None"] then
+                dropdown:SetValue({})
+                e.Whitelist = {}
+                return
+            end
+            local out = {}
+            for k, v in pairs(selection) do
+                if type(k) == "string" and k ~= "None" then
+                    table.insert(out, k)
+                end
+            end
+            e.Whitelist = out
+        end,
+    })
+
+    e._uiWhitelist = dropdown
+end
+
+B.PriorityTarget = function(g, p, e)
+    local names = buildPlayerOptions(e.Players, e.LocalPlayer)
+    local dropdown
+
+    dropdown = g:AddDropdown(p.."PriorityTarget", {
+        Text = "Priority Target",
+        Values = names,
+        Multi = true,
+        Default = {},
+        Searchable = true,
+        Callback = function(selection)
+            if selection["None"] then
+                dropdown:SetValue({})
+                e.Targetlist = {}
+                return
+            end
+            local out = {}
+            for k, v in pairs(selection) do
+                if type(k) == "string" and k ~= "None" then
+                    table.insert(out, k)
+                end
+            end
+            e.Targetlist = out
+        end,
+    })
+
+    e._uiPriorityTarget = dropdown
+end
+
+B.PredictionXZ = function(g, p, e)
+    g:AddInput(p.."PredictionXZ", {
+        Text = "Prediction XZ",
+        Default = tostring(e.PredictionXZ),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "0",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.PredictionXZ = n end
+        end,
+    })
+end
+
+B.PredictionY = function(g, p, e)
+    g:AddInput(p.."PredictionY", {
+        Text = "Prediction Y",
+        Default = tostring(e.PredictionY),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "0",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.PredictionY = n end
+        end,
+    })
+end
+
+B.AutoPrediction = function(g, p, e)
+    g:AddCheckbox(p.."AutoPrediction", {
+        Text = "Auto",
+        Default = e.AutoPredictionEnabled,
+        Callback = function(v) e.AutoPredictionEnabled = v end,
+    })
+end
+
+B.SampleMode = function(g, p, e)
+    g:AddDropdown(p.."SampleMode", {
+        Text = "Grid Mode",
+        Values = {"1", "2", "3"},
+        Default = tostring(e.SampleMode),
+        Callback = function(v) e.SampleMode = tonumber(v) end,
+    })
+end
+
+B.AimPart = function(g, p, e)
+    local order = {"Head", "Torso", "Other Parts"}
+
+    g:AddDropdown(p.."AimPart", {
+        Text = "Aim Part",
+        Values = {"Head", "Torso", "Other Parts"},
+        Default = {"Head", "Torso", "Other Parts"},
+        Multi = true,
+        Callback = function(selected)
+            local newOrder = {}
+            for _, name in ipairs(order) do
+                if selected[name] then table.insert(newOrder, name) end
+            end
+            for name, checked in pairs(selected) do
+                if checked and not table.find(newOrder, name) then
+                    table.insert(newOrder, name)
+                end
+            end
+            order = newOrder
+            e.AimPartPreference = newOrder
+        end,
+    })
+end
+
+B.HeadChance = function(g, p, e)
+    local headSlider
+    local torsoSlider
+    local updating = false
+
+    headSlider = g:AddSlider(p.."HeadChance", {
+        Text = "Head %",
+        Default = e.HeadChance,
+        Min = 0, Max = 100, Rounding = 0,
+        Callback = function(v)
+            if updating then return end
+            updating = true
+            e.HeadChance = v
+            if torsoSlider then torsoSlider:SetValue(100 - v) end
+            updating = false
+        end,
+    })
+
+    torsoSlider = g:AddSlider(p.."TorsoChance", {
+        Text = "Torso/Other Parts %",
+        Default = 100 - e.HeadChance,
+        Min = 0, Max = 100, Rounding = 0,
+        Callback = function(v)
+            if updating then return end
+            updating = true
+            e.HeadChance = 100 - v
+            if headSlider then headSlider:SetValue(100 - v) end
+            updating = false
+        end,
+    })
+end
+
+B.FOVSize = function(g, p, e)
+    g:AddInput(p.."FOVSize", {
+        Text = "FOV Size",
+        Default = tostring(e.FOVSize),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "500",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e:UpdateFOVSize(n) end
+        end,
+    })
+end
+
+B.CrossOffsetX = function(g, p, e)
+    g:AddInput(p.."CrossOffsetX", {
+        Text = "Cross Offset X",
+        Default = tostring(e.CrossOffset.X),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "0",
+        Callback = function(v)
+            local n = tonumber(v) or 0
+            e:UpdateCrossOffset(Vector2.new(n, e.CrossOffset.Y))
+        end,
+    })
+end
+
+B.CrossOffsetY = function(g, p, e)
+    g:AddInput(p.."CrossOffsetY", {
+        Text = "Cross Offset Y",
+        Default = tostring(e.CrossOffset.Y),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "0",
+        Callback = function(v)
+            local n = tonumber(v) or 0
+            e:UpdateCrossOffset(Vector2.new(e.CrossOffset.X, n))
+        end,
+    })
+end
+
+B.FOVRainbowEnabled = function(g, p, e)
+    g:AddCheckbox(p.."FOVRainbowEnabled", {
+        Text = "Rainbow FOV",
+        Default = e.FOVRainbowEnabled,
+        Callback = function(v) e.FOVRainbowEnabled = v end,
+    })
+end
+
+B.CrosshairRainbowEnabled = function(g, p, e)
+    g:AddCheckbox(p.."CrosshairRainbowEnabled", {
+        Text = "Rainbow Crosshair",
+        Default = e.CrosshairRainbowEnabled,
+        Callback = function(v) e.CrosshairRainbowEnabled = v end,
+    })
+end
+
+B.RainbowSpeed = function(g, p, e)
+    g:AddInput(p.."RainbowSpeed", {
+        Text = "Rainbow Speed",
+        Default = tostring(e.RainbowSpeed),
+        Numeric = true,
+        Finished = false,
+        ClearTextOnFocus = false,
+        Placeholder = "1",
+        Callback = function(v)
+            local n = tonumber(v)
+            if n then e.RainbowSpeed = n end
+        end,
+    })
+end
+
+-- ===== SECTIONS ===== --
+local SECTIONS = {
+    Enabled = {
+        {"EnabledToggle"},
+        {"LockAnywhere"},
+        {"TeamCheck"},
+        {"MaxDistance"},
+        {"MobileQuickToggle"},
+        {"Keybind"},
+    },
+    Target = {
+        {"TargetPlayers"},
+        {"TargetCustom"},
+    },
+    Lists = {
+        {"Whitelist"},
+        {"PriorityTarget"},
+    },
+    Prediction = {
+        {"PredictionXZ"},
+        {"PredictionY"},
+        {"AutoPrediction"},
+    },
+    Targeting = {
+        {"SampleMode"},
+        {"AimPart"},
+        {"HeadChance"},
+    },
+    FOV = {
+        {"FOVSize"},
+        {"CrossOffsetX"},
+        {"CrossOffsetY"},
+        {"FOVRainbowEnabled"},
+        {"CrosshairRainbowEnabled"},
+        {"RainbowSpeed"},
+    },
+}
+
+local SECTION_ORDER = {
+    "Enabled",
+    "Target",
+    "Lists",
+    "Prediction",
+    "Targeting",
+    "FOV",
+}
+
+-- ===== BUILD ===== --
+local function Build(Group, prefix, aim, config)
+    config = config or {}
+    local features = merge(DEFAULT_FEATURES, config.Features)
+
+    local exclude = {}
+    for _, id in ipairs(config.Exclude or {}) do
+        exclude[id] = true
     end
 
-    self.CrossV = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, 2, 0, 14))
-    self.CrossH = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, 14, 0, 2))
-    self.FOVCircle = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, self.FOVSize, 0, self.FOVSize))
-    self.FOVCircle.BackgroundTransparency = 1
-    Instance.new("UICorner", self.FOVCircle).CornerRadius = UDim.new(1, 0)
+    local sectionsBuilt = 0
 
-    local stroke = Instance.new("UIStroke", self.FOVCircle)
-    stroke.Thickness = 2
-    self.FOVStroke = stroke
+    for _, sectionName in ipairs(SECTION_ORDER) do
+        if features[sectionName] ~= false then
+            local toRun = {}
 
-    task.spawn(function()
-        local h = 0
-        while self.FOVCircle and self.FOVCircle.Parent do
-            task.wait(0.03)
-            h = (h + 3 * (self.RainbowSpeed or 1)) % 360
-            local c = Color3.fromHSV(h / 360, 1, 1)
-            if self.FOVRainbowEnabled and self.FOVStroke and self.FOVCircle.Visible then
-                self.FOVStroke.Color = c
+            for _, entry in ipairs(SECTIONS[sectionName]) do
+                local id = entry[1]
+                if not exclude[id] then
+                    table.insert(toRun, id)
+                end
             end
-            if self.CrosshairRainbowEnabled then
-                if self.CrossV and self.CrossV.Visible then
-                    self.CrossV.BackgroundColor3 = c
+
+            if #toRun > 0 then
+                if sectionsBuilt > 0 then
+                    Group:AddDivider()
                 end
-                if self.CrossH and self.CrossH.Visible then
-                    self.CrossH.BackgroundColor3 = c
+                for _, id in ipairs(toRun) do
+                    if B[id] then B[id](Group, prefix, aim) end
                 end
+                sectionsBuilt = sectionsBuilt + 1
             end
         end
+    end
+end
+
+-- ===== PLAYER LIST REFRESH ===== --
+local function setupPlayerListRefresh(Players, LocalPlayer, aim)
+    local function refresh()
+        local names = buildPlayerOptions(Players, LocalPlayer)
+
+        if aim._uiWhitelist and aim._uiWhitelist.SetValues then
+            aim._uiWhitelist:SetValues(names)
+        end
+
+        if aim._uiPriorityTarget and aim._uiPriorityTarget.SetValues then
+            aim._uiPriorityTarget:SetValues(names)
+        end
+    end
+
+    Players.PlayerAdded:Connect(function()
+        task.wait(0.3)
+        refresh()
     end)
 
-    self.Gui = gui
-end
-
-function Aimlock:SetVisibility(visible)
-    if self.FOVCircle then self.FOVCircle.Visible = visible end
-    if self.CrossV then self.CrossV.Visible = visible end
-    if self.CrossH then self.CrossH.Visible = visible end
-end
-
-function Aimlock:UpdateFOVSize(size)
-    self.FOVSize = size
-    if self.FOVCircle then
-        self.FOVCircle.Size = UDim2.new(0, size, 0, size)
-        self.FOVCircle.Position = UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y)
-    end
-end
-
-function Aimlock:UpdateCrossOffset(offset)
-    self.CrossOffset = offset
-    if self.FOVCircle then self.FOVCircle.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
-    if self.CrossV then self.CrossV.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
-    if self.CrossH then self.CrossH.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
-end
-
--- ===== PREDICTION ===== --
-function Aimlock:GetPredictedPos(point, vel, targetChar)
-    if self.AutoPredictionEnabled then
-        local ping = self.LocalPlayer:GetNetworkPing()
-        local g = workspace.Gravity
-        local hum = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
-        local airborne = hum and hum.FloorMaterial == Enum.Material.Air
-
-        local predX = vel.X * ping
-        local predZ = vel.Z * ping
-        local predY
-        if airborne then
-            predY = vel.Y * ping - 0.5 * g * ping * ping
-        else
-            predY = 0
-        end
-        return point + Vector3.new(predX, predY, predZ)
-    end
-
-    if self.PredictionXZ == 0 and self.PredictionY == 0 then return point end
-    return point + Vector3.new(
-        vel.X * self.PredictionXZ,
-        vel.Y * self.PredictionY,
-        vel.Z * self.PredictionXZ
-    )
-end
-
--- ===== TEAM ===== --
-function Aimlock:IsSameTeam(plr)
-    if not self.TeamCheck then return false end
-    if self.TeamCheckFunc then
-        local ok, result = pcall(self.TeamCheckFunc, plr, self.LocalPlayer)
-        if ok then return result end
-    end
-    return plr.TeamColor == self.LocalPlayer.TeamColor
-end
-
--- ===== GRID SAMPLING ===== --
-function Aimlock:GetSurfacePoints(size, divisions)
-    local key = size.X .. "_" .. size.Y .. "_" .. size.Z .. "_" .. divisions
-    local cached = self._pointCache[key]
-    if cached then return cached end
-
-    local points = {}
-    local half = size / 2
-
-    if divisions == 2 then
-        for ix = -1, 1, 2 do
-            for iy = -1, 1, 2 do
-                for iz = -1, 1, 2 do
-                    table.insert(points, Vector3.new(ix * half.X, iy * half.Y, iz * half.Z))
-                end
-            end
-        end
-    elseif divisions == 3 then
-        for ix = -1, 1 do
-            for iy = -1, 1 do
-                for iz = -1, 1 do
-                    if not (ix == 0 and iy == 0 and iz == 0) then
-                        table.insert(points, Vector3.new(ix * half.X, iy * half.Y, iz * half.Z))
-                    end
-                end
-            end
-        end
-    end
-
-    self._pointCache[key] = points
-    return points
-end
-
-function Aimlock:GetClosestVisiblePoint(part, targetChar, camPos, ignoreChar)
-    if not part or not part:IsA("BasePart") then return nil, math.huge end
-
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Blacklist
-    params.FilterDescendantsInstances = {ignoreChar}
-    params.IgnoreWater = true
-
-    local centerOffset = part.Position - camPos
-    local centerResult = workspace:Raycast(camPos, centerOffset, params)
-    local centerHit = centerResult and centerResult.Instance
-
-    if centerHit and (centerHit == part or centerHit:IsDescendantOf(targetChar)) then
-        return part.Position, centerOffset.Magnitude
-    end
-
-    if self.SampleMode == 1 then
-        return nil, math.huge
-    end
-
-    local divisions = self.SampleMode == 2 and 2 or 3
-    local points = self:GetSurfacePoints(part.Size, divisions)
-
-    local closestPoint = nil
-    local closestDist = math.huge
-
-    for _, offset in ipairs(points) do
-        local checkPoint = part.Position + offset
-        local dir = checkPoint - camPos
-        local dist = dir.Magnitude
-        local result = workspace:Raycast(camPos, dir, params)
-        local hit = result and result.Instance
-
-        if hit and (hit == part or hit:IsDescendantOf(targetChar)) then
-            if dist < closestDist then
-                closestDist = dist
-                closestPoint = checkPoint
-            end
-        end
-    end
-
-    return closestPoint, closestDist
-end
-
--- ===== BUCKET RESOLUTION ===== --
-function Aimlock:ResolveBucketList(entity, bucket)
-    local parts = {}
-    if not entity or not entity:IsA("Model") then return parts end
-
-    if bucket == "Head" then
-        local p = entity:FindFirstChild("Head")
-        if p and p:IsA("BasePart") then table.insert(parts, p) end
-        return parts
-    end
-
-    if bucket == "Torso" then
-        for _, name in ipairs({"UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso"}) do
-            local p = entity:FindFirstChild(name)
-            if p and p:IsA("BasePart") then table.insert(parts, p) end
-        end
-        return parts
-    end
-
-    if bucket == "Other Parts" then
-        for _, name in ipairs({
-            "LeftUpperArm", "LeftLowerArm", "LeftHand",
-            "RightUpperArm", "RightLowerArm", "RightHand",
-            "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
-            "RightUpperLeg", "RightLowerLeg", "RightFoot"
-        }) do
-            local p = entity:FindFirstChild(name)
-            if p and p:IsA("BasePart") then table.insert(parts, p) end
-        end
-
-        for _, name in ipairs({"Left Arm", "Right Arm", "Left Leg", "Right Leg"}) do
-            local p = entity:FindFirstChild(name)
-            if p and p:IsA("BasePart") then table.insert(parts, p) end
-        end
-
-        for _, c in ipairs(entity:GetChildren()) do
-            if c:IsA("BasePart") and not table.find(parts, c) then
-                local lower = c.Name:lower()
-                local skip = lower:find("head") or lower:find("torso") or lower:find("humanoidrootpart")
-                if not skip then table.insert(parts, c) end
-            end
-        end
-
-        if #parts == 0 then
-            for _, c in ipairs(entity:GetDescendants()) do
-                if c:IsA("BasePart") then table.insert(parts, c) end
-            end
-        end
-
-        return parts
-    end
-
-    return parts
-end
-
-function Aimlock:ResolveBucket(entity, bucket)
-    local list = self:ResolveBucketList(entity, bucket)
-    return list[1]
-end
-
--- ===== AIM PARTS ===== --
-function Aimlock:GetAimParts(entity)
-    if not entity then return {} end
-
-    local preference = self.AimPartPreference
-    if not preference or #preference == 0 then
-        local p = entity:FindFirstChildWhichIsA("BasePart")
-        return p and {p} or {}
-    end
-
-    local headChance = self.HeadChance or 50
-    local roll = math.random() * 100
-
-    local primary
-    if roll < headChance and table.find(preference, "Head") then
-        primary = "Head"
-    elseif table.find(preference, "Torso") then
-        primary = "Torso"
-    elseif table.find(preference, "Other Parts") then
-        primary = "Other Parts"
-    elseif table.find(preference, "Head") then
-        primary = "Head"
-    else
-        primary = preference[1]
-    end
-
-    local bucketOrder = {primary}
-    for _, name in ipairs(preference) do
-        if name ~= primary then
-            table.insert(bucketOrder, name)
-        end
-    end
-
-    local result = {}
-    local seen = {}
-    for _, bucket in ipairs(bucketOrder) do
-        local bucketParts = self:ResolveBucketList(entity, bucket)
-        for _, p in ipairs(bucketParts) do
-            if not seen[p] then
-                seen[p] = true
-                table.insert(result, p)
-            end
-        end
-    end
-
-    if #result == 0 then
-        local p = entity:FindFirstChildWhichIsA("BasePart")
-        if p then table.insert(result, p) end
-    end
-
-    return result
-end
-
-function Aimlock:GetAimPart(entity)
-    local parts = self:GetAimParts(entity)
-    return parts[1]
-end
-
--- ===== CANDIDATE SCORING ===== --
-function Aimlock:GetCandidateRoot(entity)
-    return entity:FindFirstChild("HumanoidRootPart")
-        or entity:FindFirstChild("Head")
-        or entity:FindFirstChildWhichIsA("BasePart")
-end
-
--- Priority values: 1 = PriorityTarget, 2 = Targetlist, 3 = Normal
--- Lower priority number wins. Within the same priority class, closest to crosshair wins.
-function Aimlock:ScoreCandidate(entity, priority, camPos, fPos, maxScreenDist)
-    if not entity then return nil end
-
-    local hum = entity:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return nil end
-
-    local root = self:GetCandidateRoot(entity)
-    if not root then return nil end
-
-    local worldDist = (camPos - root.Position).Magnitude
-    if self.MaxDistance and worldDist > self.MaxDistance then return nil end
-
-    if self.LockAnywhere then
-        return {
-            Entity = entity,
-            Root = root,
-            ScreenDist = 0,
-            WorldDist = worldDist,
-            Score = worldDist + (priority - 1) * 1000000,
-        }
-    end
-
-    local screenPos, onScreen = self.Camera:WorldToViewportPoint(root.Position)
-    if not onScreen then return nil end
-
-    local dx = screenPos.X - fPos.X
-    local dy = screenPos.Y - fPos.Y
-    local screenDist = math.sqrt(dx * dx + dy * dy)
-
-    if screenDist > maxScreenDist then return nil end
-
-    return {
-        Entity = entity,
-        Root = root,
-        ScreenDist = screenDist,
-        WorldDist = worldDist,
-        Score = screenDist + (priority - 1) * 1000000,
-    }
-end
-
--- ===== TARGET SEARCH ===== --
-function Aimlock:FindBestTarget()
-    local char = self.LocalPlayer.Character
-    if not char then return nil end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-
-    local camPos = self.Camera.CFrame.Position
-    local fPos = Vector2.new(
-        self.Camera.ViewportSize.X / 2 + self.CrossOffset.X,
-        self.Camera.ViewportSize.Y / 2 + self.CrossOffset.Y
-    )
-    local maxScreenDist = self.FOVSize / 2
-
-    -- PHASE 1: Collect candidates by screen position only, no raycasts
-    local bestCandidate = nil
-
-    local function consider(entity, priority)
-        local c = self:ScoreCandidate(entity, priority, camPos, fPos, maxScreenDist)
-        if c and (not bestCandidate or c.Score < bestCandidate.Score) then
-            bestCandidate = c
-        end
-    end
-
-    if self.TargetPlayers and self.PriorityTarget and self.PriorityTarget.Character then
-        if not table.find(self.Whitelist, self.PriorityTarget.Name)
-            and not self:IsSameTeam(self.PriorityTarget) then
-            consider(self.PriorityTarget.Character, 1)
-        end
-    end
-
-    if self.TargetPlayers and #self.Targetlist > 0 then
-        for _, plr in ipairs(self.Players:GetPlayers()) do
-            if plr == self.LocalPlayer then continue end
-            if not table.find(self.Targetlist, plr.Name) then continue end
-            if table.find(self.Whitelist, plr.Name) then continue end
-            if self:IsSameTeam(plr) then continue end
-            consider(plr.Character, 2)
-        end
-    end
-
-    if self.TargetPlayers then
-        for _, plr in ipairs(self.Players:GetPlayers()) do
-            if plr == self.LocalPlayer then continue end
-            if table.find(self.Whitelist, plr.Name) then continue end
-            if self:IsSameTeam(plr) then continue end
-            consider(plr.Character, 3)
-        end
-    end
-
-    for name, src in pairs(self.TargetSources) do
-        if not src.Enabled then continue end
-        local entities = src.GetEntities()
-        if not entities then continue end
-        for _, entity in ipairs(entities) do
-            if entity:IsA("Model") then
-                consider(entity, 3)
-            end
-        end
-    end
-
-    if not bestCandidate then return nil end
-
-    -- PHASE 2: Full part resolution + grid calculation on that single target
-    local entity = bestCandidate.Entity
-    local parts = self:GetAimParts(entity)
-
-    for _, aimPart in ipairs(parts) do
-        local point, partDist = self:GetClosestVisiblePoint(aimPart, entity, camPos, char)
-        if point and (not self.MaxDistance or partDist <= self.MaxDistance) then
-            local vel = aimPart.Velocity
-            local predicted = self:GetPredictedPos(point, vel, entity)
-
-            if self.LockAnywhere then
-                return predicted
-            end
-
-            local screenPos, onScreen = self.Camera:WorldToViewportPoint(predicted)
-            if onScreen then
-                local dx = screenPos.X - fPos.X
-                local dy = screenPos.Y - fPos.Y
-                local screenDist = math.sqrt(dx * dx + dy * dy)
-                if screenDist <= maxScreenDist then
-                    return predicted
-                end
-            end
-        end
-    end
-
-    return nil
-end
-
--- ===== LOOP ===== --
-function Aimlock:Start()
-    if self.LoopConnection then return end
-    self.LoopConnection = game:GetService("RunService").RenderStepped:Connect(function()
-        if not self.Enabled then return end
-        local targetPos = self:FindBestTarget()
-        if not targetPos then return end
-        local camPos = self.Camera.CFrame.Position
-        local lookAt = CFrame.lookAt(camPos, targetPos)
-        local fovRad = math.rad(self.Camera.FieldOfView)
-        local screenWidth = self.Camera.ViewportSize.X
-        local screenHeight = self.Camera.ViewportSize.Y
-        local anglePerPixelX = fovRad / screenWidth
-        local anglePerPixelY = fovRad / screenHeight
-
-        if self.CrossOffset.X ~= 0 then
-            local yawAngle = -self.CrossOffset.X * anglePerPixelX
-            lookAt = lookAt * CFrame.Angles(0, yawAngle, 0)
-        end
-        if self.CrossOffset.Y ~= 0 then
-            local pitchAngle = -self.CrossOffset.Y * anglePerPixelY
-            lookAt = lookAt * CFrame.Angles(pitchAngle, 0, 0)
-        end
-        self.Camera.CFrame = lookAt
+    Players.PlayerRemoving:Connect(function()
+        task.wait(0.3)
+        refresh()
     end)
 end
 
-function Aimlock:Stop()
-    if self.LoopConnection then
-        self.LoopConnection:Disconnect()
-        self.LoopConnection = nil
+-- ===== STATE SYNC ===== --
+local function setupStateSync(aim)
+    aim.OnStateChanged = function(state)
+        local uiToggle = aim._uiToggle
+        if uiToggle and uiToggle.Value ~= state then
+            uiToggle:SetValue(state)
+        end
     end
 end
 
-function Aimlock:SetEnabled(state)
-    if self.Enabled == state then
-        self:UpdateMobileButton()
-        return
+-- ===== FACTORY ===== --
+local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sources)
+    config = config or {}
+
+    local settings = merge(DEFAULTS, config.Settings)
+    local aim = Aimlock.new(Players, LocalPlayer, Camera, settings)
+
+    if sources then
+        for _, src in ipairs(sources) do
+            aim:AddTargetSource(src.Name, src.Getter, src.Enabled ~= false)
+        end
     end
-    self.Enabled = state
-    self:SetVisibility(state)
-    if state then self:Start() else self:Stop() end
-    self:UpdateMobileButton()
-    if self.OnStateChanged then
-        self.OnStateChanged(state)
+
+    aim:CreateFOV()
+    setupStateSync(aim)
+
+    if aim.MobileButtonEnabled then
+        aim:CreateMobileButton()
+        aim:SetMobileButtonVisible(true)
     end
+
+    Build(Group, prefix, aim, config)
+    setupPlayerListRefresh(Players, LocalPlayer, aim)
+
+    return aim
 end
 
--- ===== MOBILE BUTTON ===== --
-function Aimlock:CreateMobileButton()
-    if self.MobileButtonGui then
-        self.MobileButtonGui.Enabled = true
-        self:UpdateMobileButton()
-        return
-    end
-
-    local gui = Instance.new("ScreenGui")
-    gui.Name = self.AimlockName .. "MobileToggle"
-    gui.IgnoreGuiInset = true
-    gui.ResetOnSpawn = false
-    gui.Parent = self.LocalPlayer:WaitForChild("PlayerGui")
-
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 140, 0, 40)
-    btn.Position = UDim2.new(0.875, 0, 0.125, 0)
-    btn.Text = "Aimlock : OFF"
-    btn.TextColor3 = Color3.new(1, 1, 1)
-    btn.BackgroundColor3 = Color3.new(0, 0, 0)
-    btn.TextScaled = true
-    btn.Font = Enum.Font.SourceSansBold
-    btn.Draggable = true
-    btn.Active = true
-    btn.Parent = gui
-
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
-
-    self.MobileButton = btn
-    self.MobileButtonGui = gui
-
-    btn.MouseButton1Click:Connect(function()
-        self:SetEnabled(not self.Enabled)
-    end)
-
-    self:UpdateMobileButton()
-end
-
-function Aimlock:SetMobileButtonVisible(visible)
-    if not self.MobileButtonGui then
-        if visible then self:CreateMobileButton() end
-        return
-    end
-    self.MobileButtonGui.Enabled = visible
-end
-
-function Aimlock:DestroyMobileButton()
-    if self.MobileButtonGui then
-        self.MobileButtonGui:Destroy()
-        self.MobileButtonGui = nil
-        self.MobileButton = nil
-    end
-end
-
-function Aimlock:UpdateMobileButton()
-    if not self.MobileButton then return end
-    if self.Enabled then
-        self.MobileButton.Text = "Aimlock : ON"
-        self.MobileButton.BackgroundColor3 = Color3.fromRGB(255, 128, 0)
-    else
-        self.MobileButton.Text = "Aimlock : OFF"
-        self.MobileButton.BackgroundColor3 = Color3.new(0, 0, 0)
-    end
-end
-
-return Aimlock
+-- ===== RETURN ===== --
+return {
+    Aimlock = Aimlock,
+    Build = Build,
+    Create = Create,
+    Builders = B,
+    DEFAULTS = DEFAULTS,
+    DEFAULT_FEATURES = DEFAULT_FEATURES,
+}
