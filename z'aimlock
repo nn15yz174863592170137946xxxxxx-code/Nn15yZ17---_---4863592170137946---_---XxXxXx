@@ -407,6 +407,16 @@ function Aimlock:ScoreCandidate(entity, priority, camPos, fPos, maxScreenDist)
     local worldDist = (camPos - root.Position).Magnitude
     if self.MaxDistance and worldDist > self.MaxDistance then return nil end
 
+    if self.LockAnywhere then
+        return {
+            Entity = entity,
+            Root = root,
+            ScreenDist = 0,
+            WorldDist = worldDist,
+            Score = worldDist + (priority - 1) * 1000000,
+        }
+    end
+
     local screenPos, onScreen = self.Camera:WorldToViewportPoint(root.Position)
     if not onScreen then return nil end
 
@@ -414,7 +424,7 @@ function Aimlock:ScoreCandidate(entity, priority, camPos, fPos, maxScreenDist)
     local dy = screenPos.Y - fPos.Y
     local screenDist = math.sqrt(dx * dx + dy * dy)
 
-    if not self.LockAnywhere and screenDist > maxScreenDist then return nil end
+    if screenDist > maxScreenDist then return nil end
 
     return {
         Entity = entity,
