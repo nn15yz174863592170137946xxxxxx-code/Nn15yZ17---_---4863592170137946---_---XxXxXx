@@ -121,11 +121,12 @@ function ESP:HealthDrawColor(frac)
 end
 
 -- ===== SOURCES ===== --
-function ESP:AddSource(name, getter, isPlayer, startEnabled)
+function ESP:AddSource(name, getter, isPlayer, startEnabled, nonHumanoid)
     self.Sources[name] = {
         Enabled = startEnabled ~= false,
         Getter = getter,
-        IsPlayer = isPlayer or false
+        IsPlayer = isPlayer or false,
+        NonHumanoid = nonHumanoid or false
     }
 end
 
@@ -137,7 +138,10 @@ end
 
 -- ===== HELPERS ===== --
 function ESP:GetRoot(model)
-    return model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso") or model:FindFirstChild("Head")
+    return model:FindFirstChild("HumanoidRootPart")
+        or model:FindFirstChild("Torso")
+        or model:FindFirstChild("Head")
+        or model:FindFirstChildWhichIsA("BasePart")
 end
 
 function ESP:GetHead(model)
@@ -174,12 +178,22 @@ function ESP:BuildList()
                         model = entity.Character
                     elseif typeof(entity) == "Instance" and entity:IsA("Model") then
                         model = entity
+                    elseif typeof(entity) == "Instance" and entity:IsA("BasePart") then
+                        model = entity.Parent
                     end
 
-                    if model and model ~= localChar and model.Parent then
+                    if model and model ~= localChar and model.Parent and not seen[model] then
                         local hum = model:FindFirstChildOfClass("Humanoid")
                         local root = self:GetRoot(model)
-                        if hum and hum.Health > 0 and root and not seen[model] then
+
+                        local accepted = false
+                        if hum and hum.Health > 0 and root then
+                            accepted = true
+                        elseif src.NonHumanoid and root then
+                            accepted = true
+                        end
+
+                        if accepted then
                             local dist = (camPos - root.Position).Magnitude
                             if not self.MaxDistance or dist <= self.MaxDistance then
                                 if not self.VisibleOnly or self:IsVisible(root, camPos) then
@@ -190,6 +204,7 @@ function ESP:BuildList()
                                         Root = root,
                                         Distance = dist,
                                         SourceName = srcName,
+                                        NonHumanoid = src.NonHumanoid,
                                     })
                                 end
                             end
@@ -274,15 +289,16 @@ function ESP:UpdateText(data, entry)
 
     local hum = entry.Model:FindFirstChildOfClass("Humanoid")
     local localRoot = LocalPlayer.Character and self:GetRoot(LocalPlayer.Character)
-    if not hum or not localRoot then return end
+    if not localRoot then return end
 
     local dist = math.floor((localRoot.Position - entry.Root.Position).Magnitude)
-    local health = round(hum.Health, 1)
     local name = entry.Player and entry.Player.Name or entry.Model.Name
 
     local parts = {}
     if self.ShowName then table.insert(parts, "Name: " .. name) end
-    if self.ShowHealth then table.insert(parts, "Health: " .. health) end
+    if self.ShowHealth and hum then
+        table.insert(parts, "Health: " .. round(hum.Health, 1))
+    end
     if self.ShowDistance then table.insert(parts, "Studs: " .. dist) end
 
     data.Label.Text = table.concat(parts, " | ")
