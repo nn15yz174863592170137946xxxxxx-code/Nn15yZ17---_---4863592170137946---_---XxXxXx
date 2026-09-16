@@ -229,19 +229,57 @@ end
 
 -- ===== BOX SIZING ===== --
 function ESP:GetBoxRect(entry)
-    local screenPos, onScreen = Camera:WorldToViewportPoint(entry.Root.Position)
-    if not onScreen then return nil end
+    local model = entry.Model
+    local root = entry.Root
+    if not model or not model.Parent or not root or not root.Parent then return nil end
 
-    local sw, sh = Camera.ViewportSize.X, Camera.ViewportSize.Y
-    local factor = 1 / (screenPos.Z * math.tan(math.rad(Camera.FieldOfView * 0.5)) * 2) * 100
-    local w = math.floor(sh / 20 * factor)
-    local h = math.floor(sw / 30 * factor)
+    local head = model:FindFirstChild("Head")
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+
+    local topWorld, bottomWorld
+
+    if head and humanoid then
+        topWorld = head.Position + Vector3.new(0, head.Size.Y * 0.5, 0)
+
+        local bottomY = root.Position.Y - root.Size.Y * 0.5
+        local lowerParts = {
+            "LeftFoot", "RightFoot",
+            "LeftLowerLeg", "RightLowerLeg",
+            "LeftUpperLeg", "RightUpperLeg",
+            "Left Leg", "Right Leg"
+        }
+        for _, name in ipairs(lowerParts) do
+            local part = model:FindFirstChild(name)
+            if part then
+                local pb = part.Position.Y - part.Size.Y * 0.5
+                if pb < bottomY then bottomY = pb end
+            end
+        end
+        bottomWorld = Vector3.new(root.Position.X, bottomY, root.Position.Z)
+    else
+        local cf, size = model:GetBoundingBox()
+        if size.Magnitude == 0 then return nil end
+        topWorld = cf.Position + Vector3.new(0, size.Y * 0.5, 0)
+        bottomWorld = cf.Position - Vector3.new(0, size.Y * 0.5, 0)
+    end
+
+    local topScreen, topOn = Camera:WorldToViewportPoint(topWorld)
+    local bottomScreen, bottomOn = Camera:WorldToViewportPoint(bottomWorld)
+    if not topOn or not bottomOn then return nil end
+
+    local height = math.abs(bottomScreen.Y - topScreen.Y)
+    if height < 1 then return nil end
+
+    local width = height * 0.55
+
+    local centerX = (topScreen.X + bottomScreen.X) * 0.5
+    local centerY = (topScreen.Y + bottomScreen.Y) * 0.5
 
     return {
-        Position = Vector2.new(screenPos.X - w / 2, screenPos.Y - h / 2),
-        Size = Vector2.new(w, h),
-        Center = Vector2.new(screenPos.X, screenPos.Y),
-        ScreenPos = screenPos
+        Position = Vector2.new(centerX - width * 0.5, centerY - height * 0.5),
+        Size = Vector2.new(width, height),
+        Center = Vector2.new(centerX, centerY),
+        ScreenPos = topScreen
     }
 end
 
