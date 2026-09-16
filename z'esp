@@ -257,7 +257,13 @@ function ESP:GetBoxRect(entry)
         end
         bottomWorld = Vector3.new(root.Position.X, bottomY, root.Position.Z)
     else
-        local cf, size = model:GetBoundingBox()
+        if not model:IsA("Model") and not model:IsA("BasePart") then return nil end
+        local cf, size
+        if model:IsA("Model") then
+            cf, size = model:GetBoundingBox()
+        else
+            cf, size = model.CFrame, model.Size
+        end
         if size.Magnitude == 0 then return nil end
         topWorld = cf.Position + Vector3.new(0, size.Y * 0.5, 0)
         bottomWorld = cf.Position - Vector3.new(0, size.Y * 0.5, 0)
@@ -575,6 +581,8 @@ function ESP:Step()
             self.Cache[key] = data
         end
 
+        local isObject = entry.NonHumanoid == true
+
         if self.TextESPEnabled then
             if data.Text then
                 local adornee = data.Text.Billboard and data.Text.Billboard.Adornee
@@ -593,7 +601,7 @@ function ESP:Step()
             end
         end
 
-        if self.BoxESPEnabled then
+        if self.BoxESPEnabled and not isObject then
             if not data.Box then data.Box = self:CreateBox() end
         else
             if data.Box then
@@ -602,7 +610,7 @@ function ESP:Step()
             end
         end
 
-        if self.HealthESPEnabled then
+        if self.HealthESPEnabled and not isObject then
             if not data.Health then data.Health = self:CreateHealth() end
         else
             if data.Health then
@@ -611,7 +619,7 @@ function ESP:Step()
             end
         end
 
-        if self.SkeletonESPEnabled then
+        if self.SkeletonESPEnabled and not isObject then
             if not data.Skeleton then data.Skeleton = self:CreateSkeleton() end
         else
             if data.Skeleton then
@@ -620,7 +628,7 @@ function ESP:Step()
             end
         end
 
-        local rect = self:GetBoxRect(entry)
+        local rect = (not isObject) and self:GetBoxRect(entry) or nil
 
         if data.Text then
             self:UpdateText(data.Text, entry)
