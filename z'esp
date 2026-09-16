@@ -4,12 +4,17 @@ ESP.__index = ESP
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
 local function round(num, places)
     local mult = 10 ^ (places or 0)
     return math.floor(num * mult + 0.5) / mult
+end
+
+local function num(v, default)
+    local n = tonumber(v)
+    if n == nil then return default end
+    return n
 end
 
 local bodyConnections = {
@@ -50,37 +55,37 @@ function ESP.new(settings)
     self.SkeletonESPEnabled = settings.SkeletonESPEnabled ~= false
 
     self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
-    self.TextSize = settings.TextSize or 20
-    self.TextTransparency = settings.TextTransparency or 0
+    self.TextSize = math.max(1, num(settings.TextSize, 20))
+    self.TextTransparency = math.clamp(num(settings.TextTransparency, 0), 0, 1)
     self.TextStroke = settings.TextStroke ~= false
-    self.TextStrokeTransparency = settings.TextStrokeTransparency or 0
+    self.TextStrokeTransparency = math.clamp(num(settings.TextStrokeTransparency, 0), 0, 1)
     self.ShowName = settings.ShowName ~= false
     self.ShowHealth = settings.ShowHealth ~= false
     self.ShowDistance = settings.ShowDistance ~= false
 
     self.BoxColor = settings.BoxColor or Color3.new(1, 1, 1)
-    self.BoxThickness = settings.BoxThickness or 1
-    self.BoxTransparency = settings.BoxTransparency or 0
+    self.BoxThickness = math.max(1, num(settings.BoxThickness, 1))
+    self.BoxTransparency = math.clamp(num(settings.BoxTransparency, 0), 0, 1)
     self.BoxFilled = settings.BoxFilled or false
-    self.BoxFillTransparency = settings.BoxFillTransparency or 0.5
+    self.BoxFillTransparency = math.clamp(num(settings.BoxFillTransparency, 0.5), 0, 1)
 
     self.HealthColor = settings.HealthColor or Color3.new(0, 1, 0)
     self.LowHealthColor = settings.LowHealthColor or Color3.new(1, 0, 0)
-    self.HealthTransparency = settings.HealthTransparency or 0
-    self.HealthBarWidth = settings.HealthBarWidth or 5
+    self.HealthTransparency = math.clamp(num(settings.HealthTransparency, 0), 0, 1)
+    self.HealthBarWidth = math.max(1, num(settings.HealthBarWidth, 5))
     self.HealthBarPosition = settings.HealthBarPosition or "Left"
-    self.HealthBarOffset = settings.HealthBarOffset or 2
+    self.HealthBarOffset = num(settings.HealthBarOffset, 2)
 
     self.SkeletonColor = settings.SkeletonColor or Color3.new(1, 1, 1)
-    self.SkeletonThickness = settings.SkeletonThickness or 1
-    self.SkeletonTransparency = settings.SkeletonTransparency or 0
+    self.SkeletonThickness = math.max(1, num(settings.SkeletonThickness, 1))
+    self.SkeletonTransparency = math.clamp(num(settings.SkeletonTransparency, 0), 0, 1)
 
-    self.MaxDistance = settings.MaxDistance or nil
-    self.MaxEntities = settings.MaxEntities or nil
-    self.UpdateRate = settings.UpdateRate or 1
+    self.MaxDistance = tonumber(settings.MaxDistance) or nil
+    self.MaxEntities = tonumber(settings.MaxEntities) or nil
+    self.UpdateRate = math.max(1, num(settings.UpdateRate, 1))
     self.VisibleOnly = settings.VisibleOnly or false
     self.RainbowEnabled = settings.RainbowEnabled or false
-    self.RainbowSpeed = settings.RainbowSpeed or 1
+    self.RainbowSpeed = num(settings.RainbowSpeed, 1)
 
     self.Sources = {}
     self.Cache = {}
@@ -138,6 +143,8 @@ end
 
 -- ===== HELPERS ===== --
 function ESP:GetRoot(model)
+    if not model then return nil end
+    if model:IsA("BasePart") then return model end
     return model:FindFirstChild("HumanoidRootPart")
         or model:FindFirstChild("Torso")
         or model:FindFirstChild("Head")
@@ -145,25 +152,32 @@ function ESP:GetRoot(model)
 end
 
 function ESP:GetHead(model)
+    if not model then return nil end
+    if model:IsA("BasePart") then return model end
     return model:FindFirstChild("Head") or self:GetRoot(model)
 end
 
 function ESP:IsVisible(part, camPos)
+    if not part or not part.Parent then return false end
     local pos = part.Position
-    local dir = (pos - camPos).Unit
-    local dist = (pos - camPos).Magnitude
-    local ray = Ray.new(camPos, dir * dist)
-    local ignore = {LocalPlayer.Character, Camera}
+    local diff = pos - camPos
+    local dist = diff.Magnitude
+    if dist < 0.01 then return true end
+    local ray = Ray.new(camPos, diff.Unit * dist)
+    local camera = workspace.CurrentCamera
+    local ignore = {LocalPlayer.Character, camera}
     local hit = workspace:FindPartOnRayWithIgnoreList(ray, ignore, false, true)
     if not hit then return false end
     local character = part
     while character and not character:IsA("Model") do character = character.Parent end
-    return character and hit:IsDescendantOf(character)
+    return character ~= nil and hit:IsDescendantOf(character)
 end
 
 function ESP:BuildList()
     local list = {}
-    local camPos = Camera.CFrame.Position
+    local camera = workspace.CurrentCamera
+    if not camera then return list end
+    local camPos = camera.CFrame.Position
     local localChar = LocalPlayer.Character
     local seen = {}
 
@@ -173,13 +187,15 @@ function ESP:BuildList()
             if ok and entities then
                 for _, entity in ipairs(entities) do
                     local model, playerObj
-                    if typeof(entity) == "Instance" and entity:IsA("Player") then
-                        playerObj = entity
-                        model = entity.Character
-                    elseif typeof(entity) == "Instance" and entity:IsA("Model") then
-                        model = entity
-                    elseif typeof(entity) == "Instance" and entity:IsA("BasePart") then
-                        model = entity.Parent
+                    if typeof(entity) == "Instance" then
+                        if entity:IsA("Player") then
+                            playerObj = entity
+                            model = entity.Character
+                        elseif entity:IsA("BasePart") then
+                            model = entity
+                        elseif entity:IsA("Model") then
+                            model = entity
+                        end
                     end
 
                     if model and model ~= localChar and model.Parent and not seen[model] then
@@ -224,7 +240,9 @@ end
 
 function ESP:GetKey(entry)
     if entry.Player then return "P_" .. entry.Player.Name end
-    return "M_" .. entry.Model.Name .. "_" .. tostring(entry.Model:GetDebugId())
+    local id = 0
+    pcall(function() id = entry.Model:GetDebugId() end)
+    return "M_" .. entry.Model.Name .. "_" .. tostring(id)
 end
 
 -- ===== BOX SIZING ===== --
@@ -232,6 +250,9 @@ function ESP:GetBoxRect(entry)
     local model = entry.Model
     local root = entry.Root
     if not model or not model.Parent or not root or not root.Parent then return nil end
+
+    local camera = workspace.CurrentCamera
+    if not camera then return nil end
 
     local head = model:FindFirstChild("Head")
     local humanoid = model:FindFirstChildOfClass("Humanoid")
@@ -256,21 +277,22 @@ function ESP:GetBoxRect(entry)
             end
         end
         bottomWorld = Vector3.new(root.Position.X, bottomY, root.Position.Z)
-    else
-        if not model:IsA("Model") and not model:IsA("BasePart") then return nil end
-        local cf, size
-        if model:IsA("Model") then
-            cf, size = model:GetBoundingBox()
-        else
-            cf, size = model.CFrame, model.Size
-        end
+    elseif model:IsA("BasePart") then
+        local size = model.Size
+        if size.Magnitude == 0 then return nil end
+        topWorld = model.Position + Vector3.new(0, size.Y * 0.5, 0)
+        bottomWorld = model.Position - Vector3.new(0, size.Y * 0.5, 0)
+    elseif model:IsA("Model") then
+        local cf, size = model:GetBoundingBox()
         if size.Magnitude == 0 then return nil end
         topWorld = cf.Position + Vector3.new(0, size.Y * 0.5, 0)
         bottomWorld = cf.Position - Vector3.new(0, size.Y * 0.5, 0)
+    else
+        return nil
     end
 
-    local topScreen, topOn = Camera:WorldToViewportPoint(topWorld)
-    local bottomScreen, bottomOn = Camera:WorldToViewportPoint(bottomWorld)
+    local topScreen, topOn = camera:WorldToViewportPoint(topWorld)
+    local bottomScreen, bottomOn = camera:WorldToViewportPoint(bottomWorld)
     if not topOn or not bottomOn then return nil end
 
     local height = math.abs(bottomScreen.Y - topScreen.Y)
@@ -316,7 +338,7 @@ function ESP:CreateText(entry)
     label.TextTransparency = self.TextTransparency
     label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
     label.TextYAlignment = Enum.TextYAlignment.Bottom
-    label.Text = "Name: " .. entry.Model.Name
+    label.Text = entry.Model.Name
     label.ZIndex = 10
 
     pcall(function() billboard.Adornee = head end)
@@ -495,6 +517,12 @@ function ESP:UpdateSkeleton(data, entry)
         return
     end
 
+    local camera = workspace.CurrentCamera
+    if not camera then
+        for _, line in pairs(data.Lines) do line.Visible = false end
+        return
+    end
+
     local rig = hum.RigType.Name
     if data.Rig ~= rig then
         for _, line in pairs(data.Lines) do line:Remove() end
@@ -524,8 +552,8 @@ function ESP:UpdateSkeleton(data, entry)
         local partB = entry.Model:FindFirstChild(connection[2])
 
         if partA and partB then
-            local posA, onA = Camera:WorldToViewportPoint(partA.Position)
-            local posB, onB = Camera:WorldToViewportPoint(partB.Position)
+            local posA, onA = camera:WorldToViewportPoint(partA.Position)
+            local posB, onB = camera:WorldToViewportPoint(partB.Position)
             if onA and onB then
                 line.From = Vector2.new(posA.X, posA.Y)
                 line.To = Vector2.new(posB.X, posB.Y)
