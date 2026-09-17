@@ -16,6 +16,7 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     self.TargetPlayers = settings.TargetPlayers ~= false
     self.TeamCheck = settings.TeamCheck or false
     self.TeamCheckFunc = settings.TeamCheckFunc or nil
+    self.WallCheck = settings.WallCheck ~= false
     self.MaxDistance = settings.MaxDistance
 
     self.FOVSize = settings.FOVSize or 500
@@ -41,6 +42,11 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     self.MobileButton = nil
     self.MobileButtonGui = nil
     self.OnStateChanged = nil
+
+    self.MobileWallCheckEnabled = settings.MobileWallCheckEnabled or false
+    self.MobileWallCheckButton = nil
+    self.MobileWallCheckGui = nil
+    self.OnWallCheckChanged = nil
 
     local builtInWhitelist = settings.BuiltInWhitelist or {}
     local externalWhitelist = settings.Whitelist or {}
@@ -227,6 +233,10 @@ end
 function Aimlock:GetClosestVisiblePoint(part, targetChar, camPos, ignoreChar)
     if not part or not part:IsA("BasePart") then return nil, math.huge end
 
+    if not self.WallCheck then
+        return part.Position, (part.Position - camPos).Magnitude
+    end
+
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Blacklist
     params.FilterDescendantsInstances = {ignoreChar}
@@ -393,8 +403,6 @@ function Aimlock:GetCandidateRoot(entity)
         or entity:FindFirstChildWhichIsA("BasePart")
 end
 
--- Priority values: 1 = PriorityTarget, 2 = Targetlist, 3 = Normal
--- Lower priority number wins. Within the same priority class, closest to crosshair wins.
 function Aimlock:ScoreCandidate(entity, priority, camPos, fPos, maxScreenDist)
     if not entity then return nil end
 
@@ -449,7 +457,6 @@ function Aimlock:FindBestTarget()
     )
     local maxScreenDist = self.FOVSize / 2
 
-    -- PHASE 1: Collect candidates by screen position only, no raycasts
     local bestCandidate = nil
 
     local function consider(entity, priority)
@@ -498,7 +505,6 @@ function Aimlock:FindBestTarget()
 
     if not bestCandidate then return nil end
 
-    -- PHASE 2: Full part resolution + grid calculation on that single target
     local entity = bestCandidate.Entity
     local parts = self:GetAimParts(entity)
 
@@ -575,6 +581,18 @@ function Aimlock:SetEnabled(state)
     end
 end
 
+function Aimlock:SetWallCheck(state)
+    if self.WallCheck == state then
+        self:UpdateWallCheckButton()
+        return
+    end
+    self.WallCheck = state
+    self:UpdateWallCheckButton()
+    if self.OnWallCheckChanged then
+        self.OnWallCheckChanged(state)
+    end
+end
+
 -- ===== MOBILE BUTTON ===== --
 function Aimlock:CreateMobileButton()
     if self.MobileButtonGui then
@@ -638,6 +656,82 @@ function Aimlock:UpdateMobileButton()
         self.MobileButton.Text = "Aimlock : OFF"
         self.MobileButton.BackgroundColor3 = Color3.new(0, 0, 0)
     end
+end
+
+-- ===== WALL CHECK MOBILE BUTTON ===== --
+function Aimlock:CreateWallCheckMobileButton()
+    if self.MobileWallCheckGui then
+        self.MobileWallCheckGui.Enabled = true
+        self:UpdateWallCheckButton()
+        return
+    end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = self.AimlockName .. "WallCheckMobileToggle"
+    gui.IgnoreGuiInset = true
+    gui.ResetOnSpawn = false
+    gui.Parent = self.LocalPlayer:WaitForChild("PlayerGui")
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 140, 0, 40)
+    btn.Position = UDim2.new(0.875, 0, 0.2, 0)
+    btn.Text = "Wall Check : ON"
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+    btn.TextScaled = true
+    btn.Font = Enum.Font.SourceSansBold
+    btn.Draggable = true
+    btn.Active = true
+    btn.Parent = gui
+
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+
+    self.MobileWallCheckButton = btn
+    self.MobileWallCheckGui = gui
+
+    btn.MouseButton1Click:Connect(function()
+        self:SetWallCheck(not self.WallCheck)
+    end)
+
+    self:UpdateWallCheckButton()
+end
+
+function Aimlock:SetWallCheckMobileButtonVisible(visible)
+    if not self.MobileWallCheckGui then
+        if visible then self:CreateWallCheckMobileButton() end
+        return
+    end
+    self.MobileWallCheckGui.Enabled = visible
+end
+
+function Aimlock:DestroyWallCheckMobileButton()
+    if self.MobileWallCheckGui then
+        self.MobileWallCheckGui:Destroy()
+        self.MobileWallCheckGui = nil
+        self.MobileWallCheckButton = nil
+    end
+end
+
+function Aimlock:UpdateWallCheckButton()
+    if not self.MobileWallCheckButton then return end
+    if self.WallCheck then
+        self.MobileWallCheckButton.Text = "Wall Check : ON"
+        self.MobileWallCheckButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+    else
+        self.MobileWallCheckButton.Text = "Wall Check : OFF"
+        self.MobileWallCheckButton.BackgroundColor3 = Color3.new(0, 0, 0)
+    end
+end
+
+-- ===== DESTROY ===== --
+function Aimlock:Destroy()
+    self:Stop()
+    if self.Gui then
+        self.Gui:Destroy()
+        self.Gui = nil
+    end
+    self:DestroyMobileButton()
+    self:DestroyWallCheckMobileButton()
 end
 
 return Aimlock
