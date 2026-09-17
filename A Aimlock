@@ -6,8 +6,10 @@ local DEFAULTS = {
     Enabled = false,
     LockAnywhere = false,
     TeamCheck = false,
+    WallCheck = true,
     MaxDistance = nil,
     MobileButtonEnabled = true,
+    MobileWallCheckEnabled = false,
 
     FOVSize = 500,
     CrossOffset = Vector2.new(0, 0),
@@ -79,6 +81,17 @@ B.TeamCheck = function(g, p, e)
     })
 end
 
+B.WallCheck = function(g, p, e)
+    e._wallCheckToggle = g:AddCheckbox(p.."WallCheck", {
+        Text = "Wall Check",
+        Default = e.WallCheck,
+        Callback = function(v)
+            e.WallCheck = v
+            e:UpdateWallCheckButton()
+        end,
+    })
+end
+
 B.MaxDistance = function(g, p, e)
     g:AddInput(p.."MaxDistance", {
         Text = "Max Distance",
@@ -96,7 +109,7 @@ end
 
 B.MobileQuickToggle = function(g, p, e)
     g:AddCheckbox(p.."MobileQuickToggle", {
-        Text = "Mobile Quick Toggle",
+        Text = "Mobile Quick Aimlock Toggle",
         Default = e.MobileButtonEnabled,
         Callback = function(v)
             e.MobileButtonEnabled = v
@@ -105,8 +118,19 @@ B.MobileQuickToggle = function(g, p, e)
     })
 end
 
+B.MobileWallCheckToggle = function(g, p, e)
+    g:AddCheckbox(p.."MobileWallCheckToggle", {
+        Text = "Mobile Quick Wall Check Toggle",
+        Default = e.MobileWallCheckEnabled,
+        Callback = function(v)
+            e.MobileWallCheckEnabled = v
+            e:SetWallCheckMobileButtonVisible(v)
+        end,
+    })
+end
+
 B.Keybind = function(g, p, e)
-    g:AddLabel("Keybind"):AddKeyPicker(p.."Keybind", {
+    g:AddLabel("Aimlock Keybind"):AddKeyPicker(p.."Keybind", {
         Default = "E",
         Mode = "Press",
         Text = "Aimlock Keybind",
@@ -115,6 +139,18 @@ B.Keybind = function(g, p, e)
             if uiToggle then
                 uiToggle:SetValue(not uiToggle.Value)
             end
+        end,
+    })
+end
+
+B.WallCheckKeybind = function(g, p, e)
+    g:AddLabel("Wall Check Keybind"):AddKeyPicker(p.."WallCheckKeybind", {
+        Default = "Q",
+        Mode = "Toggle",
+        Text = "Wall Check Keybind",
+        Callback = function()
+            local cb = e._wallCheckToggle
+            if cb then cb:SetValue(not cb.Value) end
         end,
     })
 end
@@ -389,9 +425,12 @@ local SECTIONS = {
         {"EnabledToggle"},
         {"LockAnywhere"},
         {"TeamCheck"},
+        {"WallCheck"},
         {"MaxDistance"},
         {"MobileQuickToggle"},
+        {"MobileWallCheckToggle"},
         {"Keybind"},
+        {"WallCheckKeybind"},
     },
     Target = {
         {"TargetPlayers"},
@@ -501,6 +540,15 @@ local function setupStateSync(aim)
     end
 end
 
+local function setupWallCheckSync(aim)
+    aim.OnWallCheckChanged = function(state)
+        local cb = aim._wallCheckToggle
+        if cb and cb.Value ~= state then
+            cb:SetValue(state)
+        end
+    end
+end
+
 -- ===== FACTORY ===== --
 local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sources)
     config = config or {}
@@ -516,10 +564,16 @@ local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sourc
 
     aim:CreateFOV()
     setupStateSync(aim)
+    setupWallCheckSync(aim)
 
     if aim.MobileButtonEnabled then
         aim:CreateMobileButton()
         aim:SetMobileButtonVisible(true)
+    end
+
+    if aim.MobileWallCheckEnabled then
+        aim:CreateWallCheckMobileButton()
+        aim:SetWallCheckMobileButtonVisible(true)
     end
 
     Build(Group, prefix, aim, config)
