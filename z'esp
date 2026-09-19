@@ -690,26 +690,20 @@ end
 
 function ESP:Start()
     if self.LoopConnection then return end
-    self._bindName = "ESP_Update_" .. tostring(math.random(1, 1000000))
-    RunService:BindToRenderStep(self._bindName, Enum.RenderPriority.Camera.Value + 200, function()
-        self:Step()
-    end)
-    self.LoopConnection = true
+    self.LoopConnection = RunService.RenderStepped:Connect(function() self:Step() end)
 end
 
 function ESP:Stop()
-    if self._bindName then
-        pcall(function()
-            RunService:UnbindFromRenderStep(self._bindName)
-        end)
-        self._bindName = nil
+    if self.LoopConnection then
+        self.LoopConnection:Disconnect()
+        self.LoopConnection = nil
     end
-    self.LoopConnection = nil
     for _, data in pairs(self.Cache) do
         self:DestroyEntry(data)
     end
     self.Cache = {}
 end
+
 function ESP:SetEnabled(state)
     self.Enabled = state
     if state then
