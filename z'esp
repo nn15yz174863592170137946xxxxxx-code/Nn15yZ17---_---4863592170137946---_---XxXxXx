@@ -86,6 +86,7 @@ function ESP.new(settings)
     self.VisibleOnly = settings.VisibleOnly or false
     self.RainbowEnabled = settings.RainbowEnabled or false
     self.RainbowSpeed = num(settings.RainbowSpeed, 1)
+    self.RenderPriority = tonumber(settings.RenderPriority) or (Enum.RenderPriority.Camera.Value + 200)
 
     self.Sources = {}
     self.Cache = {}
@@ -690,14 +691,21 @@ end
 
 function ESP:Start()
     if self.LoopConnection then return end
-    self.LoopConnection = RunService.RenderStepped:Connect(function() self:Step() end)
+    self._bindName = "ESP_Update_" .. tostring(math.random(1, 1000000))
+    RunService:BindToRenderStep(self._bindName, self.RenderPriority, function()
+        self:Step()
+    end)
+    self.LoopConnection = true
 end
 
 function ESP:Stop()
-    if self.LoopConnection then
-        self.LoopConnection:Disconnect()
-        self.LoopConnection = nil
+    if self._bindName then
+        pcall(function()
+            RunService:UnbindFromRenderStep(self._bindName)
+        end)
+        self._bindName = nil
     end
+    self.LoopConnection = nil
     for _, data in pairs(self.Cache) do
         self:DestroyEntry(data)
     end
