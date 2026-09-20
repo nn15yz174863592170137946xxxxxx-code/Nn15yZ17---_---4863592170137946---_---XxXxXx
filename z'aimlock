@@ -434,6 +434,19 @@ function Aimlock:ScoreCandidate(entity, priority, camPos, fPos, maxScreenDist)
 
     if screenDist > maxScreenDist then return nil end
 
+    if self.WallCheck then
+        local ignoreChar = self.LocalPlayer.Character
+        local parts = self:GetAimParts(entity)
+        local visible = false
+        for _, part in ipairs(parts) do
+            if self:GetClosestVisiblePoint(part, entity, camPos, ignoreChar) then
+                visible = true
+                break
+            end
+        end
+        if not visible then return nil end
+    end
+
     return {
         Entity = entity,
         Root = root,
