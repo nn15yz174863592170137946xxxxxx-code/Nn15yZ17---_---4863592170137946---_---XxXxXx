@@ -10,6 +10,7 @@ local DEFAULTS = {
     MaxDistance = nil,
     MobileButtonEnabled = true,
     MobileWallCheckEnabled = false,
+    UpdateRate = 0,
 
     FOVSize = 500,
     CrossOffset = Vector2.new(0, 0),
@@ -35,7 +36,7 @@ local DEFAULT_FEATURES = {
     FOV = true,
 }
 
--- ===== MERGE ===== --
+-- ===== HELPERS ===== --
 local function merge(a, b)
     local out = {}
     for k, v in pairs(a) do out[k] = v end
@@ -43,15 +44,36 @@ local function merge(a, b)
     return out
 end
 
--- ===== HELPERS ===== --
-local function buildPlayerOptions(Players, LocalPlayer)
-    local names = {"None"}
+local function buildSortedPlayerList(Players, LocalPlayer)
+    local names = {}
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
-            table.insert(names, plr.Name)
+            names[#names + 1] = plr.Name
         end
     end
+    table.sort(names)
     return names
+end
+
+-- ===== LIVE PLAYER DROPDOWN ===== --
+local function makeLivePlayerDropdown(g, prefix, idx, text, target, field)
+    local dropdown = g:AddDropdown(prefix..idx, {
+        Text = text,
+        Values = buildSortedPlayerList(target.Players, target.LocalPlayer),
+        Default = {},
+        Multi = true,
+        Searchable = true,
+        Callback = function(selection)
+            local out = {}
+            for k, v in pairs(selection) do
+                if v and type(k) == "string" then
+                    out[#out + 1] = k
+                end
+            end
+            target[field] = out
+        end,
+    })
+    return dropdown
 end
 
 -- ===== BUILDERS ===== --
@@ -107,6 +129,17 @@ B.MaxDistance = function(g, p, e)
     })
 end
 
+B.UpdateRate = function(g, p, e)
+    g:AddSlider(p.."UpdateRate", {
+        Text = "Update Rate",
+        Default = e.UpdateRate,
+        Min = 0,
+        Max = 1,
+        Rounding = 2,
+        Callback = function(v) e.UpdateRate = v end,
+    })
+end
+
 B.MobileQuickToggle = function(g, p, e)
     g:AddCheckbox(p.."MobileQuickToggle", {
         Text = "Mobile Quick Aimlock Toggle",
@@ -136,9 +169,7 @@ B.Keybind = function(g, p, e)
         Text = "Aimlock Keybind",
         Callback = function()
             local uiToggle = e._uiToggle
-            if uiToggle then
-                uiToggle:SetValue(not uiToggle.Value)
-            end
+            if uiToggle then uiToggle:SetValue(not uiToggle.Value) end
         end,
     })
 end
@@ -174,70 +205,18 @@ B.TargetCustom = function(g, p, e)
             g:AddCheckbox(p.."Target_"..name, {
                 Text = "Target "..name,
                 Default = src.Enabled,
-                Callback = function(v)
-                    src.Enabled = v
-                end,
+                Callback = function(v) src.Enabled = v end,
             })
         end
     end
 end
 
 B.Whitelist = function(g, p, e)
-    local names = buildPlayerOptions(e.Players, e.LocalPlayer)
-    local dropdown
-
-    dropdown = g:AddDropdown(p.."Whitelist", {
-        Text = "Whitelist",
-        Values = names,
-        Multi = true,
-        Default = {},
-        Searchable = true,
-        Callback = function(selection)
-            if selection["None"] then
-                dropdown:SetValue({})
-                e.Whitelist = {}
-                return
-            end
-            local out = {}
-            for k, v in pairs(selection) do
-                if type(k) == "string" and k ~= "None" then
-                    table.insert(out, k)
-                end
-            end
-            e.Whitelist = out
-        end,
-    })
-
-    e._uiWhitelist = dropdown
+    e._uiWhitelist = makeLivePlayerDropdown(g, p, "Whitelist", "Whitelist", e, "Whitelist")
 end
 
 B.PriorityTarget = function(g, p, e)
-    local names = buildPlayerOptions(e.Players, e.LocalPlayer)
-    local dropdown
-
-    dropdown = g:AddDropdown(p.."PriorityTarget", {
-        Text = "Priority Target",
-        Values = names,
-        Multi = true,
-        Default = {},
-        Searchable = true,
-        Callback = function(selection)
-            if selection["None"] then
-                dropdown:SetValue({})
-                e.Targetlist = {}
-                return
-            end
-            local out = {}
-            for k, v in pairs(selection) do
-                if type(k) == "string" and k ~= "None" then
-                    table.insert(out, k)
-                end
-            end
-            e.Targetlist = out
-        end,
-    })
-
-    e._uiPriorityTarget = dropdown
+    e._uiPriorityTarget = makeLivePlayerDropdown(g, p, "PriorityTarget", "Priority Target", e, "Targetlist")
 end
 
 B.PredictionXZ = function(g, p, e)
@@ -279,11 +258,14 @@ B.AutoPrediction = function(g, p, e)
 end
 
 B.SampleMode = function(g, p, e)
+    local values = {"1x1x1 (1)", "2x2x2 (8)", "3x3x3 (27)"}
     g:AddDropdown(p.."SampleMode", {
         Text = "Grid Mode",
-        Values = {"1", "2", "3"},
-        Default = tostring(e.SampleMode),
-        Callback = function(v) e.SampleMode = tonumber(v) end,
+        Values = values,
+        Default = values[e.SampleMode] or values[2],
+        Callback = function(v)
+            e.SampleMode = tonumber(v:match("^%d")) or 2
+        end,
     })
 end
 
@@ -298,11 +280,11 @@ B.AimPart = function(g, p, e)
         Callback = function(selected)
             local newOrder = {}
             for _, name in ipairs(order) do
-                if selected[name] then table.insert(newOrder, name) end
+                if selected[name] then newOrder[#newOrder + 1] = name end
             end
             for name, checked in pairs(selected) do
                 if checked and not table.find(newOrder, name) then
-                    table.insert(newOrder, name)
+                    newOrder[#newOrder + 1] = name
                 end
             end
             order = newOrder
@@ -312,8 +294,7 @@ B.AimPart = function(g, p, e)
 end
 
 B.HeadChance = function(g, p, e)
-    local headSlider
-    local torsoSlider
+    local headSlider, torsoSlider
     local updating = false
 
     headSlider = g:AddSlider(p.."HeadChance", {
@@ -422,80 +403,47 @@ end
 -- ===== SECTIONS ===== --
 local SECTIONS = {
     Enabled = {
-        {"EnabledToggle"},
-        {"LockAnywhere"},
-        {"TeamCheck"},
-        {"WallCheck"},
-        {"MaxDistance"},
-        {"MobileQuickToggle"},
-        {"MobileWallCheckToggle"},
-        {"Keybind"},
-        {"WallCheckKeybind"},
+        {"EnabledToggle"}, {"LockAnywhere"}, {"TeamCheck"}, {"WallCheck"},
+        {"MaxDistance"}, {"UpdateRate"}, {"MobileQuickToggle"},
+        {"MobileWallCheckToggle"}, {"Keybind"}, {"WallCheckKeybind"},
     },
     Target = {
-        {"TargetPlayers"},
-        {"TargetCustom"},
+        {"TargetPlayers"}, {"TargetCustom"},
     },
     Lists = {
-        {"Whitelist"},
-        {"PriorityTarget"},
+        {"Whitelist"}, {"PriorityTarget"},
     },
     Prediction = {
-        {"PredictionXZ"},
-        {"PredictionY"},
-        {"AutoPrediction"},
+        {"PredictionXZ"}, {"PredictionY"}, {"AutoPrediction"},
     },
     Targeting = {
-        {"SampleMode"},
-        {"AimPart"},
-        {"HeadChance"},
+        {"SampleMode"}, {"AimPart"}, {"HeadChance"},
     },
     FOV = {
-        {"FOVSize"},
-        {"CrossOffsetX"},
-        {"CrossOffsetY"},
-        {"FOVRainbowEnabled"},
-        {"CrosshairRainbowEnabled"},
-        {"RainbowSpeed"},
+        {"FOVSize"}, {"CrossOffsetX"}, {"CrossOffsetY"},
+        {"FOVRainbowEnabled"}, {"CrosshairRainbowEnabled"}, {"RainbowSpeed"},
     },
 }
 
-local SECTION_ORDER = {
-    "Enabled",
-    "Target",
-    "Lists",
-    "Prediction",
-    "Targeting",
-    "FOV",
-}
+local SECTION_ORDER = {"Enabled", "Target", "Lists", "Prediction", "Targeting", "FOV"}
 
 -- ===== BUILD ===== --
 local function Build(Group, prefix, aim, config)
     config = config or {}
     local features = merge(DEFAULT_FEATURES, config.Features)
-
     local exclude = {}
-    for _, id in ipairs(config.Exclude or {}) do
-        exclude[id] = true
-    end
+    for _, id in ipairs(config.Exclude or {}) do exclude[id] = true end
 
     local sectionsBuilt = 0
-
     for _, sectionName in ipairs(SECTION_ORDER) do
         if features[sectionName] ~= false then
             local toRun = {}
-
             for _, entry in ipairs(SECTIONS[sectionName]) do
                 local id = entry[1]
-                if not exclude[id] then
-                    table.insert(toRun, id)
-                end
+                if not exclude[id] then toRun[#toRun + 1] = id end
             end
-
             if #toRun > 0 then
-                if sectionsBuilt > 0 then
-                    Group:AddDivider()
-                end
+                if sectionsBuilt > 0 then Group:AddDivider() end
                 for _, id in ipairs(toRun) do
                     if B[id] then B[id](Group, prefix, aim) end
                 end
@@ -505,28 +453,23 @@ local function Build(Group, prefix, aim, config)
     end
 end
 
--- ===== PLAYER LIST REFRESH ===== --
-local function setupPlayerListRefresh(Players, LocalPlayer, aim)
-    local function refresh()
-        local names = buildPlayerOptions(Players, LocalPlayer)
-
-        if aim._uiWhitelist and aim._uiWhitelist.SetValues then
-            aim._uiWhitelist:SetValues(names)
+-- ===== LIVE PLAYER LIST REFRESH (single shared loop) ===== --
+local function setupLivePlayerRefresh(aim)
+    if not aim._uiWhitelist then return end
+    task.spawn(function()
+        local lastKey = ""
+        while true do
+            task.wait()
+            local names = buildSortedPlayerList(aim.Players, aim.LocalPlayer)
+            local key = table.concat(names, "|")
+            if key ~= lastKey then
+                lastKey = key
+                pcall(function() aim._uiWhitelist:SetValues(names) end)
+                if aim._uiPriorityTarget then
+                    pcall(function() aim._uiPriorityTarget:SetValues(names) end)
+                end
+            end
         end
-
-        if aim._uiPriorityTarget and aim._uiPriorityTarget.SetValues then
-            aim._uiPriorityTarget:SetValues(names)
-        end
-    end
-
-    Players.PlayerAdded:Connect(function()
-        task.wait(0.3)
-        refresh()
-    end)
-
-    Players.PlayerRemoving:Connect(function()
-        task.wait(0.3)
-        refresh()
     end)
 end
 
@@ -552,7 +495,6 @@ end
 -- ===== FACTORY ===== --
 local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sources)
     config = config or {}
-
     local settings = merge(DEFAULTS, config.Settings)
     local aim = Aimlock.new(Players, LocalPlayer, Camera, settings)
 
@@ -577,7 +519,7 @@ local function Create(Group, prefix, Players, LocalPlayer, Camera, config, sourc
     end
 
     Build(Group, prefix, aim, config)
-    setupPlayerListRefresh(Players, LocalPlayer, aim)
+    setupLivePlayerRefresh(aim)
 
     return aim
 end
