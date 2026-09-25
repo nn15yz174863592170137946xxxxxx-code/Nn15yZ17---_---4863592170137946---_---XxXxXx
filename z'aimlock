@@ -11,13 +11,12 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     self.Players = playersService
     self.LocalPlayer = localPlayer
     self.Camera = camera
+    self._localTeamColor = localPlayer.TeamColor
 
-    self.AimlockName = settings.AimlockName or "Aimlock"
     self.Enabled = false
     self.LockAnywhere = settings.LockAnywhere or false
     self.TargetPlayers = settings.TargetPlayers ~= false
     self.TeamCheck = settings.TeamCheck or false
-    self.TeamCheckFunc = settings.TeamCheckFunc or nil
     self.WallCheck = settings.WallCheck ~= false
     self.MaxDistance = settings.MaxDistance
 
@@ -51,18 +50,7 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     self.MobileWallCheckGui = nil
     self.OnWallCheckChanged = nil
 
-    local builtInWhitelist = settings.BuiltInWhitelist or {}
-    local externalWhitelist = settings.Whitelist or {}
-    if settings.RespectBuiltInWhitelist ~= false then
-        self.Whitelist = {}
-        for _, name in ipairs(builtInWhitelist) do self.Whitelist[#self.Whitelist + 1] = name end
-        for _, name in ipairs(externalWhitelist) do
-            if not table.find(self.Whitelist, name) then self.Whitelist[#self.Whitelist + 1] = name end
-        end
-    else
-        self.Whitelist = externalWhitelist
-    end
-
+    self.Whitelist = settings.Whitelist or {}
     self.Targetlist = settings.Targetlist or {}
 
     self.TargetSources = {}
@@ -76,7 +64,6 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     end
 
     self.LoopConnection = nil
-    self.PriorityTarget = nil
     self._pointCache = {}
     self._ignoreList = {}
 
@@ -102,9 +89,11 @@ end
 function Aimlock:CreateFOV(parent)
     if self.Gui then self.Gui:Destroy() end
     local gui = Instance.new("ScreenGui", parent or self.LocalPlayer.PlayerGui)
-    gui.Name = self.AimlockName .. "FOV"
+    gui.Name = "AimlockFOV"
     gui.IgnoreGuiInset = true
     gui.ResetOnSpawn = false
+
+    local co = self.CrossOffset
 
     local function mk(pos, size)
         local f = Instance.new("Frame", gui)
@@ -117,9 +106,10 @@ function Aimlock:CreateFOV(parent)
         return f
     end
 
-    self.CrossV = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, 2, 0, 14))
-    self.CrossH = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, 14, 0, 2))
-    self.FOVCircle = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, self.FOVSize, 0, self.FOVSize))
+    local basePos = UDim2.new(0.5, co.X, 0.5, co.Y)
+    self.CrossV = mk(basePos, UDim2.new(0, 2, 0, 14))
+    self.CrossH = mk(basePos, UDim2.new(0, 14, 0, 2))
+    self.FOVCircle = mk(basePos, UDim2.new(0, self.FOVSize, 0, self.FOVSize))
     self.FOVCircle.BackgroundTransparency = 1
     Instance.new("UICorner", self.FOVCircle).CornerRadius = UDim.new(1, 0)
 
@@ -155,35 +145,31 @@ end
 function Aimlock:UpdateFOVSize(size)
     self.FOVSize = size
     if self.FOVCircle then
+        local co = self.CrossOffset
         self.FOVCircle.Size = UDim2.new(0, size, 0, size)
-        self.FOVCircle.Position = UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y)
+        self.FOVCircle.Position = UDim2.new(0.5, co.X, 0.5, co.Y)
     end
 end
 
 function Aimlock:UpdateCrossOffset(offset)
     self.CrossOffset = offset
-    if self.FOVCircle then self.FOVCircle.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
-    if self.CrossV then self.CrossV.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
-    if self.CrossH then self.CrossH.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
+    local p = UDim2.new(0.5, offset.X, 0.5, offset.Y)
+    if self.FOVCircle then self.FOVCircle.Position = p end
+    if self.CrossV then self.CrossV.Position = p end
+    if self.CrossH then self.CrossH.Position = p end
 end
 
 -- ===== PREDICTION ===== --
 function Aimlock:GetPredictedPos(point, vel, targetChar)
     if self.AutoPredictionEnabled then
         local ping = self.LocalPlayer:GetNetworkPing()
-        local g = workspace.Gravity
         local hum = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
         local airborne = hum and hum.FloorMaterial == Enum.Material.Air
-
-        local predX = vel.X * ping
-        local predZ = vel.Z * ping
-        local predY
+        local predY = 0
         if airborne then
-            predY = vel.Y * ping - 0.5 * g * ping * ping
-        else
-            predY = 0
+            predY = vel.Y * ping - 0.5 * workspace.Gravity * ping * ping
         end
-        return point + Vector3.new(predX, predY, predZ)
+        return point + Vector3.new(vel.X * ping, predY, vel.Z * ping)
     end
 
     if self.PredictionXZ == 0 and self.PredictionY == 0 then return point end
@@ -197,11 +183,7 @@ end
 -- ===== TEAM ===== --
 function Aimlock:IsSameTeam(plr)
     if not self.TeamCheck then return false end
-    if self.TeamCheckFunc then
-        local ok, result = pcall(self.TeamCheckFunc, plr, self.LocalPlayer)
-        if ok then return result end
-    end
-    return plr.TeamColor == self.LocalPlayer.TeamColor
+    return plr.TeamColor == self._localTeamColor
 end
 
 -- ===== GRID SAMPLING ===== --
@@ -211,7 +193,7 @@ function Aimlock:GetSurfacePoints(size, mode)
     if cached then return cached end
 
     local points = {}
-    local hx, hy, hz = size.X / 2, size.Y / 2, size.Z / 2
+    local hx, hy, hz = size.X * 0.5, size.Y * 0.5, size.Z * 0.5
 
     if mode == 1 then
         points[1] = Vector3.new(0, 0, 0)
@@ -227,7 +209,9 @@ function Aimlock:GetSurfacePoints(size, mode)
         for ix = -1, 1 do
             for iy = -1, 1 do
                 for iz = -1, 1 do
-                    points[#points + 1] = Vector3.new(ix * hx, iy * hy, iz * hz)
+                    if not (ix == 0 and iy == 0 and iz == 0) then
+                        points[#points + 1] = Vector3.new(ix * hx, iy * hy, iz * hz)
+                    end
                 end
             end
         end
@@ -240,18 +224,13 @@ end
 function Aimlock:GetClosestVisiblePoint(part, targetChar, camPos, ignoreChar)
     if not part or not part:IsA("BasePart") then return nil end
 
-    if not self.WallCheck then
-        return part.Position
-    end
+    if not self.WallCheck then return part.Position end
 
     local params = self._rayParams
-    local ignoreList = self._ignoreList
-    ignoreList[1] = ignoreChar
-    params.FilterDescendantsInstances = ignoreList
+    self._ignoreList[1] = ignoreChar
 
     local partPos = part.Position
     local centerDir = partPos - camPos
-
     local centerResult = workspace:Raycast(camPos, centerDir, params)
     if centerResult then
         local hit = centerResult.Instance
@@ -260,27 +239,21 @@ function Aimlock:GetClosestVisiblePoint(part, targetChar, camPos, ignoreChar)
         end
     end
 
-    if self.SampleMode == 1 then
-        return nil
-    end
+    if self.SampleMode == 1 then return nil end
 
     local points = self:GetSurfacePoints(part.Size, self.SampleMode)
     local closestPoint, closestDist = nil, math.huge
-    local count = #points
-    for i = 1, count do
-        local p = points[i]
-        if p.X ~= 0 or p.Y ~= 0 or p.Z ~= 0 then
-            local checkPoint = partPos + p
-            local dir = checkPoint - camPos
-            local dist = dir.Magnitude
-            if dist < closestDist then
-                local result = workspace:Raycast(camPos, dir, params)
-                if result then
-                    local hit = result.Instance
-                    if hit == part or hit:IsDescendantOf(targetChar) then
-                        closestPoint = checkPoint
-                        closestDist = dist
-                    end
+    for i = 1, #points do
+        local checkPoint = partPos + points[i]
+        local dir = checkPoint - camPos
+        local dist = dir.Magnitude
+        if dist < closestDist then
+            local result = workspace:Raycast(camPos, dir, params)
+            if result then
+                local hit = result.Instance
+                if hit == part or hit:IsDescendantOf(targetChar) then
+                    closestPoint = checkPoint
+                    closestDist = dist
                 end
             end
         end
@@ -344,11 +317,6 @@ function Aimlock:ResolveBucketList(entity, bucket)
     return parts
 end
 
-function Aimlock:ResolveBucket(entity, bucket)
-    local list = self:ResolveBucketList(entity, bucket)
-    return list[1]
-end
-
 -- ===== AIM PARTS ===== --
 function Aimlock:GetAimParts(entity)
     if not entity then return {} end
@@ -359,11 +327,8 @@ function Aimlock:GetAimParts(entity)
         return p and {p} or {}
     end
 
-    local headChance = self.HeadChance or 80
-    local roll = math.random() * 100
-
     local primary
-    if roll < headChance and table.find(preference, "Head") then
+    if math.random() * 100 < (self.HeadChance or 80) and table.find(preference, "Head") then
         primary = "Head"
     elseif table.find(preference, "Torso") then
         primary = "Torso"
@@ -402,12 +367,7 @@ function Aimlock:GetAimParts(entity)
     return result
 end
 
-function Aimlock:GetAimPart(entity)
-    local parts = self:GetAimParts(entity)
-    return parts[1]
-end
-
--- ===== CANDIDATE SCORING (FOV + crosshair only) ===== --
+-- ===== CANDIDATE SCORING ===== --
 function Aimlock:GetCandidateRoot(entity)
     return entity:FindFirstChild("HumanoidRootPart")
         or entity:FindFirstChild("Head")
@@ -421,14 +381,11 @@ function Aimlock:GetScreenDistance(entity, camPos, fPos, maxScreenDist)
     local root = self:GetCandidateRoot(entity)
     if not root then return nil end
 
-    if self.MaxDistance then
-        local wd = (camPos - root.Position).Magnitude
-        if wd > self.MaxDistance then return nil end
+    if self.MaxDistance and (camPos - root.Position).Magnitude > self.MaxDistance then
+        return nil
     end
 
-    if self.LockAnywhere then
-        return 0, root
-    end
+    if self.LockAnywhere then return 0, root end
 
     local sp, onScreen = self.Camera:WorldToViewportPoint(root.Position)
     if not onScreen then return nil end
@@ -444,22 +401,20 @@ end
 -- ===== TARGET SEARCH ===== --
 function Aimlock:FindBestTarget()
     local char = self.LocalPlayer.Character
-    if not char then return nil end
-    if not char:FindFirstChild("HumanoidRootPart") then return nil end
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
 
     local camPos = self.Camera.CFrame.Position
     local vp = self.Camera.ViewportSize
-    local fPos = Vector2.new(vp.X / 2 + self.CrossOffset.X, vp.Y / 2 + self.CrossOffset.Y)
-    local maxScreenDist = self.FOVSize / 2
+    local co = self.CrossOffset
+    local fPos = Vector2.new(vp.X * 0.5 + co.X, vp.Y * 0.5 + co.Y)
+    local maxScreenDist = self.FOVSize * 0.5
 
     local bestEntity, bestDist, bestPart, bestPoint = nil, math.huge, nil, nil
 
     local function evaluate(entity)
         if not entity or not entity.Parent then return end
-
         local d = self:GetScreenDistance(entity, camPos, fPos, maxScreenDist)
-        if not d then return end
-        if d >= bestDist then return end
+        if not d or d >= bestDist then return end
 
         local parts = self:GetAimParts(entity)
         for i = 1, #parts do
@@ -471,13 +426,6 @@ function Aimlock:FindBestTarget()
                 bestPoint = point
                 return
             end
-        end
-    end
-
-    local pt = self.PriorityTarget
-    if self.TargetPlayers and pt and pt.Character then
-        if not table.find(self.Whitelist, pt.Name) and not self:IsSameTeam(pt) then
-            evaluate(pt.Character)
         end
     end
 
@@ -528,8 +476,7 @@ function Aimlock:FindBestTarget()
     if onScreen then
         local dx = sp.X - fPos.X
         local dy = sp.Y - fPos.Y
-        local d = math.sqrt(dx * dx + dy * dy)
-        if d <= maxScreenDist then
+        if math.sqrt(dx * dx + dy * dy) <= maxScreenDist then
             return predicted
         end
     end
@@ -558,14 +505,15 @@ function Aimlock:Start()
         local camPos = self.Camera.CFrame.Position
         local lookAt = CFrame.lookAt(camPos, targetPos)
 
-        if self.CrossOffset.X ~= 0 or self.CrossOffset.Y ~= 0 then
+        local co = self.CrossOffset
+        if co.X ~= 0 or co.Y ~= 0 then
             local fovRad = math.rad(self.Camera.FieldOfView)
             local vp = self.Camera.ViewportSize
-            if self.CrossOffset.X ~= 0 then
-                lookAt = lookAt * CFrame.Angles(0, -self.CrossOffset.X * (fovRad / vp.X), 0)
+            if co.X ~= 0 then
+                lookAt = lookAt * CFrame.Angles(0, -co.X * (fovRad / vp.X), 0)
             end
-            if self.CrossOffset.Y ~= 0 then
-                lookAt = lookAt * CFrame.Angles(-self.CrossOffset.Y * (fovRad / vp.Y), 0, 0)
+            if co.Y ~= 0 then
+                lookAt = lookAt * CFrame.Angles(-co.Y * (fovRad / vp.Y), 0, 0)
             end
         end
 
@@ -611,7 +559,7 @@ function Aimlock:CreateMobileButton()
     end
 
     local gui = Instance.new("ScreenGui")
-    gui.Name = self.AimlockName .. "MobileToggle"
+    gui.Name = "AimlockMobileToggle"
     gui.IgnoreGuiInset = true
     gui.ResetOnSpawn = false
     gui.Parent = self.LocalPlayer:WaitForChild("PlayerGui")
@@ -627,16 +575,11 @@ function Aimlock:CreateMobileButton()
     btn.Draggable = true
     btn.Active = true
     btn.Parent = gui
-
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
 
     self.MobileButton = btn
     self.MobileButtonGui = gui
-
-    btn.MouseButton1Click:Connect(function()
-        self:SetEnabled(not self.Enabled)
-    end)
-
+    btn.MouseButton1Click:Connect(function() self:SetEnabled(not self.Enabled) end)
     self:UpdateMobileButton()
 end
 
@@ -676,7 +619,7 @@ function Aimlock:CreateWallCheckMobileButton()
     end
 
     local gui = Instance.new("ScreenGui")
-    gui.Name = self.AimlockName .. "WallCheckMobileToggle"
+    gui.Name = "AimlockWallCheckMobileToggle"
     gui.IgnoreGuiInset = true
     gui.ResetOnSpawn = false
     gui.Parent = self.LocalPlayer:WaitForChild("PlayerGui")
@@ -692,16 +635,11 @@ function Aimlock:CreateWallCheckMobileButton()
     btn.Draggable = true
     btn.Active = true
     btn.Parent = gui
-
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
 
     self.MobileWallCheckButton = btn
     self.MobileWallCheckGui = gui
-
-    btn.MouseButton1Click:Connect(function()
-        self:SetWallCheck(not self.WallCheck)
-    end)
-
+    btn.MouseButton1Click:Connect(function() self:SetWallCheck(not self.WallCheck) end)
     self:UpdateWallCheckButton()
 end
 
