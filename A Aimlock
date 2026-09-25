@@ -57,22 +57,32 @@ end
 
 -- ===== LIVE PLAYER DROPDOWN ===== --
 local function makeLivePlayerDropdown(g, prefix, idx, text, target, field)
+    local order = {}
+
     local dropdown = g:AddDropdown(prefix..idx, {
         Text = text,
         Values = buildSortedPlayerList(target.Players, target.LocalPlayer),
         Default = {},
         Multi = true,
         Searchable = true,
-        Callback = function(selection)
-            local out = {}
-            for k, v in pairs(selection) do
-                if v and type(k) == "string" then
-                    out[#out + 1] = k
+        Callback = function(selected)
+            local newOrder = {}
+
+            for _, name in ipairs(order) do
+                if selected[name] then newOrder[#newOrder + 1] = name end
+            end
+
+            for name, checked in pairs(selected) do
+                if checked and type(name) == "string" and not table.find(newOrder, name) then
+                    newOrder[#newOrder + 1] = name
                 end
             end
-            target[field] = out
+
+            order = newOrder
+            target[field] = newOrder
         end,
     })
+
     return dropdown
 end
 
