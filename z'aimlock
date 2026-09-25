@@ -452,54 +452,65 @@ function Aimlock:FindBestTarget()
     local fPos = Vector2.new(vp.X / 2 + self.CrossOffset.X, vp.Y / 2 + self.CrossOffset.Y)
     local maxScreenDist = self.FOVSize / 2
 
-    local bestEntity, bestDist = nil, math.huge
+    local bestEntity, bestDist, bestPart, bestPoint = nil, math.huge, nil, nil
 
-    local pt = self.PriorityTarget
-    if self.TargetPlayers and pt and pt.Character then
-        if not table.find(self.Whitelist, pt.Name) and not self:IsSameTeam(pt) then
-            local d = self:GetScreenDistance(pt.Character, camPos, fPos, maxScreenDist)
-            if d then
-                bestEntity = pt.Character
+    local function evaluate(entity)
+        if not entity or not entity.Parent then return end
+
+        local d = self:GetScreenDistance(entity, camPos, fPos, maxScreenDist)
+        if not d then return end
+        if d >= bestDist then return end
+
+        local parts = self:GetAimParts(entity)
+        for i = 1, #parts do
+            local point = self:GetClosestVisiblePoint(parts[i], entity, camPos, char)
+            if point then
+                bestEntity = entity
                 bestDist = d
+                bestPart = parts[i]
+                bestPoint = point
+                return
             end
         end
     end
 
-    if not bestEntity then
-        local tlist = self.Targetlist
-        if self.TargetPlayers and tlist and #tlist > 0 then
-            for _, plr in ipairs(self.Players:GetPlayers()) do
-                if plr ~= self.LocalPlayer
-                    and table.find(tlist, plr.Name)
-                    and not table.find(self.Whitelist, plr.Name)
-                    and not self:IsSameTeam(plr) then
-                    local d = self:GetScreenDistance(plr.Character, camPos, fPos, maxScreenDist)
-                    if d and d < bestDist then bestDist = d; bestEntity = plr.Character end
-                end
+    local pt = self.PriorityTarget
+    if self.TargetPlayers and pt and pt.Character then
+        if not table.find(self.Whitelist, pt.Name) and not self:IsSameTeam(pt) then
+            evaluate(pt.Character)
+        end
+    end
+
+    local tlist = self.Targetlist
+    if self.TargetPlayers and tlist and #tlist > 0 then
+        for _, plr in ipairs(self.Players:GetPlayers()) do
+            if plr ~= self.LocalPlayer
+                and table.find(tlist, plr.Name)
+                and not table.find(self.Whitelist, plr.Name)
+                and not self:IsSameTeam(plr) then
+                evaluate(plr.Character)
             end
         end
+    end
 
-        if self.TargetPlayers then
-            for _, plr in ipairs(self.Players:GetPlayers()) do
-                if plr ~= self.LocalPlayer
-                    and not table.find(self.Whitelist, plr.Name)
-                    and not self:IsSameTeam(plr) then
-                    local d = self:GetScreenDistance(plr.Character, camPos, fPos, maxScreenDist)
-                    if d and d < bestDist then bestDist = d; bestEntity = plr.Character end
-                end
+    if self.TargetPlayers then
+        for _, plr in ipairs(self.Players:GetPlayers()) do
+            if plr ~= self.LocalPlayer
+                and not table.find(self.Whitelist, plr.Name)
+                and not self:IsSameTeam(plr) then
+                evaluate(plr.Character)
             end
         end
+    end
 
-        for _, src in pairs(self.TargetSources) do
-            if src.Enabled then
-                local entities = src.GetEntities()
-                if entities then
-                    for i = 1, #entities do
-                        local e = entities[i]
-                        if typeof(e) == "Instance" and e:IsA("Model") then
-                            local d = self:GetScreenDistance(e, camPos, fPos, maxScreenDist)
-                            if d and d < bestDist then bestDist = d; bestEntity = e end
-                        end
+    for _, src in pairs(self.TargetSources) do
+        if src.Enabled then
+            local entities = src.GetEntities()
+            if entities then
+                for i = 1, #entities do
+                    local e = entities[i]
+                    if typeof(e) == "Instance" and e:IsA("Model") then
+                        evaluate(e)
                     end
                 end
             end
@@ -508,27 +519,18 @@ function Aimlock:FindBestTarget()
 
     if not bestEntity then return nil end
 
-    local parts = self:GetAimParts(bestEntity)
-    for i = 1, #parts do
-        local aimPart = parts[i]
-        local point = self:GetClosestVisiblePoint(aimPart, bestEntity, camPos, char)
-        if point then
-            local vel = aimPart.AssemblyLinearVelocity or aimPart.Velocity
-            local predicted = self:GetPredictedPos(point, vel, bestEntity)
+    local vel = bestPart.AssemblyLinearVelocity or bestPart.Velocity
+    local predicted = self:GetPredictedPos(bestPoint, vel, bestEntity)
 
-            if self.LockAnywhere then
-                return predicted
-            end
+    if self.LockAnywhere then return predicted end
 
-            local sp, onScreen = self.Camera:WorldToViewportPoint(predicted)
-            if onScreen then
-                local dx = sp.X - fPos.X
-                local dy = sp.Y - fPos.Y
-                local d = math.sqrt(dx * dx + dy * dy)
-                if d <= maxScreenDist then
-                    return predicted
-                end
-            end
+    local sp, onScreen = self.Camera:WorldToViewportPoint(predicted)
+    if onScreen then
+        local dx = sp.X - fPos.X
+        local dy = sp.Y - fPos.Y
+        local d = math.sqrt(dx * dx + dy * dy)
+        if d <= maxScreenDist then
+            return predicted
         end
     end
 
