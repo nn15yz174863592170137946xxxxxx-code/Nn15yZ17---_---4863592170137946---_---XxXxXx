@@ -111,7 +111,11 @@ B.EnabledToggle = function(g, p, e)
     e._uiToggle = g:AddToggle(p.."Enabled", {
         Text = "Aimlock",
         Default = e.Enabled,
-        Callback = function(v) e:SetEnabled(v) end,
+        Callback = function(v)
+            e._uiSuppress = true
+            e:SetEnabled(v)
+            e._uiSuppress = false
+        end,
     })
 end
 
@@ -136,8 +140,9 @@ B.WallCheck = function(g, p, e)
         Text = "Wall Check",
         Default = e.WallCheck,
         Callback = function(v)
-            e.WallCheck = v
-            e:UpdateWallCheckButton()
+            e._wallSuppress = true
+            e:SetWallCheck(v)
+            e._wallSuppress = false
         end,
     })
 end
@@ -504,6 +509,7 @@ end
 -- ===== STATE SYNC ===== --
 local function setupStateSync(aim)
     aim.OnStateChanged = function(state)
+        if aim._uiSuppress then return end
         local uiToggle = aim._uiToggle
         if uiToggle and uiToggle.Value ~= state then
             uiToggle:SetValue(state)
@@ -513,6 +519,7 @@ end
 
 local function setupWallCheckSync(aim)
     aim.OnWallCheckChanged = function(state)
+        if aim._wallSuppress then return end
         local cb = aim._wallCheckToggle
         if cb and cb.Value ~= state then
             cb:SetValue(state)
