@@ -634,8 +634,12 @@ function Aimlock:CreateMobileButton()
     self.MobileButtonGui = gui
 
     btn.MouseButton1Click:Connect(function()
+    if self._uiToggle then
+        self._uiToggle:SetValue(not self._uiToggle.Value)
+    else
         self:SetEnabled(not self.Enabled)
-    end)
+    end
+end)
 
     self:UpdateMobileButton()
 end
@@ -699,8 +703,12 @@ function Aimlock:CreateWallCheckMobileButton()
     self.MobileWallCheckGui = gui
 
     btn.MouseButton1Click:Connect(function()
+    if self._wallCheckToggle then
+        self._wallCheckToggle:SetValue(not self._wallCheckToggle.Value)
+    else
         self:SetWallCheck(not self.WallCheck)
-    end)
+    end
+end)
 
     self:UpdateWallCheckButton()
 end
