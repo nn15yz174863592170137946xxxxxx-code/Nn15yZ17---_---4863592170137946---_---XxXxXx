@@ -443,7 +443,7 @@ local function Build(Group, prefix, aim, config)
     end
 end
 
--- ===== LIVE PLAYER LIST REFRESH (single shared loop) ===== --
+-- ===== LIVE PLAYER LIST ===== --
 local function setupLivePlayerRefresh(aim)
     if not aim._uiWhitelist then return end
     task.spawn(function()
