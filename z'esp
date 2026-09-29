@@ -56,29 +56,29 @@ function ESP.new(settings)
 
     self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
     self.TextSize = math.max(1, num(settings.TextSize, 20))
-    self.TextTransparency = math.clamp(num(settings.TextTransparency, 0), 0, 1)
+    self.TextTransparency = math.clamp(num(settings.TextTransparency, 1), 0, 1)
     self.TextStroke = settings.TextStroke ~= false
-    self.TextStrokeTransparency = math.clamp(num(settings.TextStrokeTransparency, 0), 0, 1)
+    self.TextStrokeTransparency = math.clamp(num(settings.TextStrokeTransparency, 1), 0, 1)
     self.ShowName = settings.ShowName ~= false
     self.ShowHealth = settings.ShowHealth ~= false
     self.ShowDistance = settings.ShowDistance ~= false
 
     self.BoxColor = settings.BoxColor or Color3.new(1, 1, 1)
     self.BoxThickness = math.max(1, num(settings.BoxThickness, 1))
-    self.BoxTransparency = math.clamp(num(settings.BoxTransparency, 0), 0, 1)
+    self.BoxTransparency = math.clamp(num(settings.BoxTransparency, 1), 0, 1)
     self.BoxFilled = settings.BoxFilled or false
-    self.BoxFillTransparency = math.clamp(num(settings.BoxFillTransparency, 0.5), 0, 1)
+    self.BoxFillTransparency = math.clamp(num(settings.BoxFillTransparency, 1), 0, 1)
 
     self.HealthColor = settings.HealthColor or Color3.new(0, 1, 0)
     self.LowHealthColor = settings.LowHealthColor or Color3.new(1, 0, 0)
-    self.HealthTransparency = math.clamp(num(settings.HealthTransparency, 0), 0, 1)
+    self.HealthTransparency = math.clamp(num(settings.HealthTransparency, 1), 0, 1)
     self.HealthBarWidth = math.max(1, num(settings.HealthBarWidth, 5))
     self.HealthBarPosition = settings.HealthBarPosition or "Left"
     self.HealthBarOffset = num(settings.HealthBarOffset, 2)
 
     self.SkeletonColor = settings.SkeletonColor or Color3.new(1, 1, 1)
     self.SkeletonThickness = math.max(1, num(settings.SkeletonThickness, 1))
-    self.SkeletonTransparency = math.clamp(num(settings.SkeletonTransparency, 0), 0, 1)
+    self.SkeletonTransparency = math.clamp(num(settings.SkeletonTransparency, 1), 0, 1)
 
     self.MaxDistance = tonumber(settings.MaxDistance) or nil
     self.MaxEntities = tonumber(settings.MaxEntities) or nil
@@ -336,8 +336,8 @@ function ESP:CreateText(entry)
     label.Font = Enum.Font.SourceSansSemibold
     label.TextSize = self.TextSize
     label.TextColor3 = self:TextDrawColor()
-    label.TextTransparency = self.TextTransparency
-    label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
+    label.TextTransparency = 1 - self.TextTransparency
+    label.TextStrokeTransparency = self.TextStroke and (1 - self.TextStrokeTransparency) or 1
     label.TextYAlignment = Enum.TextYAlignment.Bottom
     label.Text = entry.Model.Name
     label.ZIndex = 10
@@ -371,8 +371,8 @@ function ESP:UpdateText(data, entry)
     data.Label.Text = table.concat(parts, " | ")
     data.Label.TextColor3 = self:TextDrawColor()
     data.Label.TextSize = self.TextSize
-    data.Label.TextTransparency = self.TextTransparency
-    data.Label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
+    data.Label.TextTransparency = 1 - self.TextTransparency
+    data.Label.TextStrokeTransparency = self.TextStroke and (1 - self.TextStrokeTransparency) or 1
 end
 
 function ESP:DestroyText(data)
