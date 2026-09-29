@@ -22,7 +22,6 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     self.MaxDistance = settings.MaxDistance
 
     self.FOVSize = settings.FOVSize or 500
-    self.CrossOffset = settings.CrossOffset or Vector2.new(0, 0)
     self.Gui = nil
     self.FOVCircle = nil
     self.CrossV = nil
@@ -39,7 +38,6 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     self.AimPartPreference = settings.AimPartPreference or {"Head", "Torso", "Other Parts"}
     self.SampleMode = settings.SampleMode or 2
     self.HeadChance = settings.HeadChance or 80
-    self.UpdateRate = settings.UpdateRate or 0
 
     self.MobileButtonEnabled = settings.MobileButtonEnabled ~= false
     self.MobileButton = nil
@@ -85,8 +83,6 @@ function Aimlock.new(playersService, localPlayer, camera, settings)
     self._rayParams.IgnoreWater = true
     self._rayParams.FilterDescendantsInstances = self._ignoreList
 
-    self._acc = 0
-
     return self
 end
 
@@ -117,9 +113,9 @@ function Aimlock:CreateFOV(parent)
         return f
     end
 
-    self.CrossV = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, 2, 0, 14))
-    self.CrossH = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, 14, 0, 2))
-    self.FOVCircle = mk(UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y), UDim2.new(0, self.FOVSize, 0, self.FOVSize))
+    self.CrossV = mk(UDim2.new(0.5, 0, 0.5, 0), UDim2.new(0, 2, 0, 14))
+    self.CrossH = mk(UDim2.new(0.5, 0, 0.5, 0), UDim2.new(0, 14, 0, 2))
+    self.FOVCircle = mk(UDim2.new(0.5, 0, 0.5, 0), UDim2.new(0, self.FOVSize, 0, self.FOVSize))
     self.FOVCircle.BackgroundTransparency = 1
     Instance.new("UICorner", self.FOVCircle).CornerRadius = UDim.new(1, 0)
 
@@ -156,15 +152,7 @@ function Aimlock:UpdateFOVSize(size)
     self.FOVSize = size
     if self.FOVCircle then
         self.FOVCircle.Size = UDim2.new(0, size, 0, size)
-        self.FOVCircle.Position = UDim2.new(0.5, self.CrossOffset.X, 0.5, self.CrossOffset.Y)
     end
-end
-
-function Aimlock:UpdateCrossOffset(offset)
-    self.CrossOffset = offset
-    if self.FOVCircle then self.FOVCircle.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
-    if self.CrossV then self.CrossV.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
-    if self.CrossH then self.CrossH.Position = UDim2.new(0.5, offset.X, 0.5, offset.Y) end
 end
 
 -- ===== PREDICTION ===== --
@@ -423,7 +411,7 @@ function Aimlock:GetAimPart(entity)
     return parts[1]
 end
 
--- ===== CANDIDATE SCORING (FOV + crosshair only) ===== --
+-- ===== CANDIDATE SCORING ===== --
 function Aimlock:GetCandidateRoot(entity)
     return entity:FindFirstChild("HumanoidRootPart")
         or entity:FindFirstChild("Head")
@@ -465,7 +453,7 @@ function Aimlock:FindBestTarget()
 
     local camPos = self.Camera.CFrame.Position
     local vp = self.Camera.ViewportSize
-    local fPos = Vector2.new(vp.X / 2 + self.CrossOffset.X, vp.Y / 2 + self.CrossOffset.Y)
+    local fPos = Vector2.new(vp.X / 2, vp.Y / 2)
     local maxScreenDist = self.FOVSize / 2
 
     local bestEntity, bestDist, bestPart, bestPoint = nil, math.huge, nil, nil
@@ -556,36 +544,15 @@ end
 -- ===== LOOP ===== --
 function Aimlock:Start()
     if self.LoopConnection then return end
-    self._acc = 0
-    local interval = self.UpdateRate > 0 and self.UpdateRate or 0
 
-    self.LoopConnection = RunService.RenderStepped:Connect(function(dt)
+    self.LoopConnection = RunService.RenderStepped:Connect(function()
         if not self.Enabled then return end
-
-        if interval > 0 then
-            self._acc = self._acc + dt
-            if self._acc < interval then return end
-            self._acc = 0
-        end
 
         local targetPos = self:FindBestTarget()
         if not targetPos then return end
 
         local camPos = self.Camera.CFrame.Position
-        local lookAt = CFrame.lookAt(camPos, targetPos)
-
-        if self.CrossOffset.X ~= 0 or self.CrossOffset.Y ~= 0 then
-            local fovRad = math.rad(self.Camera.FieldOfView)
-            local vp = self.Camera.ViewportSize
-            if self.CrossOffset.X ~= 0 then
-                lookAt = lookAt * CFrame.Angles(0, self.CrossOffset.X * (fovRad / vp.X), 0)
-            end
-            if self.CrossOffset.Y ~= 0 then
-                lookAt = lookAt * CFrame.Angles(self.CrossOffset.Y * (fovRad / vp.Y), 0, 0)
-            end
-        end
-
-        self.Camera.CFrame = lookAt
+        self.Camera.CFrame = CFrame.lookAt(camPos, targetPos)
     end)
 end
 
