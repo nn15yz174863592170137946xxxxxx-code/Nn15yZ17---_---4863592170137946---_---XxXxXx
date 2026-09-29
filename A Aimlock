@@ -10,10 +10,8 @@ local DEFAULTS = {
     MaxDistance = nil,
     MobileButtonEnabled = true,
     MobileWallCheckEnabled = false,
-    UpdateRate = 0,
 
     FOVSize = 500,
-    CrossOffset = Vector2.new(0, 0),
     FOVRainbowEnabled = true,
     CrosshairRainbowEnabled = true,
     RainbowSpeed = 1,
@@ -159,17 +157,6 @@ B.MaxDistance = function(g, p, e)
             local n = tonumber(v)
             e.MaxDistance = (n and n > 0) and n or nil
         end,
-    })
-end
-
-B.UpdateRate = function(g, p, e)
-    g:AddSlider(p.."UpdateRate", {
-        Text = "Update Rate",
-        Default = e.UpdateRate,
-        Min = 0,
-        Max = 1,
-        Rounding = 2,
-        Callback = function(v) e.UpdateRate = v end,
     })
 end
 
@@ -372,36 +359,6 @@ B.FOVSize = function(g, p, e)
     })
 end
 
-B.CrossOffsetX = function(g, p, e)
-    g:AddInput(p.."CrossOffsetX", {
-        Text = "Cross Offset X",
-        Default = tostring(e.CrossOffset.X),
-        Numeric = true,
-        Finished = false,
-        ClearTextOnFocus = false,
-        Placeholder = "0",
-        Callback = function(v)
-            local n = tonumber(v) or 0
-            e:UpdateCrossOffset(Vector2.new(n, e.CrossOffset.Y))
-        end,
-    })
-end
-
-B.CrossOffsetY = function(g, p, e)
-    g:AddInput(p.."CrossOffsetY", {
-        Text = "Cross Offset Y",
-        Default = tostring(e.CrossOffset.Y),
-        Numeric = true,
-        Finished = false,
-        ClearTextOnFocus = false,
-        Placeholder = "0",
-        Callback = function(v)
-            local n = tonumber(v) or 0
-            e:UpdateCrossOffset(Vector2.new(e.CrossOffset.X, n))
-        end,
-    })
-end
-
 B.FOVRainbowEnabled = function(g, p, e)
     g:AddCheckbox(p.."FOVRainbowEnabled", {
         Text = "Rainbow FOV",
@@ -437,7 +394,7 @@ end
 local SECTIONS = {
     Enabled = {
         {"EnabledToggle"}, {"LockAnywhere"}, {"TeamCheck"}, {"WallCheck"},
-        {"MaxDistance"}, {"UpdateRate"}, {"MobileQuickToggle"},
+        {"MaxDistance"}, {"MobileQuickToggle"},
         {"MobileWallCheckToggle"}, {"Keybind"}, {"WallCheckKeybind"},
     },
     Target = {
@@ -453,7 +410,7 @@ local SECTIONS = {
         {"SampleMode"}, {"AimPart"}, {"HeadChance"},
     },
     FOV = {
-        {"FOVSize"}, {"CrossOffsetX"}, {"CrossOffsetY"},
+        {"FOVSize"},
         {"FOVRainbowEnabled"}, {"CrosshairRainbowEnabled"}, {"RainbowSpeed"},
     },
 }
