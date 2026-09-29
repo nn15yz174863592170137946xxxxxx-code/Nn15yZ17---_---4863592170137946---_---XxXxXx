@@ -56,29 +56,29 @@ function ESP.new(settings)
 
     self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
     self.TextSize = math.max(1, num(settings.TextSize, 20))
-    self.TextTransparency = math.clamp(num(settings.TextTransparency, 1), 0, 1)
+    self.TextTransparency = math.clamp(num(settings.TextTransparency, 0), 0, 1)
     self.TextStroke = settings.TextStroke ~= false
-    self.TextStrokeTransparency = math.clamp(num(settings.TextStrokeTransparency, 1), 0, 1)
+    self.TextStrokeTransparency = math.clamp(num(settings.TextStrokeTransparency, 0), 0, 1)
     self.ShowName = settings.ShowName ~= false
     self.ShowHealth = settings.ShowHealth ~= false
     self.ShowDistance = settings.ShowDistance ~= false
 
     self.BoxColor = settings.BoxColor or Color3.new(1, 1, 1)
     self.BoxThickness = math.max(1, num(settings.BoxThickness, 1))
-    self.BoxTransparency = math.clamp(num(settings.BoxTransparency, 1), 0, 1)
+    self.BoxTransparency = math.clamp(num(settings.BoxTransparency, 0), 0, 1)
     self.BoxFilled = settings.BoxFilled or false
-    self.BoxFillTransparency = math.clamp(num(settings.BoxFillTransparency, 1), 0, 1)
+    self.BoxFillTransparency = math.clamp(num(settings.BoxFillTransparency, 0.5), 0, 1)
 
     self.HealthColor = settings.HealthColor or Color3.new(0, 1, 0)
     self.LowHealthColor = settings.LowHealthColor or Color3.new(1, 0, 0)
-    self.HealthTransparency = math.clamp(num(settings.HealthTransparency, 1), 0, 1)
+    self.HealthTransparency = math.clamp(num(settings.HealthTransparency, 0), 0, 1)
     self.HealthBarWidth = math.max(1, num(settings.HealthBarWidth, 5))
     self.HealthBarPosition = settings.HealthBarPosition or "Left"
     self.HealthBarOffset = num(settings.HealthBarOffset, 2)
 
     self.SkeletonColor = settings.SkeletonColor or Color3.new(1, 1, 1)
     self.SkeletonThickness = math.max(1, num(settings.SkeletonThickness, 1))
-    self.SkeletonTransparency = math.clamp(num(settings.SkeletonTransparency, 1), 0, 1)
+    self.SkeletonTransparency = math.clamp(num(settings.SkeletonTransparency, 0), 0, 1)
 
     self.MaxDistance = tonumber(settings.MaxDistance) or nil
     self.MaxEntities = tonumber(settings.MaxEntities) or nil
@@ -336,8 +336,8 @@ function ESP:CreateText(entry)
     label.Font = Enum.Font.SourceSansSemibold
     label.TextSize = self.TextSize
     label.TextColor3 = self:TextDrawColor()
-    label.TextTransparency = 1 - self.TextTransparency
-    label.TextStrokeTransparency = self.TextStroke and (1 - self.TextStrokeTransparency) or 1
+    label.TextTransparency = self.TextTransparency
+    label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
     label.TextYAlignment = Enum.TextYAlignment.Bottom
     label.Text = entry.Model.Name
     label.ZIndex = 10
@@ -371,8 +371,8 @@ function ESP:UpdateText(data, entry)
     data.Label.Text = table.concat(parts, " | ")
     data.Label.TextColor3 = self:TextDrawColor()
     data.Label.TextSize = self.TextSize
-    data.Label.TextTransparency = 1 - self.TextTransparency
-    data.Label.TextStrokeTransparency = self.TextStroke and (1 - self.TextStrokeTransparency) or 1
+    data.Label.TextTransparency = self.TextTransparency
+    data.Label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
 end
 
 function ESP:DestroyText(data)
@@ -383,14 +383,14 @@ end
 function ESP:CreateBox()
     local outline = Drawing.new("Square")
     outline.Thickness = self.BoxThickness
-    outline.Transparency = 1 - self.BoxTransparency
+    outline.Transparency = self.BoxTransparency
     outline.Color = self:BoxDrawColor()
     outline.Filled = false
     outline.Visible = false
 
     local fill = Drawing.new("Square")
     fill.Thickness = 0
-    fill.Transparency = 1 - self.BoxFillTransparency
+    fill.Transparency = self.BoxFillTransparency
     fill.Color = self:BoxDrawColor()
     fill.Filled = true
     fill.Visible = false
@@ -412,14 +412,14 @@ function ESP:UpdateBox(data, entry)
     data.Outline.Position = rect.Position
     data.Outline.Color = color
     data.Outline.Thickness = self.BoxThickness
-    data.Outline.Transparency = 1 - self.BoxTransparency
+    data.Outline.Transparency = self.BoxTransparency
     data.Outline.Visible = true
 
     if self.BoxFilled then
         data.Fill.Size = rect.Size
         data.Fill.Position = rect.Position
         data.Fill.Color = color
-        data.Fill.Transparency = 1 - self.BoxFillTransparency
+        data.Fill.Transparency = self.BoxFillTransparency
         data.Fill.Visible = true
     else
         data.Fill.Visible = false
@@ -450,7 +450,7 @@ function ESP:UpdateHealth(data, entry, rect)
 
     local frac = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
     local color = self:HealthDrawColor(frac)
-    local alpha = 1 - self.HealthTransparency
+    local alpha = self.HealthTransparency
 
     local pos = self.HealthBarPosition
     local ox = self.HealthBarOffset
@@ -533,7 +533,7 @@ function ESP:UpdateSkeleton(data, entry)
 
     local conns = bodyConnections[rig] or bodyConnections.R15
     local activeKeys = {}
-    local alpha = 1 - self.SkeletonTransparency
+    local alpha = self.SkeletonTransparency
 
     for _, connection in ipairs(conns) do
         local key = connection[1] .. "-" .. connection[2]
