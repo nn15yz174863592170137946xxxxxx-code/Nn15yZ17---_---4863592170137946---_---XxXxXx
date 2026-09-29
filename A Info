@@ -1,13 +1,13 @@
 local Module = {}
 
 Module.Info = function(Tab, Library)
-    local InfoGroup = Tab:AddLeftGroupbox("Info", "help")
+    local InfoGroup = Tab:AddLeftGroupbox("Info", "info")
     InfoGroup:AddButton("Join Discord", function()
         setclipboard("https://discord.gg/W2XWXZKPMQY")
         Library:Notify("Discord link copied!", 3)
     end)
 
-    local InfoGroup2 = Tab:AddRightGroupbox("Info", "help")
+    local InfoGroup2 = Tab:AddRightGroupbox("Info", "info")
     InfoGroup2:AddButton("Join Discord", function()
         setclipboard("https://discord.gg/W2XWXZKPMQY")
         Library:Notify("Discord link copied!", 3)
