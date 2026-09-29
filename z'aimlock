@@ -171,18 +171,34 @@ end
 function Aimlock:GetPredictedPos(point, vel, targetChar)
     if self.AutoPredictionEnabled then
         local ping = self.LocalPlayer:GetNetworkPing()
-        local g = workspace.Gravity
         local hum = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
-        local airborne = hum and hum.FloorMaterial == Enum.Material.Air
 
-        local predX = vel.X * ping
-        local predZ = vel.Z * ping
-        local predY
-        if airborne then
-            predY = vel.Y * ping - 0.5 * g * ping * ping
-        else
-            predY = 0
+        if not hum then
+            return point + vel * ping
         end
+
+        local predX, predY, predZ = 0, 0, 0
+
+        local horizVel = Vector3.new(vel.X, 0, vel.Z)
+        if horizVel.Magnitude > 0.5 then
+            local walkSpeed = hum.WalkSpeed or 16
+            local dir = horizVel.Unit
+            predX = dir.X * walkSpeed * ping
+            predZ = dir.Z * walkSpeed * ping
+        end
+
+        if hum.FloorMaterial == Enum.Material.Air then
+            local gravity = workspace.Gravity
+            local jumpPower = hum.JumpPower or 0
+            if jumpPower <= 0 then
+                local jumpHeight = hum.JumpHeight or 7.2
+                jumpPower = math.sqrt(2 * gravity * jumpHeight)
+            end
+            local vy = vel.Y
+            if math.abs(vy) < 1 then vy = jumpPower end
+            predY = vy * ping - 0.5 * gravity * ping * ping
+        end
+
         return point + Vector3.new(predX, predY, predZ)
     end
 
@@ -541,7 +557,7 @@ end
 function Aimlock:Start()
     if self.LoopConnection then return end
     self._acc = 0
-    local interval = self.UpdateRate > 0 and (1 / self.UpdateRate) or 0
+    local interval = self.UpdateRate > 0 and self.UpdateRate or 0
 
     self.LoopConnection = RunService.RenderStepped:Connect(function(dt)
         if not self.Enabled then return end
@@ -562,10 +578,10 @@ function Aimlock:Start()
             local fovRad = math.rad(self.Camera.FieldOfView)
             local vp = self.Camera.ViewportSize
             if self.CrossOffset.X ~= 0 then
-                lookAt = lookAt * CFrame.Angles(0, -self.CrossOffset.X * (fovRad / vp.X), 0)
+                lookAt = lookAt * CFrame.Angles(0, self.CrossOffset.X * (fovRad / vp.X), 0)
             end
             if self.CrossOffset.Y ~= 0 then
-                lookAt = lookAt * CFrame.Angles(-self.CrossOffset.Y * (fovRad / vp.Y), 0, 0)
+                lookAt = lookAt * CFrame.Angles(self.CrossOffset.Y * (fovRad / vp.Y), 0, 0)
             end
         end
 
@@ -634,12 +650,12 @@ function Aimlock:CreateMobileButton()
     self.MobileButtonGui = gui
 
     btn.MouseButton1Click:Connect(function()
-    if self._uiToggle then
-        self._uiToggle:SetValue(not self._uiToggle.Value)
-    else
-        self:SetEnabled(not self.Enabled)
-    end
-end)
+        if self._uiToggle then
+            self._uiToggle:SetValue(not self._uiToggle.Value)
+        else
+            self:SetEnabled(not self.Enabled)
+        end
+    end)
 
     self:UpdateMobileButton()
 end
@@ -703,12 +719,12 @@ function Aimlock:CreateWallCheckMobileButton()
     self.MobileWallCheckGui = gui
 
     btn.MouseButton1Click:Connect(function()
-    if self._wallCheckToggle then
-        self._wallCheckToggle:SetValue(not self._wallCheckToggle.Value)
-    else
-        self:SetWallCheck(not self.WallCheck)
-    end
-end)
+        if self._wallCheckToggle then
+            self._wallCheckToggle:SetValue(not self._wallCheckToggle.Value)
+        else
+            self:SetWallCheck(not self.WallCheck)
+        end
+    end)
 
     self:UpdateWallCheckButton()
 end
