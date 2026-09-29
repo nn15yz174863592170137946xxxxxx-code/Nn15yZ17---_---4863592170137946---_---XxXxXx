@@ -1,8 +1,58 @@
-local Info = function(Tab, Library)
+local Module = {}
+
+Module.Info = function(Tab, Library)
     local InfoGroup = Tab:AddLeftGroupbox("Info", "help")
     InfoGroup:AddButton("Join Discord", function()
-        setclipboard("https://discord.gg/W2XWZKPMQY")
+        setclipboard("https://discord.gg/W2XWXZKPMQY")
+        Library:Notify("Discord link copied!", 3)
+    end)
+
+    local InfoGroup2 = Tab:AddRightGroupbox("Info", "help")
+    InfoGroup2:AddButton("Join Discord", function()
+        setclipboard("https://discord.gg/W2XWXZKPMQY")
         Library:Notify("Discord link copied!", 3)
     end)
 end
-return Info
+
+local SECTIONS = {
+    LockAnywhere = {
+        "Lock Anywhere",
+        "Locks onto the closest target ignoring FOV, even targets behind you.",
+    },
+    Prediction = {
+        "Prediction",
+        "Uses your manual inputs. Enabling Auto ignores them and uses built-in prediction.",
+    },
+    Grid = {
+        "Grid",
+        "Normally it locks to the center of a part. This divides the part into smaller points so there are more spots to lock on. For example a 3D square becomes 8 or 27 smaller points. Higher = more accurate but laggier.",
+    },
+}
+
+local SECTION_ORDER = {"LockAnywhere", "Prediction", "Grid"}
+
+local function Build(Group, config)
+    config = config or {}
+    local exclude = {}
+    for _, id in ipairs(config.Exclude or {}) do exclude[id] = true end
+
+    for _, id in ipairs(SECTION_ORDER) do
+        if not exclude[id] and SECTIONS[id] then
+            local data = SECTIONS[id]
+            Group:AddLabel(data[1], true)
+            Group:AddLabel(data[2], true)
+            Group:AddDivider()
+        end
+    end
+end
+
+Module.AimlockInfo = function(Tab, config)
+    local Group = Tab:AddLeftGroupbox("Aimlock Info", "targets")
+    Build(Group, config)
+    return Group
+end
+
+Module.SECTIONS = SECTIONS
+Module.SECTION_ORDER = SECTION_ORDER
+
+return Module
