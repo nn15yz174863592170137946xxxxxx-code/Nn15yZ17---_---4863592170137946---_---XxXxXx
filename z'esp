@@ -383,14 +383,14 @@ end
 function ESP:CreateBox()
     local outline = Drawing.new("Square")
     outline.Thickness = self.BoxThickness
-    outline.Transparency = self.BoxTransparency
+    outline.Transparency = 1 - self.BoxTransparency
     outline.Color = self:BoxDrawColor()
     outline.Filled = false
     outline.Visible = false
 
     local fill = Drawing.new("Square")
     fill.Thickness = 0
-    fill.Transparency = self.BoxFillTransparency
+    fill.Transparency = 1 - self.BoxFillTransparency
     fill.Color = self:BoxDrawColor()
     fill.Filled = true
     fill.Visible = false
@@ -412,14 +412,14 @@ function ESP:UpdateBox(data, entry)
     data.Outline.Position = rect.Position
     data.Outline.Color = color
     data.Outline.Thickness = self.BoxThickness
-    data.Outline.Transparency = self.BoxTransparency
+    data.Outline.Transparency = 1 - self.BoxTransparency
     data.Outline.Visible = true
 
     if self.BoxFilled then
         data.Fill.Size = rect.Size
         data.Fill.Position = rect.Position
         data.Fill.Color = color
-        data.Fill.Transparency = self.BoxFillTransparency
+        data.Fill.Transparency = 1 - self.BoxFillTransparency
         data.Fill.Visible = true
     else
         data.Fill.Visible = false
@@ -450,7 +450,7 @@ function ESP:UpdateHealth(data, entry, rect)
 
     local frac = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
     local color = self:HealthDrawColor(frac)
-    local alpha = self.HealthTransparency
+    local alpha = 1 - self.HealthTransparency
 
     local pos = self.HealthBarPosition
     local ox = self.HealthBarOffset
@@ -533,7 +533,7 @@ function ESP:UpdateSkeleton(data, entry)
 
     local conns = bodyConnections[rig] or bodyConnections.R15
     local activeKeys = {}
-    local alpha = self.SkeletonTransparency
+    local alpha = 1 - self.SkeletonTransparency
 
     for _, connection in ipairs(conns) do
         local key = connection[1] .. "-" .. connection[2]
