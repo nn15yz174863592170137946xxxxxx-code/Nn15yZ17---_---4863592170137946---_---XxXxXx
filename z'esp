@@ -54,6 +54,10 @@ function ESP.new(settings)
     self.HealthESPEnabled = settings.HealthESPEnabled ~= false
     self.SkeletonESPEnabled = settings.SkeletonESPEnabled ~= false
 
+    self.TeamCheck = settings.TeamCheck ~= false
+    self.ExcludeTeammates = settings.ExcludeTeammates or false
+    self.TeamColorFunc = settings.TeamColorFunc or nil
+
     self.TextColor = settings.TextColor or Color3.new(1, 1, 1)
     self.TextSize = math.max(1, num(settings.TextSize, 20))
     self.TextTransparency = math.clamp(num(settings.TextTransparency, 0), 0, 1)
@@ -104,15 +108,30 @@ function ESP:ApplyRainbow()
     self._rainbow = Color3.fromHSV(hue, 1, 1)
 end
 
-function ESP:BoxDrawColor()
+function ESP:ResolveTeamColor(entry)
+    if not self.TeamCheck then return nil end
+    if not entry or not entry.Player then return nil end
+    if not self.TeamColorFunc then return nil end
+    local ok, result = pcall(self.TeamColorFunc, entry.Player)
+    if ok and typeof(result) == "Color3" then return result end
+    return nil
+end
+
+function ESP:BoxDrawColor(entry)
+    local tc = self:ResolveTeamColor(entry)
+    if tc then return tc end
     return self.RainbowEnabled and self._rainbow or self.BoxColor
 end
 
-function ESP:SkeletonDrawColor()
+function ESP:SkeletonDrawColor(entry)
+    local tc = self:ResolveTeamColor(entry)
+    if tc then return tc end
     return self.RainbowEnabled and self._rainbow or self.SkeletonColor
 end
 
-function ESP:TextDrawColor()
+function ESP:TextDrawColor(entry)
+    local tc = self:ResolveTeamColor(entry)
+    if tc then return tc end
     return self.RainbowEnabled and self._rainbow or self.TextColor
 end
 
@@ -200,6 +219,14 @@ function ESP:BuildList()
                     end
 
                     if model and model ~= localChar and model.Parent and not seen[model] then
+                        if self.ExcludeTeammates and playerObj then
+                            local myTeam = LocalPlayer.Team
+                            local theirTeam = playerObj.Team
+                            if myTeam and theirTeam and myTeam == theirTeam then
+                                continue
+                            end
+                        end
+
                         local hum = model:FindFirstChildOfClass("Humanoid")
                         local root = self:GetRoot(model)
 
@@ -335,7 +362,7 @@ function ESP:CreateText(entry)
     label.Size = UDim2.new(0, 100, 0, 100)
     label.Font = Enum.Font.SourceSansSemibold
     label.TextSize = self.TextSize
-    label.TextColor3 = self:TextDrawColor()
+    label.TextColor3 = self:TextDrawColor(entry)
     label.TextTransparency = self.TextTransparency
     label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
     label.TextYAlignment = Enum.TextYAlignment.Bottom
@@ -369,7 +396,7 @@ function ESP:UpdateText(data, entry)
     if self.ShowDistance then table.insert(parts, "Studs: " .. dist) end
 
     data.Label.Text = table.concat(parts, " | ")
-    data.Label.TextColor3 = self:TextDrawColor()
+    data.Label.TextColor3 = self:TextDrawColor(entry)
     data.Label.TextSize = self.TextSize
     data.Label.TextTransparency = self.TextTransparency
     data.Label.TextStrokeTransparency = self.TextStroke and self.TextStrokeTransparency or 1
@@ -384,14 +411,14 @@ function ESP:CreateBox()
     local outline = Drawing.new("Square")
     outline.Thickness = self.BoxThickness
     outline.Transparency = 1 - self.BoxTransparency
-    outline.Color = self:BoxDrawColor()
+    outline.Color = self.BoxColor
     outline.Filled = false
     outline.Visible = false
 
     local fill = Drawing.new("Square")
     fill.Thickness = 0
     fill.Transparency = 1 - self.BoxFillTransparency
-    fill.Color = self:BoxDrawColor()
+    fill.Color = self.BoxColor
     fill.Filled = true
     fill.Visible = false
 
@@ -406,7 +433,7 @@ function ESP:UpdateBox(data, entry)
         return
     end
 
-    local color = self:BoxDrawColor()
+    local color = self:BoxDrawColor(entry)
 
     data.Outline.Size = rect.Size
     data.Outline.Position = rect.Position
@@ -534,6 +561,7 @@ function ESP:UpdateSkeleton(data, entry)
     local conns = bodyConnections[rig] or bodyConnections.R15
     local activeKeys = {}
     local alpha = 1 - self.SkeletonTransparency
+    local skeletonColor = self:SkeletonDrawColor(entry)
 
     for _, connection in ipairs(conns) do
         local key = connection[1] .. "-" .. connection[2]
@@ -543,7 +571,7 @@ function ESP:UpdateSkeleton(data, entry)
             local line = Drawing.new("Line")
             line.Thickness = self.SkeletonThickness
             line.Transparency = alpha
-            line.Color = self:SkeletonDrawColor()
+            line.Color = skeletonColor
             line.Visible = false
             data.Lines[key] = line
         end
@@ -558,7 +586,7 @@ function ESP:UpdateSkeleton(data, entry)
             if onA and onB then
                 line.From = Vector2.new(posA.X, posA.Y)
                 line.To = Vector2.new(posB.X, posB.Y)
-                line.Color = self:SkeletonDrawColor()
+                line.Color = skeletonColor
                 line.Transparency = alpha
                 line.Thickness = self.SkeletonThickness
                 line.Visible = true
