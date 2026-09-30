@@ -9,6 +9,9 @@ local DEFAULTS = {
     HealthESPEnabled = true,
     SkeletonESPEnabled = true,
 
+    TeamCheck = true,
+    ExcludeTeammates = false,
+
     TextColor = Color3.new(1, 1, 1),
     TextSize = 20,
     TextTransparency = 0,
@@ -96,6 +99,20 @@ B.SkeletonCheckbox = function(g, p, e)
     g:AddCheckbox(p.."SkeletonESPEnabled", {
         Text = "Skeleton ESP", Default = e.SkeletonESPEnabled,
         Callback = function(v) e.SkeletonESPEnabled = v end,
+    })
+end
+
+B.TeamCheck = function(g, p, e)
+    g:AddCheckbox(p.."TeamCheck", {
+        Text = "Team Check", Default = e.TeamCheck,
+        Callback = function(v) e.TeamCheck = v end,
+    })
+end
+
+B.ExcludeTeammates = function(g, p, e)
+    g:AddCheckbox(p.."ExcludeTeammates", {
+        Text = "Exclude Teammates", Default = e.ExcludeTeammates,
+        Callback = function(v) e.ExcludeTeammates = v end,
     })
 end
 
@@ -352,6 +369,8 @@ local SECTIONS = {
         {"BoxCheckbox", requires = "Box"},
         {"HealthCheckbox", requires = "Health"},
         {"SkeletonCheckbox", requires = "Skeleton"},
+        {"TeamCheck"},
+        {"ExcludeTeammates"},
     },
     Text = {
         {"TextColor"},
