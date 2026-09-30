@@ -47,7 +47,7 @@ local function Build(Group, config)
 end
 
 Module.AimlockInfo = function(Tab, config)
-    local Group = Tab:AddLeftGroupbox("Aimlock Info", "help")
+    local Group = Tab:AddLeftGroupbox("Aimlock Info", "info")
     Build(Group, config)
     return Group
 end
