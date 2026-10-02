@@ -305,7 +305,7 @@ end
 
 B.MaxDistance = function(g, p, e)
     g:AddInput(p.."MaxDistance", {
-        Text = "Max Distance", Default = "",
+        Text = "Max Distance", Default = e.MaxDistance and tostring(e.MaxDistance) or "",
         Numeric = true, Finished = false, ClearTextOnFocus = false,
         Placeholder = "inf",
         Callback = function(v)
@@ -317,7 +317,7 @@ end
 
 B.MaxEntities = function(g, p, e)
     g:AddInput(p.."MaxEntities", {
-        Text = "Max Entities", Default = "",
+        Text = "Max Entities", Default = e.MaxEntities and tostring(e.MaxEntities) or "",
         Numeric = true, Finished = false, ClearTextOnFocus = false,
         Placeholder = "inf",
         Callback = function(v)
