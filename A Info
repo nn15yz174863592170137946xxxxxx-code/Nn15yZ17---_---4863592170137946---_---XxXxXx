@@ -24,7 +24,7 @@ local SECTIONS = {
         "Uses your manual inputs. Enabling Auto ignores them and uses built-in prediction.",
     },
     Grid = {
-        "Grid",
+        "Grid Mode",
         "Normally it locks to the center of a part. This divides the part into smaller points so there are more spots to lock on. For example a 3D square becomes 8 or 27 smaller points. Higher = more accurate but laggier.",
     },
 }
