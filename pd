@@ -1,0 +1,990 @@
+-- ===== libs ===== --
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
+local Options, Toggles = Library.Options, Library.Toggles
+Library.ShowToggleFrameInKeybinds = true
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- ===== scheduler ===== --
+local Scheduler = { tasks = {} }
+function Scheduler:Every(name, interval, fn)
+    self.tasks[name] = { interval = interval, acc = interval, fn = fn }
+end
+function Scheduler:Step(dt)
+    for _, t in pairs(self.tasks) do
+        t.acc = t.acc + dt
+        if t.acc >= t.interval then t.acc = 0; pcall(t.fn) end
+    end
+end
+RunService.Heartbeat:Connect(function(dt) Scheduler:Step(dt) end)
+
+-- ===== modules ===== --
+local BASE = "https://raw.githubusercontent.com/nn15yz174863592170137946xxxxxx-code/Nn15yZ17---_---4863592170137946---_---XxXxXx/refs/heads/main/"
+local AimlockUI = loadstring(game:HttpGet(BASE.."A%20Aimlock"))()
+local ESPUI = loadstring(game:HttpGet(BASE.."A%20ESP"))()
+
+-- ===== window ===== --
+local Window = Library:CreateWindow({
+    Title = "Aimlock Script", Icon = 95816097006870,
+    NotifySide = "Right", ShowCustomCursor = true,
+})
+local Tabs = {
+    Info = Window:AddTab("Info","info"),
+    Main = Window:AddTab("Main","boxes"),
+    Aimlock = Window:AddTab("Aimlock","target"),
+    ESP = Window:AddTab("ESP","eye"),
+    BlatantTab = Window:AddTab("BLATANT","skull"),
+    ["UI Settings"] = Window:AddTab("UI Settings","settings"),
+}
+
+Tabs.Info:AddLeftGroupbox("Info","help"):AddButton("Join Discord", function()
+    setclipboard("https://discord.gg/W2XWXZKPMQY")
+    Library:Notify("Discord link copied!", 3)
+end)
+
+-- ===== state ===== --
+local Prediction = { Enabled = true }
+local Misc = { NoRecoil = false }
+local LeadMul, DropMul, PingMul = 1, 7.558695652173913, 0
+local localChar = LocalPlayer.Character
+LocalPlayer.CharacterAdded:Connect(function(c) localChar = c end)
+
+-- ===== AI list ===== --
+local cachedAIList, aiZones = {}, workspace:FindFirstChild("AiZones")
+local function refreshAIList()
+    cachedAIList = {}
+    if not aiZones then aiZones = workspace:FindFirstChild("AiZones"); if not aiZones then return end end
+    for _, zone in ipairs(aiZones:GetChildren()) do
+        for _, c in ipairs(zone:GetChildren()) do cachedAIList[#cachedAIList + 1] = c end
+    end
+end
+Scheduler:Every("AIList", 0.5, refreshAIList)
+local function getAIList() return cachedAIList end
+
+-- ===== weapon tracker ===== --
+local muzzleVel, projectileDrop, lastWeapon
+local function getWeaponData(name)
+    local ranged = ReplicatedStorage:FindFirstChild("RangedWeapons")
+    local ammoTypes = ReplicatedStorage:FindFirstChild("AmmoTypes")
+    if not ranged or not ammoTypes then return nil, 0 end
+    local weapon = ranged:FindFirstChild(name)
+    if not weapon then return nil, 0 end
+    local callSign = weapon:GetAttribute("DefaultAmmoCallSign")
+    if not callSign then return nil, 0 end
+    for _, ammo in ipairs(ammoTypes:GetChildren()) do
+        if ammo:GetAttribute("CallSign") == callSign then
+            return ammo:GetAttribute("MuzzleVelocity"), ammo:GetAttribute("ProjectileDrop") or 0
+        end
+    end
+    return nil, 0
+end
+local function watchCharacter(c)
+    if not c then return end
+    task.spawn(function()
+        local holding = c:WaitForChild("Holding", 5)
+        if not holding then return end
+        local function update()
+            local name = holding.Value and holding.Value.Name
+            if name and name ~= lastWeapon then
+                lastWeapon = name
+                muzzleVel, projectileDrop = getWeaponData(name)
+            elseif not name then
+                lastWeapon, muzzleVel, projectileDrop = nil, nil, nil
+            end
+        end
+        holding:GetPropertyChangedSignal("Value"):Connect(update)
+        update()
+    end)
+end
+LocalPlayer.CharacterAdded:Connect(watchCharacter)
+if localChar then watchCharacter(localChar) end
+
+-- ===== velocity ===== --
+local velTracker = {}
+local function getTargetVelocity(character, root)
+    if not character or not root then return Vector3.new() end
+    local pv = root.AssemblyLinearVelocity or root.Velocity or Vector3.new()
+    if pv.Magnitude > 2 then return pv end
+    local now = tick()
+    local e = velTracker[character]
+    if e and e.pos and e.time then
+        local dt = now - e.time
+        if dt > 0.001 then
+            local raw = (root.Position - e.pos) / dt
+            e.vel = e.vel and e.vel:Lerp(raw, 0.6) or raw
+        end
+    end
+    if not e then e = {} end
+    e.pos, e.time = root.Position, now
+    e.vel = e.vel or Vector3.new()
+    velTracker[character] = e
+    return e.vel
+end
+
+-- ===== ballistics ===== --
+local function SolveQuad(a, b, c)
+    local d = b * b - 4 * a * c
+    if d < 0 then return nil end
+    local r = math.sqrt(d)
+    return (-b - r) / (2 * a), (-b + r) / (2 * a)
+end
+local function FlightTime(dir, grav, speed)
+    local r1, r2 = SolveQuad(grav:Dot(grav) / 4, grav:Dot(dir) - speed * speed, dir:Dot(dir))
+    if r1 and r2 then
+        if r1 > 0 and r1 < r2 then return math.sqrt(r1)
+        elseif r2 > 0 and r2 < r1 then return math.sqrt(r2) end
+    end
+    return 0
+end
+local function PredictVec(tpos, tvel, origin, speed, accel, ping)
+    local g = Vector3.yAxis * (accel * 2)
+    local t = FlightTime(tpos - origin, g, speed) + (ping * PingMul)
+    return tpos + (tvel * t * LeadMul)
+end
+local function PredDrop(origin, target, speed, accel, ping)
+    local g = Vector3.yAxis * (accel * 2)
+    local t = FlightTime(target - origin, g, speed) + (ping * PingMul)
+    return 0.5 * g * t * t * DropMul
+end
+
+-- ===== aimlock ===== --
+local AimGroup = Tabs.Aimlock:AddLeftGroupbox("Aimlock","target")
+local aim = AimlockUI.Create(AimGroup, "Aim_", Players, LocalPlayer, cam, {
+    Settings = {
+        Enabled = false, LockAnywhere = false, TeamCheck = false, WallCheck = true,
+        MaxDistance = nil, MobileButtonEnabled = true, MobileWallCheckEnabled = false,
+        FOVSize = 500, CrossOffset = Vector2.new(0,0),
+        FOVRainbowEnabled = true, CrosshairRainbowEnabled = true, RainbowSpeed = 1,
+        PredictionXZ = 0, PredictionY = 0, AutoPredictionEnabled = false,
+        AimPartPreference = {"Head","Torso","Other Parts"}, SampleMode = 2, HeadChance = 80,
+        UpdateRate = 0,
+    },
+    Features = { Enabled = true, Target = true, Lists = true, Prediction = false, Targeting = true, FOV = true },
+}, {
+    {Name = "Players", Getter = function() return Players:GetPlayers() end, Enabled = true},
+    {Name = "AI", Getter = getAIList, Enabled = true},
+})
+
+-- ===== prediction ===== --
+local PredictionGroup = Tabs.Aimlock:AddRightGroupbox("Prediction","crosshair")
+PredictionGroup:AddToggle("PredictionEnabled", {Text = "Enable Prediction", Default = true, Callback = function(v) Prediction.Enabled = v end})
+PredictionGroup:AddSlider("PredictionLeadMultiplier", {Text = "Lead Multiplier", Default = 1, Min = 0, Max = 5, Rounding = 1, Callback = function(v) LeadMul = v end})
+PredictionGroup:AddSlider("PredictionPingMultiplier", {Text = "Ping Multiplier", Default = 0, Min = 0, Max = 3, Rounding = 1, Callback = function(v) PingMul = v end})
+
+-- ===== shared targeting ===== --
+local function collectEntities()
+    local list = {}
+    local seen = {}
+    local function add(m)
+        if not m or seen[m] then return end
+        seen[m] = true
+        list[#list + 1] = m
+    end
+
+    if aim.TargetPlayers then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer
+                and not (aim.Whitelist and table.find(aim.Whitelist, plr.Name))
+                and not aim:IsSameTeam(plr) then
+                add(plr.Character)
+            end
+        end
+    end
+
+    for _, src in pairs(aim.TargetSources) do
+        if src.Enabled then
+            local getter = src.GetEntities or src.Getter
+            if getter then
+                local ok, ents = pcall(getter)
+                if ok and ents then
+                    for _, ent in ipairs(ents) do
+                        local m = ent
+                        if typeof(ent) == "Instance" and ent:IsA("Player") then m = ent.Character end
+                        if typeof(m) == "Instance" and m:IsA("Model") then add(m) end
+                    end
+                end
+            end
+        end
+    end
+
+    return list
+end
+
+local function findBestTarget()
+    if not localChar then return nil end
+    local camPos = cam.CFrame.Position
+    local fPos = Vector2.new(cam.ViewportSize.X/2 + aim.CrossOffset.X, cam.ViewportSize.Y/2 + aim.CrossOffset.Y)
+    local maxDist = (tonumber(aim.FOVSize) or 500) / 2
+    local best, bestScore = nil, math.huge
+
+    local tlist = aim.Targetlist
+    if aim.TargetPlayers and tlist and #tlist > 0 then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and table.find(tlist, plr.Name)
+                and not (aim.Whitelist and table.find(aim.Whitelist, plr.Name))
+                and not aim:IsSameTeam(plr) then
+                local c = plr.Character
+                if c then
+                    local d = aim:GetScreenDistance(c, camPos, fPos, maxDist)
+                    if d and d < bestScore then bestScore = d; best = c end
+                end
+            end
+        end
+        if best then return best end
+    end
+
+    for _, m in ipairs(collectEntities()) do
+        local d = aim:GetScreenDistance(m, camPos, fPos, maxDist)
+        if d and d < bestScore then bestScore = d; best = m end
+    end
+
+    return best
+end
+
+local function ComputeAim()
+    if not localChar or not localChar.Parent then return nil end
+    if not localChar:FindFirstChild("HumanoidRootPart") then return nil end
+    local target = findBestTarget()
+    if not target then return nil end
+    local camPos = cam.CFrame.Position
+    local aimPoint, aimPart
+    for _, part in ipairs(aim:GetAimParts(target)) do
+        local p = aim:GetClosestVisiblePoint(part, target, camPos, localChar)
+        if p then aimPoint = p; aimPart = part; break end
+    end
+    if not aimPoint then return nil end
+    local finalTarget = aimPoint
+    if Prediction.Enabled then
+        local accel = projectileDrop or 0
+        local speed = muzzleVel or 1000
+        local ping = LocalPlayer:GetNetworkPing()
+        local vel = getTargetVelocity(target, aimPart)
+        local tpos = PredictVec(aimPoint, vel, camPos, speed, accel, ping)
+        finalTarget = tpos + PredDrop(camPos, tpos, speed, accel, ping)
+    end
+    return finalTarget, camPos
+end
+
+local function ComputeAimNoFOV()
+    local saved = aim.FOVSize
+    aim.FOVSize = 999999
+    local t, p = ComputeAim()
+    aim.FOVSize = saved
+    return t, p
+end
+
+-- ===== aimlock loop ===== --
+RunService:BindToRenderStep("AimLock", Enum.RenderPriority.Camera.Value + 100, function()
+    if not aim.Enabled then return end
+    local finalTarget, camPos = ComputeAim()
+    if not finalTarget then return end
+    local lookAt = CFrame.lookAt(camPos, finalTarget)
+    if aim.CrossOffset.X ~= 0 or aim.CrossOffset.Y ~= 0 then
+        local fovRad = math.rad(cam.FieldOfView)
+        if aim.CrossOffset.X ~= 0 then lookAt = lookAt * CFrame.Angles(0, -aim.CrossOffset.X * (fovRad / cam.ViewportSize.X), 0) end
+        if aim.CrossOffset.Y ~= 0 then lookAt = lookAt * CFrame.Angles(-aim.CrossOffset.Y * (fovRad / cam.ViewportSize.Y), 0, 0) end
+    end
+    cam.CFrame = lookAt
+end)
+
+-- ===== silent aim UI ===== --
+local SilentAim = { Enabled = false }
+local SilentAimBox = Tabs.Aimlock:AddRightGroupbox("Silent Aim","crosshair")
+SilentAimBox:AddToggle("SilentAimEnabled", {Text = "Enable Silent Aim", Default = false, Callback = function(v) SilentAim.Enabled = v end})
+
+-- ===== silent aim internals ===== --
+local BulletModule, oldCreateBullet
+pcall(function() BulletModule = require(ReplicatedStorage.Modules.FPS.Bullet) end)
+
+local function GetAimOrigin(a)
+    if typeof(a) == "table" and a.CFrame then return a.CFrame.Position end
+    if typeof(a) == "Instance" then return a.Position end
+    return nil
+end
+
+-- ===== ammo mods ===== --
+local RecoilAttrs = {"RecoilStrength","Recoil","RecoilX","RecoilY","VerticalRecoil","HorizontalRecoil","CameraRecoil","ViewmodelRecoil","Kick","KickStrength","RecoilMultiplier","RecoilScale"}
+local AmmoCache = {}
+
+local function cacheAttr(ammo, name)
+    if not ammo then return end
+    if not AmmoCache[ammo] then AmmoCache[ammo] = {} end
+    if AmmoCache[ammo][name] == nil then
+        local v = ammo:GetAttribute(name)
+        if v ~= nil then AmmoCache[ammo][name] = v end
+    end
+end
+local function SetAttrs(ammo, names, value)
+    if not ammo then return end
+    for _, n in ipairs(names) do
+        cacheAttr(ammo, n)
+        pcall(function() if ammo:GetAttribute(n) ~= nil then ammo:SetAttribute(n, value) end end)
+    end
+end
+local function ZeroRecoilTable(t, d)
+    if d > 5 then return end
+    for k, v in pairs(t) do
+        local tv = typeof(v)
+        if tv == "number" then t[k] = 0
+        elseif tv == "Vector2" or tv == "Vector3" then t[k] = v * 0
+        elseif tv == "CFrame" then t[k] = CFrame.new()
+        elseif tv == "table" then ZeroRecoilTable(v, d + 1) end
+    end
+end
+local function ApplyRecoil()
+    if not Misc.NoRecoil then return end
+    local f = ReplicatedStorage:FindFirstChild("AmmoTypes")
+    if not f then return end
+    for _, a in ipairs(f:GetChildren()) do SetAttrs(a, RecoilAttrs, 0) end
+end
+local function RestoreAmmo()
+    for a, attrs in pairs(AmmoCache) do
+        if a.Parent then
+            for n, v in pairs(attrs) do pcall(function() a:SetAttribute(n, v) end) end
+        end
+    end
+    table.clear(AmmoCache)
+end
+
+-- ===== silent aim hook ===== --
+local function InitSilentAim()
+    if oldCreateBullet or not BulletModule or typeof(hookfunction) ~= "function" then return end
+    oldCreateBullet = hookfunction(BulletModule.CreateBullet, function(idk, m1, m2, m3, aimPart, idk2, ammoType, t, recoilPattern)
+        local f = ReplicatedStorage:FindFirstChild("AmmoTypes")
+        local ammo = f and ammoType and f:FindFirstChild(ammoType)
+
+        if Misc.NoRecoil then
+            if type(recoilPattern) == "table" then
+                ZeroRecoilTable(recoilPattern, 0)
+            else
+                recoilPattern = {0, 0, 0, 0}
+            end
+            SetAttrs(ammo, RecoilAttrs, 0)
+        end
+
+        local finalAim = aimPart
+
+        if SilentAim.Enabled then
+            local finalTarget = ComputeAimNoFOV()
+            if finalTarget then
+                local origin = GetAimOrigin(aimPart)
+                if origin then
+                    finalAim = { CFrame = CFrame.new(origin, finalTarget) }
+                end
+            end
+        end
+
+        return oldCreateBullet(idk, m1, m2, m3, finalAim, idk2, ammoType, t, recoilPattern)
+    end)
+end
+
+-- ===== Main right ===== --
+local MainRight = Tabs.Main:AddRightGroupbox("Main","boxes")
+MainRight:AddToggle("NoRecoilToggle", {Text = "No Recoil", Default = false, Callback = function(v)
+    Misc.NoRecoil = v
+    if v then task.defer(function() pcall(InitSilentAim); pcall(ApplyRecoil) end)
+    else task.defer(function() pcall(RestoreAmmo) end) end
+end})
+
+-- ===== third-person ===== --
+local origCamMode = LocalPlayer.CameraMode
+local origMinZoom = LocalPlayer.CameraMinZoomDistance
+local origMaxZoom = LocalPlayer.CameraMaxZoomDistance
+local function applyThirdPerson(v)
+    if v then
+        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        LocalPlayer.CameraMaxZoomDistance = math.huge
+    else
+        LocalPlayer.CameraMode = origCamMode
+        LocalPlayer.CameraMinZoomDistance = origMinZoom
+        LocalPlayer.CameraMaxZoomDistance = origMaxZoom
+    end
+end
+MainRight:AddToggle("ThirdPersonToggle", {Text = "Enable Third-Person", Default = true, Callback = applyThirdPerson})
+applyThirdPerson(true)
+
+-- ===== spectate ===== --
+local spectate = { name = nil, distance = 10, dropdown = nil, appliedName = nil,
+    savedType = nil, savedSubject = nil, savedMin = nil, savedMax = nil, savedDist = nil }
+local spectateUpdating = false
+local spectateLastKey = ""
+
+local function getPlayerList()
+    local names = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then names[#names + 1] = plr.Name end
+    end
+    table.sort(names)
+    return names
+end
+local function getPlayerKey() return table.concat(getPlayerList(), "|") end
+
+local function applySpectate()
+    if not cam then return end
+    if not spectate.name then
+        if spectate.appliedName then
+            cam.CameraType = spectate.savedType or Enum.CameraType.Custom
+            cam.CameraSubject = spectate.savedSubject
+            LocalPlayer.CameraMaxZoomDistance = spectate.savedMax
+            LocalPlayer.CameraMinZoomDistance = spectate.savedMin
+            local sd = spectate.savedDist
+            if sd and sd > 0 then
+                LocalPlayer.CameraMinZoomDistance = sd
+                LocalPlayer.CameraMaxZoomDistance = sd
+                task.defer(function()
+                    LocalPlayer.CameraMinZoomDistance = spectate.savedMin
+                    LocalPlayer.CameraMaxZoomDistance = spectate.savedMax
+                end)
+            end
+            spectate.appliedName = nil
+        end
+        return
+    end
+    if spectate.appliedName == spectate.name then return end
+    local plr = Players:FindFirstChild(spectate.name)
+    local hum = plr and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+    if not hum then spectate.name = nil; return end
+    if not spectate.appliedName then
+        spectate.savedType = cam.CameraType
+        spectate.savedSubject = cam.CameraSubject
+        spectate.savedMin = LocalPlayer.CameraMinZoomDistance
+        spectate.savedMax = LocalPlayer.CameraMaxZoomDistance
+        spectate.savedDist = (cam.CFrame.Position - cam.Focus.Position).Magnitude
+    end
+    cam.CameraType = Enum.CameraType.Custom
+    cam.CameraSubject = hum
+    LocalPlayer.CameraMaxZoomDistance = math.huge
+    LocalPlayer.CameraMinZoomDistance = spectate.distance
+    local n = spectate.name
+    task.defer(function()
+        if spectate.appliedName == n then LocalPlayer.CameraMinZoomDistance = 0 end
+    end)
+    spectate.appliedName = spectate.name
+end
+
+spectate.dropdown = MainRight:AddDropdown("SpectatePlayers", {
+    Text = "Spectate Player", Values = getPlayerList(), Default = {},
+    Multi = true, Searchable = true,
+    Callback = function(selected)
+        if spectateUpdating then return end
+        local last, count = nil, 0
+        for name, checked in pairs(selected) do
+            if checked then count = count + 1; last = name end
+        end
+        if count == 0 or (count == 1 and last == spectate.name) then
+            spectate.name = nil
+            spectateUpdating = true
+            spectate.dropdown:SetValue({})
+            spectateUpdating = false
+        elseif count == 1 then
+            spectate.name = last
+        else
+            local pick
+            for name, checked in pairs(selected) do
+                if checked and name ~= spectate.name then pick = name; break end
+            end
+            spectateUpdating = true
+            spectate.dropdown:SetValue({[pick] = true})
+            spectateUpdating = false
+            spectate.name = pick
+        end
+        task.defer(applySpectate)
+    end,
+})
+
+MainRight:AddInput("SpectateDistance", {
+    Text = "Spectate Distance (Studs)", Default = "10", Numeric = true, Finished = false,
+    ClearTextOnFocus = false, Placeholder = "10",
+    Callback = function(v)
+        local n = tonumber(v)
+        if n then
+            spectate.distance = n
+            if spectate.name then
+                LocalPlayer.CameraMaxZoomDistance = math.huge
+                LocalPlayer.CameraMinZoomDistance = n
+                local snap = spectate.name
+                task.defer(function()
+                    if spectate.appliedName == snap then LocalPlayer.CameraMinZoomDistance = 0 end
+                end)
+            end
+        end
+    end,
+})
+
+-- ===== zoom ===== --
+local zoom = { enabled = false, distance = 0, savedFov = nil }
+MainRight:AddToggle("ZoomInToggle", {
+    Text = "Zoom In", Default = false,
+    Callback = function(v)
+        zoom.enabled = v
+        task.defer(function()
+            if not cam then return end
+            if v then zoom.savedFov = cam.FieldOfView; cam.FieldOfView = math.max(zoom.distance, 1)
+            else cam.FieldOfView = zoom.savedFov or cam.FieldOfView end
+        end)
+    end,
+})
+MainRight:AddSlider("ZoomDistanceSlider", {
+    Text = "Zoom Distance", Default = 0, Min = 0, Max = 10, Rounding = 0,
+    Callback = function(v)
+        zoom.distance = v
+        if zoom.enabled and cam then cam.FieldOfView = math.max(v, 1) end
+    end,
+})
+
+-- ===== spectate keepalive ===== --
+Scheduler:Every("SpectateRefresh", 1, function()
+    if not spectate.dropdown then return end
+    local key = getPlayerKey()
+    if key ~= spectateLastKey then
+        spectateLastKey = key
+        spectateUpdating = true
+        pcall(function() spectate.dropdown:SetValues(getPlayerList()) end)
+        spectateUpdating = false
+        if spectate.name and not Players:FindFirstChild(spectate.name) then
+            spectate.name = nil
+            spectateUpdating = true
+            spectate.dropdown:SetValue({})
+            spectateUpdating = false
+            task.defer(applySpectate)
+        end
+    end
+end)
+Scheduler:Every("SpectateKeep", 1, function()
+    if not spectate.name then return end
+    local plr = Players:FindFirstChild(spectate.name)
+    local hum = plr and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then
+        spectate.name = nil
+        spectateUpdating = true
+        spectate.dropdown:SetValue({})
+        spectateUpdating = false
+        task.defer(applySpectate)
+    end
+end)
+Players.PlayerRemoving:Connect(function(plr)
+    if spectate.name == plr.Name then
+        spectate.name = nil
+        spectateUpdating = true
+        spectate.dropdown:SetValue({})
+        spectateUpdating = false
+        task.defer(applySpectate)
+    end
+end)
+
+-- ===== esp ===== --
+local function getFolderList(fn, sub)
+    local list = {}
+    local folder = workspace:FindFirstChild(fn)
+    if sub and folder then folder = folder:FindFirstChild(sub) end
+    if not folder then return list end
+    local function scan(c)
+        for _, o in ipairs(c:GetChildren()) do
+            if o:IsA("Model") or o:IsA("BasePart") then table.insert(list, o)
+            elseif o:IsA("Folder") then scan(o) end
+        end
+    end
+    scan(folder)
+    return list
+end
+
+local PLACE_DATA = {
+    {Name = "Hydrostation", Path = {"Hydrostation"}, Pos = Vector3.new(-3140.13574, 116.986954, -553.818909)},
+    {Name = "Sawmill (Anton)", Path = {"Sawmill"}, Pos = Vector3.new(-2460.37866, 49.4657974, -3517.3501)},
+    {Name = "Bridge", Path = {"Bridge"}, Pos = Vector3.new(841.922363, 35.7102699, 429.339874)},
+    {Name = "ExitUNO1", Path = {"NoCollision", "AiZones", "ExitUNO1"}, Pos = Vector3.new(455.752808, 72.5, 2771.09033)},
+    {Name = "Castle", Path = {"Castle"}, Pos = Vector3.new(1337.98535, 59.9582748, -2462.30078)},
+    {Name = "GasStation", Path = {"NoCollision", "AiZones", "GasStation"}, Pos = Vector3.new(-2068.1001, 22.5249996, -1700.30005)},
+    {Name = "PowerPlant", Path = {"NoCollision", "AiZones", "PowerPlant"}, Pos = Vector3.new(-218.48851, 46.3912659, -1102.66052)},
+    {Name = "Town (Village)", Path = {"NoCollision", "AiZones", "Town"}, Pos = Vector3.new(-596.099976, 36.6031189, -2161.7998)},
+    {Name = "Lighthouse", Path = {"LighthouseBeacon"}, Pos = Vector3.new(2656.69507, 292.593994, -1949.92798)},
+    {Name = "Ship", Path = {"Ship"}, Pos = Vector3.new(2752.8396, 57.1084938, -2422.88599)},
+    {Name = "Whisper", Path = {"NoCollision", "AiZones", "Whisper"}, Pos = Vector3.new(2048.57104, 65.6838684, -1057.52051)},
+    {Name = "Factory (Dozer)", Path = {"NoCollision", "AiZones", "Factory"}, Pos = Vector3.new(2842.85474, 36.5, -752.381348)},
+    {Name = "Mountain", Path = {"Mountain"}, Pos = Vector3.new(-1013.69208, 203.14595, -367.049011)},
+}
+
+local PLACE_Y_OFFSET = 100
+
+local placeAnchors = {}
+local placesAnchorFolder = nil
+
+local function getPlacesAnchorFolder()
+    if placesAnchorFolder and placesAnchorFolder.Parent then return placesAnchorFolder end
+    placesAnchorFolder = workspace:FindFirstChild("PlacesESP_Anchors")
+    if not placesAnchorFolder then
+        placesAnchorFolder = Instance.new("Folder")
+        placesAnchorFolder.Name = "PlacesESP_Anchors"
+        placesAnchorFolder.Parent = workspace
+    end
+    return placesAnchorFolder
+end
+
+local function makePlaceAnchor(name, pos)
+    local folder = getPlacesAnchorFolder()
+    local existing = folder:FindFirstChild(name)
+    local targetPos = pos + Vector3.new(0, PLACE_Y_OFFSET, 0)
+    if existing then
+        existing.Position = targetPos
+        return existing
+    end
+    local part = Instance.new("Part")
+    part.Name = name
+    part.Anchored = true
+    part.CanCollide = false
+    part.Transparency = 1
+    part.Size = Vector3.new(1, 1, 1)
+    part.Position = targetPos
+    part.Parent = folder
+    return part
+end
+
+local function resolvePlace(path)
+    local current = workspace
+    for _, name in ipairs(path) do
+        if not current then return nil end
+        current = current:FindFirstChild(name)
+    end
+    if current and (current:IsA("Model") or current:IsA("BasePart")) then return current end
+    return nil
+end
+
+local function getModelCenter(model)
+    if not model then return nil end
+    if model:IsA("BasePart") then return model.Position end
+    if model.PrimaryPart then return model.PrimaryPart.Position end
+    local part = model:FindFirstChildWhichIsA("BasePart")
+    if part then return part.Position end
+    local ok, cf = pcall(function() return model:GetBoundingBox() end)
+    if ok and cf then return cf.Position end
+    return nil
+end
+
+local function initPlaces()
+    local zones = workspace:FindFirstChild("NoCollision")
+    zones = zones and zones:FindFirstChild("AiZones")
+    if not zones or #zones:GetChildren() == 0 then
+        if placesAnchorFolder and placesAnchorFolder.Parent then
+            placesAnchorFolder:Destroy()
+        end
+        placesAnchorFolder = nil
+        table.clear(placeAnchors)
+        return
+    end
+    for _, data in ipairs(PLACE_DATA) do
+        local real = resolvePlace(data.Path)
+        local basePos = (real and getModelCenter(real)) or data.Pos
+        placeAnchors[data.Name] = makePlaceAnchor(data.Name, basePos)
+    end
+end
+
+local function getPlacesList()
+    local zones = workspace:FindFirstChild("NoCollision")
+    zones = zones and zones:FindFirstChild("AiZones")
+    if not zones or #zones:GetChildren() == 0 then
+        return {}
+    end
+    local list = {}
+    for _, p in pairs(placeAnchors) do
+        if p and p.Parent then list[#list + 1] = p end
+    end
+    return list
+end
+
+local function cleanupPlaces()
+    if placesAnchorFolder and placesAnchorFolder.Parent then
+        placesAnchorFolder:Destroy()
+    end
+    placesAnchorFolder = nil
+    table.clear(placeAnchors)
+end
+
+initPlaces()
+Scheduler:Every("PlacesRefresh", 2, initPlaces)
+
+local ESPTargets = {
+    {Name="Players", Source="Players", IsPlayer=true, Humanoid=true, Getter=function() return Players:GetPlayers() end, Color=Color3.new(1,1,1), TextSize=20},
+    {Name="AI", Source="AI", Humanoid=true, Getter=getAIList, Color=Color3.new(1,0,0), TextSize=20},
+    {Name="Containers", Source="Containers", Humanoid=false, NonHumanoid=true, Getter=function() return getFolderList("Containers") end, Color=Color3.new(0,1,1), TextSize=15},
+    {Name="Items", Source="Items", Humanoid=false, NonHumanoid=true, Getter=function() return getFolderList("DroppedItems") end, Color=Color3.new(0.5,0.5,0.5), TextSize=15},
+    {Name="QuestItems", Source="QuestItems", Humanoid=false, NonHumanoid=true, Getter=function() return getFolderList("QuestItems") end, Color=Color3.new(0,1,0), TextSize=15},
+    {Name="Exits", Source="Exits", Humanoid=false, NonHumanoid=true, Getter=function() return getFolderList("NoCollision","ExitLocations") end, Color=Color3.new(0,1,0), TextSize=20},
+    {Name="Places", Source="Places", Humanoid=false, NonHumanoid=true, Getter=getPlacesList, Color=Color3.new(1,1,0), TextSize=20},
+}
+
+local ESPLeft = Tabs.ESP:AddLeftTabbox()
+local ESPRight = Tabs.ESP:AddRightGroupbox("ESP","eye")
+local esps = {}
+for _, t in ipairs(ESPTargets) do
+    local tab = ESPLeft:AddTab(t.Name)
+    local isHumanoid = t.Humanoid == true
+    local settings = {
+        Enabled = false, TextESPEnabled = true,
+        BoxESPEnabled = isHumanoid, HealthESPEnabled = isHumanoid, SkeletonESPEnabled = isHumanoid,
+        TextColor = t.Color, TextSize = t.TextSize or 15, ShowHealth = isHumanoid,
+    }
+    if isHumanoid then
+        settings.BoxColor = t.Color
+        settings.SkeletonColor = t.Color
+    end
+    local exclude = {"EnabledToggle"}
+    if not isHumanoid then table.insert(exclude, "ShowHealth") end
+    local esp = ESPUI.Create(tab, t.Source.."_", {
+        Settings = settings,
+        Features = { Enabled = true, Text = true, Box = isHumanoid, Health = isHumanoid, Skeleton = isHumanoid, Performance = true },
+        Exclude = exclude,
+    }, {{Name = t.Source, Getter = t.Getter, IsPlayer = t.IsPlayer or false, Enabled = true, NonHumanoid = t.NonHumanoid or false}})
+    esps[t.Name] = esp
+    ESPRight:AddToggle(t.Source.."ESPEnabled", {Text = t.Name.." ESP", Default = false, Callback = function(v) esp:SetEnabled(v) end})
+end
+
+-- ===== Main left ===== --
+local MainGroup = Tabs.Main:AddLeftGroupbox("Main","boxes")
+local origL = {b = Lighting.Brightness, a = Lighting.Ambient, o = Lighting.OutdoorAmbient, f = Lighting.FogEnd}
+local fbEnabled, fbValue = false, 10
+local function applyFB()
+    Lighting.Brightness = fbValue
+    Lighting.Ambient = Color3.new(1,1,1)
+    Lighting.OutdoorAmbient = Color3.new(1,1,1)
+    Lighting.FogEnd = 100000
+end
+local function restoreLighting()
+    Lighting.Brightness = origL.b
+    Lighting.Ambient = origL.a
+    Lighting.OutdoorAmbient = origL.o
+    Lighting.FogEnd = origL.f
+end
+MainGroup:AddToggle("FullBright", {Text = "FullBright", Default = false, Callback = function(v)
+    fbEnabled = v
+    if v then applyFB() else restoreLighting() end
+end})
+MainGroup:AddInput("FullBrightValue", {
+    Text = "Brightness", Default = "10", Numeric = true, Finished = false,
+    ClearTextOnFocus = false, Placeholder = "10",
+    Callback = function(v)
+        local n = tonumber(v)
+        if n then fbValue = n; if fbEnabled then applyFB() end end
+    end,
+})
+
+-- ===== anti-mines ===== --
+local aClay, aLand = false, false
+local function hookClear(fn, flag)
+    local zone = workspace:FindFirstChild("AiZones")
+    if not zone then return end
+    local folder = zone:FindFirstChild(fn)
+    if not folder then return end
+    folder.ChildAdded:Connect(function(child)
+        if (aClay and flag == "c") or (aLand and flag == "l") then
+            task.defer(function() if child.Parent then child:Destroy() end end)
+        end
+    end)
+end
+Scheduler:Every("ZoneHook", 3, function()
+    hookClear("OutpostClaymores", "c")
+    hookClear("OutpostLandmines", "l")
+end)
+MainGroup:AddToggle("AntiClaymore", {Text = "Delete Claymores", Default = false, Callback = function(v)
+    aClay = v
+    if v then
+        local zone = workspace:FindFirstChild("AiZones")
+        local c = zone and zone:FindFirstChild("OutpostClaymores")
+        if c then for _, m in ipairs(c:GetChildren()) do m:Destroy() end end
+    end
+end})
+MainGroup:AddToggle("AntiLandmine", {Text = "Delete Landmines", Default = false, Callback = function(v)
+    aLand = v
+    if v then
+        local zone = workspace:FindFirstChild("AiZones")
+        local l = zone and zone:FindFirstChild("OutpostLandmines")
+        if l then for _, m in ipairs(l:GetChildren()) do m:Destroy() end end
+    end
+end})
+
+-- ===== foliage ===== --
+local FS = { NoGrass = false, NoBushes = false, NoFerns = false, NoLeafs = false }
+local foliageCache, foliageHook = {}, nil
+local function nameMatch(part, kw, root)
+    local c = part
+    while c and c ~= root do
+        if c.Name:lower():find(kw, 1, true) then return true end
+        c = c.Parent
+    end
+    return false
+end
+local function hasSurf(part)
+    for _, c in ipairs(part:GetChildren()) do if c:IsA("SurfaceAppearance") then return true end end
+    return false
+end
+local function getFoliage()
+    local sz = workspace:FindFirstChild("SpawnerZones")
+    return sz and sz:FindFirstChild("Foliage")
+end
+local function shouldHide(part, root)
+    if not part:IsA("BasePart") then return false end
+    if FS.NoBushes and nameMatch(part, "bush", root) then return true end
+    if FS.NoFerns and nameMatch(part, "fern", root) then return true end
+    if FS.NoLeafs and nameMatch(part, "tree", root) and hasSurf(part) then return true end
+    return false
+end
+local function applyFoliage()
+    local foliage = getFoliage()
+    if not foliage then return end
+    for _, part in ipairs(foliage:GetDescendants()) do
+        if shouldHide(part, foliage) then
+            if not foliageCache[part] then foliageCache[part] = part.Transparency end
+            part.Transparency = 1
+        elseif foliageCache[part] then
+            part.Transparency = foliageCache[part]
+            foliageCache[part] = nil
+        end
+    end
+end
+local function attachFoliage()
+    if foliageHook then foliageHook:Disconnect(); foliageHook = nil end
+    local foliage = getFoliage()
+    if not foliage then return end
+    foliageHook = foliage.DescendantAdded:Connect(function(part)
+        task.defer(function()
+            if part.Parent and shouldHide(part, foliage) then
+                if not foliageCache[part] then foliageCache[part] = part.Transparency end
+                part.Transparency = 1
+            end
+        end)
+    end)
+end
+local function refreshFoliage()
+    applyFoliage()
+    if FS.NoBushes or FS.NoFerns or FS.NoLeafs then attachFoliage()
+    elseif foliageHook then foliageHook:Disconnect(); foliageHook = nil end
+end
+MainGroup:AddToggle("NoGrassToggle", {Text = "No Grass", Default = false, Callback = function(v)
+    FS.NoGrass = v
+    pcall(function() sethiddenproperty(workspace.Terrain, "Decoration", not v) end)
+end})
+MainGroup:AddToggle("NoBushesToggle", {Text = "No Bushes", Default = false, Callback = function(v) FS.NoBushes = v; refreshFoliage() end})
+MainGroup:AddToggle("NoFernsToggle", {Text = "No Ferns", Default = false, Callback = function(v) FS.NoFerns = v; refreshFoliage() end})
+MainGroup:AddToggle("NoLeafsToggle", {Text = "No Leafs", Default = false, Callback = function(v) FS.NoLeafs = v; refreshFoliage() end})
+
+-- ===== BLATANT TAB ===== --
+local WarningsGroup = Tabs.BlatantTab:AddLeftGroupbox("WARNINGS!!", "skull")
+WarningsGroup:AddLabel("THIS IS BLATANT CHEATING (OBVIOUS CHEAT) very risky.", true)
+WarningsGroup:AddLabel("RECOMMENDED TO TEST ON ALT ACCOUNTS FIRST.", true)
+
+local PlayerGroup = Tabs.BlatantTab:AddLeftGroupbox("Player", "skull")
+
+local walkSpeedValue = 18
+local walkSpeedApply = false
+local walkSpeedLoop = nil
+local originalWalkSpeed = nil
+
+PlayerGroup:AddSlider("WalkSpeed", {Text="WalkSpeed", Default=18, Min=0, Max=22, Callback=function(v) walkSpeedValue = v end})
+local walkSpeedToggle = PlayerGroup:AddToggle("ApplyWalkSpeed", {Text="Apply", Default=false, Callback=function(v)
+    walkSpeedApply = v
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    if not hum then return end
+    if v then
+        originalWalkSpeed = hum.WalkSpeed
+        if walkSpeedLoop then task.cancel(walkSpeedLoop) end
+        walkSpeedLoop = task.spawn(function()
+            while walkSpeedApply do
+                local c = LocalPlayer.Character
+                if c then
+                    local h = c:FindFirstChild("Humanoid")
+                    if h then h.WalkSpeed = walkSpeedValue end
+                end
+                task.wait(0.1)
+            end
+        end)
+    else
+        if walkSpeedLoop then task.cancel(walkSpeedLoop); walkSpeedLoop = nil end
+        if originalWalkSpeed then
+            local c = LocalPlayer.Character
+            if c then
+                local h = c:FindFirstChild("Humanoid")
+                if h then h.WalkSpeed = originalWalkSpeed end
+            end
+        end
+    end
+end})
+
+-- ===== ui settings ===== --
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu","wrench")
+MenuGroup:AddToggle("KeybindMenuOpen",{Text="Open Keybind Menu",Default=Library.KeybindFrame.Visible,Callback=function(v) Library.KeybindFrame.Visible=v end})
+MenuGroup:AddToggle("ShowCustomCursor",{Text="Custom Cursor",Default=true,Callback=function(v) Library.ShowCustomCursor=v end})
+MenuGroup:AddDropdown("NotificationSide",{Text="Notification Side",Values={"Left","Right"},Default="Right",Callback=function(v) Library:SetNotifySide(v) end})
+MenuGroup:AddDropdown("DPIDropdown",{Text = "DPI Scale", Values = {"50%","75%","100%","125%","150%","175%","200%"}, Default = "100%",
+    Callback = function(v) local n = tonumber(v:match("%d+")); if n then Library:SetDPIScale(n) end end})
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true})
+MenuGroup:AddButton("Unload",function() Library:Unload() end)
+
+-- ===== addons ===== --
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("DONs-Theme")
+SaveManager:SetFolder("DONs-Script")
+SaveManager:SetSubFolder("Project-Delta")
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig()
+
+-- ===== init ===== --
+task.defer(function()
+    pcall(InitSilentAim)
+    refreshAIList()
+end)
+
+-- ===== unload ===== --
+Library:OnUnload(function()
+    table.clear(Scheduler.tasks)
+    pcall(cleanupPlaces)
+    if aim and aim.Destroy then pcall(function() aim:Destroy() end) end
+    pcall(function() RunService:UnbindFromRenderStep("AimLock") end)
+    for _, e in pairs(esps) do if e and e.Destroy then pcall(function() e:Destroy() end) end end
+    if oldCreateBullet and BulletModule then
+        pcall(function() hookfunction(BulletModule.CreateBullet, oldCreateBullet) end)
+    end
+    pcall(RestoreAmmo)
+    if foliageHook then pcall(function() foliageHook:Disconnect() end) end
+    for part, orig in pairs(foliageCache) do
+        if part.Parent then pcall(function() part.Transparency = orig end) end
+    end
+    table.clear(foliageCache)
+    pcall(function() sethiddenproperty(workspace.Terrain, "Decoration", true) end)
+    pcall(function()
+        Lighting.Brightness = origL.b
+        Lighting.Ambient = origL.a
+        Lighting.OutdoorAmbient = origL.o
+        Lighting.FogEnd = origL.f
+    end)
+    if cam and zoom.savedFov then pcall(function() cam.FieldOfView = zoom.savedFov end) end
+    if cam then
+        local sch = LocalPlayer.Character
+        local sh = sch and sch:FindFirstChildOfClass("Humanoid")
+        local rs = sh or spectate.savedSubject
+        local rt = spectate.savedType or origCamMode
+        pcall(function()
+            cam.CameraType = rt
+            if rs then cam.CameraSubject = rs end
+        end)
+    end
+    pcall(function()
+        LocalPlayer.CameraMode = origCamMode
+        LocalPlayer.CameraMinZoomDistance = origMinZoom
+        LocalPlayer.CameraMaxZoomDistance = origMaxZoom
+    end)
+end)
+
+Library.ToggleKeybind = Options.MenuKeybind
