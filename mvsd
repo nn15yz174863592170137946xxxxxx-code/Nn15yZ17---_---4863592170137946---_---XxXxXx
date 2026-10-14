@@ -186,8 +186,9 @@ task.spawn(function()
     end
 end)
 
--- ===== kill all ===== --
+-- ===== kill all (fastest) ===== --
 local equipCounter = 0
+
 RunService.RenderStepped:Connect(function()
     if not KillAll then return end
 
@@ -198,14 +199,30 @@ RunService.RenderStepped:Connect(function()
     end
 
     local char = LP.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
     local origin = hrp.Position
+    local hidden = RS:FindFirstChild("HiddenCharacters")
+
     for _, model in ipairs(workspace:GetChildren()) do
-        if not model:IsA("Model") or not isEnemy(model, char) then continue end
-        local part = getPart(model, false)
+        if not model:IsA("Model") or model == char then continue end
+        if hidden and model:IsDescendantOf(hidden) then continue end
+
+        local hum = model:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+
+        local plr = Players:GetPlayerFromCharacter(model)
+        if plr and plr.Team == LP.Team then continue end
+
+        local part
+        for _, name in ipairs(HITBOX_ORDER) do
+            part = model:FindFirstChild(name, true)
+            if part and part:IsA("BasePart") then break end
+        end
         if not part then continue end
+
         Remote:FireServer(origin, part.Position, part, part.Position)
     end
 end)
