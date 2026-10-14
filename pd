@@ -263,6 +263,14 @@ local function ComputeAim()
     return finalTarget, camPos
 end
 
+local function ComputeAimNoFOV()
+    local saved = aim.FOVSize
+    aim.FOVSize = 999999
+    local t, p = ComputeAim()
+    aim.FOVSize = saved
+    return t, p
+end
+
 -- ===== aimlock loop ===== --
 RunService:BindToRenderStep("AimLock", Enum.RenderPriority.Camera.Value + 100, function()
     if not aim.Enabled then return end
@@ -277,46 +285,6 @@ Tabs.Aimlock:AddRightGroupbox("Silent Aim","crosshair"):AddToggle("SilentAimEnab
 
 -- ===== silent aim internals ===== --
 local SilentHook = { Hooked = false, Orig = nil, Table = nil }
-
-local function findHead()
-    local fPos = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-    local best, bestScore = nil, math.huge
-
-    local function check(model)
-        if not model or not model.Parent then return end
-        local hum = model:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health <= 0 then return end
-        local head = model:FindFirstChild("Head")
-        if not head or not head:IsA("BasePart") then return end
-        local sp, onScreen = cam:WorldToViewportPoint(head.Position)
-        if not onScreen then return end
-        local dx, dy = sp.X - fPos.X, sp.Y - fPos.Y
-        local d = math.sqrt(dx * dx + dy * dy)
-        if d < bestScore then bestScore = d; best = head end
-    end
-
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer then check(plr.Character) end
-    end
-
-    for _, m in ipairs(getAIList()) do
-        check(m)
-    end
-
-    local spawned = workspace:FindFirstChild("Spawned")
-    if spawned then
-        for _, folderName in ipairs({"Enemies", "Wildlife"}) do
-            local folder = spawned:FindFirstChild(folderName)
-            if folder then
-                for _, m in ipairs(folder:GetChildren()) do
-                    if m:IsA("Model") then check(m) end
-                end
-            end
-        end
-    end
-
-    return best
-end
 
 local function GetAimOrigin(a)
     if typeof(a) == "table" and a.CFrame then return a.CFrame.Position end
@@ -394,19 +362,9 @@ local function InitSilentAim()
                         if SilentAim.Enabled then
                             local origin = GetAimOrigin(aimPart)
                             if origin then
-                                local head = findHead()
-                                if head then
-                                    local accel = projectileDrop or 0
-                                    local speed = muzzleVel or 0
-                                    local aimPos = head.Position
-                                    if speed > 0 then
-                                        local ping = LocalPlayer:GetNetworkPing()
-                                        local vel = getTargetVelocity(head.Parent, head)
-                                        local tpos = PredictVec(aimPos, vel, origin, speed, accel, ping)
-                                        local dropVec = PredDrop(origin, tpos, speed, accel, ping)
-                                        aimPos = tpos + dropVec
-                                    end
-                                    finalAim = { CFrame = CFrame.new(origin, aimPos) }
+                                local target = ComputeAimNoFOV()
+                                if target then
+                                    finalAim = { CFrame = CFrame.new(origin, target) }
                                 end
                             end
                         end
@@ -532,6 +490,17 @@ spectate.dropdown = MainRight:AddDropdown("SpectatePlayers", {
             spectateUpdating = false
             spectate.name = pick
         end
+        task.defer(applySpectate)
+    end,
+})
+
+MainRight:AddButton({
+    Text = "Debug",
+    Func = function()
+        spectate.name = nil
+        spectateUpdating = true
+        pcall(function() spectate.dropdown:SetValue({}) end)
+        spectateUpdating = false
         task.defer(applySpectate)
     end,
 })
