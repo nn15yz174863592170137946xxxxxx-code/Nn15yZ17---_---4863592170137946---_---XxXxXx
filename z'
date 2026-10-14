@@ -91,7 +91,7 @@ local Games = {
 { name="Xtreme Basketball", universeIds={9201754887}, file="Xtreme%20Basketball" },
 { name="bLockerman's Minesweeper", universeIds={3047037061}, file="bLockermans%20Minesweeper" },
 { name="pd", universeIds={}, file="pd" },
-{ name="mvsd", universeIds{}, file="mvsd" },
+{ name="mvsd", universeIds={}, file="mvsd" },
 }
 
 -- ===== GAME NAME override ===== --
