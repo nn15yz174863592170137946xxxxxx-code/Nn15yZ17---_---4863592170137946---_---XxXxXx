@@ -3,7 +3,7 @@ local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
 local Library = loadstring(game:HttpGet(repo.."Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo.."addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet(repo.."addons/SaveManager.lua"))()
-local Options, Toggles = Library.Options, Library.Toggles
+local Options = Library.Options
 Library.ShowToggleFrameInKeybinds = true
 
 local Players = game:GetService("Players")
@@ -53,7 +53,7 @@ end)
 -- ===== state ===== --
 local Prediction = { Enabled = true }
 local Misc = { NoRecoil = false }
-local LeadMul, DropMul, PingMul = 1, 7.558695652173913, 0
+local LeadMul, PingMul = 1, 0
 local localChar = LocalPlayer.Character
 LocalPlayer.CharacterAdded:Connect(function(c) localChar = c end)
 
@@ -77,7 +77,7 @@ local function getWeaponData(name)
     if not ranged or not ammoTypes then return nil, 0 end
     local weapon = ranged:FindFirstChild(name)
     if not weapon then return nil, 0 end
-    local callSign = weapon:GetAttribute("DefaultAmmoCallSign")
+    local callSign = weapon:GetAttribute("CallSign") or weapon:GetAttribute("DefaultAmmoCallSign")
     if not callSign then return nil, 0 end
     for _, ammo in ipairs(ammoTypes:GetChildren()) do
         if ammo:GetAttribute("CallSign") == callSign then
@@ -130,47 +130,32 @@ local function getTargetVelocity(character, root)
 end
 
 -- ===== ballistics ===== --
-local function SolveQuad(a, b, c)
-    local d = b * b - 4 * a * c
-    if d < 0 then return nil end
-    local r = math.sqrt(d)
-    return (-b - r) / (2 * a), (-b + r) / (2 * a)
-end
-local function FlightTime(dir, grav, speed)
-    local r1, r2 = SolveQuad(grav:Dot(grav) / 4, grav:Dot(dir) - speed * speed, dir:Dot(dir))
-    if r1 and r2 then
-        if r1 > 0 and r1 < r2 then return math.sqrt(r1)
-        elseif r2 > 0 and r2 < r1 then return math.sqrt(r2) end
-    end
-    return 0
-end
 local function PredictVec(tpos, tvel, origin, speed, accel, ping)
-    local g = Vector3.yAxis * (accel * 2)
-    local t = FlightTime(tpos - origin, g, speed) + (ping * PingMul)
+    local d = tpos - origin
+    local horiz = Vector3.new(d.X, 0, d.Z).Magnitude
+    local t = horiz / math.max(speed, 1) + (ping * PingMul)
     return tpos + (tvel * t * LeadMul)
 end
+
 local function PredDrop(origin, target, speed, accel, ping)
-    local g = Vector3.yAxis * (accel * 2)
-    local t = FlightTime(target - origin, g, speed) + (ping * PingMul)
-    return 0.5 * g * t * t * DropMul
+    local g = Vector3.yAxis * (workspace.Gravity - accel * 2)
+    local d = target - origin
+    local horiz = Vector3.new(d.X, 0, d.Z).Magnitude
+    local t = horiz / math.max(speed, 1) + (ping * PingMul)
+    return 0.5 * g * t * t
 end
 
 -- ===== aimlock ===== --
 local AimGroup = Tabs.Aimlock:AddLeftGroupbox("Aimlock","target")
 local aim = AimlockUI.Create(AimGroup, "Aim_", Players, LocalPlayer, cam, {
     Settings = {
-        Enabled = false, LockAnywhere = false, TeamCheck = false, WallCheck = true,
-        MaxDistance = nil, MobileButtonEnabled = true, MobileWallCheckEnabled = false,
-        FOVSize = 500, CrossOffset = Vector2.new(0,0),
-        FOVRainbowEnabled = true, CrosshairRainbowEnabled = true, RainbowSpeed = 1,
-        PredictionXZ = 0, PredictionY = 0, AutoPredictionEnabled = false,
-        AimPartPreference = {"Head","Torso","Other Parts"}, SampleMode = 2, HeadChance = 80,
+        CrossOffset = Vector2.new(0,0),
         UpdateRate = 0,
     },
-    Features = { Enabled = true, Target = true, Lists = true, Prediction = false, Targeting = true, FOV = true },
+    Features = { Prediction = false },
 }, {
-    {Name = "Players", Getter = function() return Players:GetPlayers() end, Enabled = true},
-    {Name = "AI", Getter = getAIList, Enabled = true},
+    {Name = "Players", Getter = function() return Players:GetPlayers() end},
+    {Name = "AI", Getter = getAIList},
 })
 
 -- ===== prediction ===== --
@@ -221,7 +206,7 @@ end
 local function findBestTarget()
     if not localChar then return nil end
     local camPos = cam.CFrame.Position
-    local fPos = Vector2.new(cam.ViewportSize.X/2 + aim.CrossOffset.X, cam.ViewportSize.Y/2 + aim.CrossOffset.Y)
+    local fPos = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
     local maxDist = (tonumber(aim.FOVSize) or 500) / 2
     local best, bestScore = nil, math.huge
 
@@ -261,24 +246,21 @@ local function ComputeAim()
         if p then aimPoint = p; aimPart = part; break end
     end
     if not aimPoint then return nil end
+
     local finalTarget = aimPoint
     if Prediction.Enabled then
         local accel = projectileDrop or 0
-        local speed = muzzleVel or 1000
-        local ping = LocalPlayer:GetNetworkPing()
-        local vel = getTargetVelocity(target, aimPart)
-        local tpos = PredictVec(aimPoint, vel, camPos, speed, accel, ping)
-        finalTarget = tpos + PredDrop(camPos, tpos, speed, accel, ping)
+        local speed = muzzleVel or 0
+        if speed > 0 then
+            local ping = LocalPlayer:GetNetworkPing()
+            local vel = getTargetVelocity(target, aimPart)
+            local tpos = PredictVec(aimPoint, vel, camPos, speed, accel, ping)
+            local dropVec = PredDrop(camPos, tpos, speed, accel, ping)
+            finalTarget = tpos + dropVec
+        end
     end
-    return finalTarget, camPos
-end
 
-local function ComputeAimNoFOV()
-    local saved = aim.FOVSize
-    aim.FOVSize = 999999
-    local t, p = ComputeAim()
-    aim.FOVSize = saved
-    return t, p
+    return finalTarget, camPos
 end
 
 -- ===== aimlock loop ===== --
@@ -286,23 +268,55 @@ RunService:BindToRenderStep("AimLock", Enum.RenderPriority.Camera.Value + 100, f
     if not aim.Enabled then return end
     local finalTarget, camPos = ComputeAim()
     if not finalTarget then return end
-    local lookAt = CFrame.lookAt(camPos, finalTarget)
-    if aim.CrossOffset.X ~= 0 or aim.CrossOffset.Y ~= 0 then
-        local fovRad = math.rad(cam.FieldOfView)
-        if aim.CrossOffset.X ~= 0 then lookAt = lookAt * CFrame.Angles(0, -aim.CrossOffset.X * (fovRad / cam.ViewportSize.X), 0) end
-        if aim.CrossOffset.Y ~= 0 then lookAt = lookAt * CFrame.Angles(-aim.CrossOffset.Y * (fovRad / cam.ViewportSize.Y), 0, 0) end
-    end
-    cam.CFrame = lookAt
+    cam.CFrame = CFrame.lookAt(camPos, finalTarget)
 end)
 
 -- ===== silent aim UI ===== --
 local SilentAim = { Enabled = false }
-local SilentAimBox = Tabs.Aimlock:AddRightGroupbox("Silent Aim","crosshair")
-SilentAimBox:AddToggle("SilentAimEnabled", {Text = "Enable Silent Aim", Default = false, Callback = function(v) SilentAim.Enabled = v end})
+Tabs.Aimlock:AddRightGroupbox("Silent Aim","crosshair"):AddToggle("SilentAimEnabled", {Text = "Enable Silent Aim", Default = false, Callback = function(v) SilentAim.Enabled = v end})
 
 -- ===== silent aim internals ===== --
-local BulletModule, oldCreateBullet
-pcall(function() BulletModule = require(ReplicatedStorage.Modules.FPS.Bullet) end)
+local SilentHook = { Hooked = false, Orig = nil, Table = nil }
+
+local function findHead()
+    local fPos = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+    local best, bestScore = nil, math.huge
+
+    local function check(model)
+        if not model or not model.Parent then return end
+        local hum = model:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+        local head = model:FindFirstChild("Head")
+        if not head or not head:IsA("BasePart") then return end
+        local sp, onScreen = cam:WorldToViewportPoint(head.Position)
+        if not onScreen then return end
+        local dx, dy = sp.X - fPos.X, sp.Y - fPos.Y
+        local d = math.sqrt(dx * dx + dy * dy)
+        if d < bestScore then bestScore = d; best = head end
+    end
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then check(plr.Character) end
+    end
+
+    for _, m in ipairs(getAIList()) do
+        check(m)
+    end
+
+    local spawned = workspace:FindFirstChild("Spawned")
+    if spawned then
+        for _, folderName in ipairs({"Enemies", "Wildlife"}) do
+            local folder = spawned:FindFirstChild(folderName)
+            if folder then
+                for _, m in ipairs(folder:GetChildren()) do
+                    if m:IsA("Model") then check(m) end
+                end
+            end
+        end
+    end
+
+    return best
+end
 
 local function GetAimOrigin(a)
     if typeof(a) == "table" and a.CFrame then return a.CFrame.Position end
@@ -356,33 +370,55 @@ end
 
 -- ===== silent aim hook ===== --
 local function InitSilentAim()
-    if oldCreateBullet or not BulletModule or typeof(hookfunction) ~= "function" then return end
-    oldCreateBullet = hookfunction(BulletModule.CreateBullet, function(idk, m1, m2, m3, aimPart, idk2, ammoType, t, recoilPattern)
-        local f = ReplicatedStorage:FindFirstChild("AmmoTypes")
-        local ammo = f and ammoType and f:FindFirstChild(ammoType)
+    if SilentHook.Hooked then return end
+    task.spawn(function()
+        while not SilentHook.Hooked do
+            for _, v in pairs(getgc(true)) do
+                if type(v) == "table" and type(rawget(v, "CreateBullet")) == "function" then
+                    SilentHook.Table = v
+                    SilentHook.Orig = rawget(v, "CreateBullet")
+                    rawset(v, "CreateBullet", function(idk, m1, m2, m3, aimPart, idk2, ammoType, t, recoilPattern)
+                        local f = ReplicatedStorage:FindFirstChild("AmmoTypes")
+                        local ammo = f and ammoType and f:FindFirstChild(ammoType)
 
-        if Misc.NoRecoil then
-            if type(recoilPattern) == "table" then
-                ZeroRecoilTable(recoilPattern, 0)
-            else
-                recoilPattern = {0, 0, 0, 0}
-            end
-            SetAttrs(ammo, RecoilAttrs, 0)
-        end
+                        if Misc.NoRecoil then
+                            if type(recoilPattern) == "table" then
+                                ZeroRecoilTable(recoilPattern, 0)
+                            else
+                                recoilPattern = {0, 0, 0, 0}
+                            end
+                            SetAttrs(ammo, RecoilAttrs, 0)
+                        end
 
-        local finalAim = aimPart
+                        local finalAim = aimPart
+                        if SilentAim.Enabled then
+                            local origin = GetAimOrigin(aimPart)
+                            if origin then
+                                local head = findHead()
+                                if head then
+                                    local accel = projectileDrop or 0
+                                    local speed = muzzleVel or 0
+                                    local aimPos = head.Position
+                                    if speed > 0 then
+                                        local ping = LocalPlayer:GetNetworkPing()
+                                        local vel = getTargetVelocity(head.Parent, head)
+                                        local tpos = PredictVec(aimPos, vel, origin, speed, accel, ping)
+                                        local dropVec = PredDrop(origin, tpos, speed, accel, ping)
+                                        aimPos = tpos + dropVec
+                                    end
+                                    finalAim = { CFrame = CFrame.new(origin, aimPos) }
+                                end
+                            end
+                        end
 
-        if SilentAim.Enabled then
-            local finalTarget = ComputeAimNoFOV()
-            if finalTarget then
-                local origin = GetAimOrigin(aimPart)
-                if origin then
-                    finalAim = { CFrame = CFrame.new(origin, finalTarget) }
+                        return SilentHook.Orig(idk, m1, m2, m3, finalAim, idk2, ammoType, t, recoilPattern)
+                    end)
+                    SilentHook.Hooked = true
+                    return
                 end
             end
+            task.wait(1)
         end
-
-        return oldCreateBullet(idk, m1, m2, m3, finalAim, idk2, ammoType, t, recoilPattern)
     end)
 end
 
@@ -597,23 +633,24 @@ local function getFolderList(fn, sub)
 end
 
 local PLACE_DATA = {
-    {Name = "Hydrostation", Path = {"Hydrostation"}, Pos = Vector3.new(-3140.13574, 116.986954, -553.818909)},
-    {Name = "Sawmill (Anton)", Path = {"Sawmill"}, Pos = Vector3.new(-2460.37866, 49.4657974, -3517.3501)},
-    {Name = "Bridge", Path = {"Bridge"}, Pos = Vector3.new(841.922363, 35.7102699, 429.339874)},
-    {Name = "ExitUNO1", Path = {"NoCollision", "AiZones", "ExitUNO1"}, Pos = Vector3.new(455.752808, 72.5, 2771.09033)},
-    {Name = "Castle", Path = {"Castle"}, Pos = Vector3.new(1337.98535, 59.9582748, -2462.30078)},
-    {Name = "GasStation", Path = {"NoCollision", "AiZones", "GasStation"}, Pos = Vector3.new(-2068.1001, 22.5249996, -1700.30005)},
-    {Name = "PowerPlant", Path = {"NoCollision", "AiZones", "PowerPlant"}, Pos = Vector3.new(-218.48851, 46.3912659, -1102.66052)},
-    {Name = "Town (Village)", Path = {"NoCollision", "AiZones", "Town"}, Pos = Vector3.new(-596.099976, 36.6031189, -2161.7998)},
-    {Name = "Lighthouse", Path = {"LighthouseBeacon"}, Pos = Vector3.new(2656.69507, 292.593994, -1949.92798)},
-    {Name = "Ship", Path = {"Ship"}, Pos = Vector3.new(2752.8396, 57.1084938, -2422.88599)},
-    {Name = "Whisper", Path = {"NoCollision", "AiZones", "Whisper"}, Pos = Vector3.new(2048.57104, 65.6838684, -1057.52051)},
-    {Name = "Factory (Dozer)", Path = {"NoCollision", "AiZones", "Factory"}, Pos = Vector3.new(2842.85474, 36.5, -752.381348)},
-    {Name = "Mountain", Path = {"Mountain"}, Pos = Vector3.new(-1013.69208, 203.14595, -367.049011)},
+    {Name = "Hydrostation", Pos = Vector3.new(-3140.13574, 116.986954, -553.818909)},
+    {Name = "Sawmill (Anton)", Pos = Vector3.new(-2460.37866, 49.4657974, -3517.3501)},
+    {Name = "Bridge", Pos = Vector3.new(841.922363, 35.7102699, 429.339874)},
+    {Name = "ExitUNO1", Pos = Vector3.new(455.752808, 72.5, 2771.09033)},
+    {Name = "Castle", Pos = Vector3.new(1337.98535, 59.9582748, -2462.30078)},
+    {Name = "Gas Station", Pos = Vector3.new(-2068.1001, 22.5249996, -1700.30005)},
+    {Name = "Power Plant", Pos = Vector3.new(-218.48851, 46.3912659, -1102.66052)},
+    {Name = "Town (Village)", Pos = Vector3.new(-596.099976, 36.6031189, -2161.7998)},
+    {Name = "Lighthouse", Pos = Vector3.new(2656.69507, 292.593994, -1949.92798)},
+    {Name = "Ship", Pos = Vector3.new(2752.8396, 57.1084938, -2422.88599)},
+    {Name = "Whisper", Pos = Vector3.new(2048.57104, 65.6838684, -1057.52051)},
+    {Name = "Factory (Dozer)", Pos = Vector3.new(2842.85474, 36.5, -752.381348)},
+    {Name = "Mountain", Pos = Vector3.new(-1013.69208, 203.14595, -367.049011)},
+    {Name = "Death", Pos = Vector3.new(-1839.79602, 27.4417019, -2263.39551)},
+    {Name = "Airfield ATC", Pos = Vector3.new(-1816.8927, 180.637039, 2565.42114)},
+    {Name = "Airfield Sniper", Pos = Vector3.new(-2573.88989, 180.817673, 2921.39282)},
 }
-
 local PLACE_Y_OFFSET = 100
-
 local placeAnchors = {}
 local placesAnchorFolder = nil
 
@@ -647,51 +684,36 @@ local function makePlaceAnchor(name, pos)
     return part
 end
 
-local function resolvePlace(path)
-    local current = workspace
-    for _, name in ipairs(path) do
-        if not current then return nil end
-        current = current:FindFirstChild(name)
-    end
-    if current and (current:IsA("Model") or current:IsA("BasePart")) then return current end
-    return nil
+local function getAiZones()
+    local zones = workspace:FindFirstChild("NoCollision")
+    zones = zones and zones:FindFirstChild("AiZones")
+    return zones
 end
 
-local function getModelCenter(model)
-    if not model then return nil end
-    if model:IsA("BasePart") then return model.Position end
-    if model.PrimaryPart then return model.PrimaryPart.Position end
-    local part = model:FindFirstChildWhichIsA("BasePart")
-    if part then return part.Position end
-    local ok, cf = pcall(function() return model:GetBoundingBox() end)
-    if ok and cf then return cf.Position end
-    return nil
+local function isMapLoaded()
+    local zones = getAiZones()
+    if not zones then return false end
+    return #zones:GetChildren() > 0
+end
+
+local function clearAllPlaceAnchors()
+    for name, anchor in pairs(placeAnchors) do
+        if anchor and anchor.Parent then anchor:Destroy() end
+    end
+    table.clear(placeAnchors)
 end
 
 local function initPlaces()
-    local zones = workspace:FindFirstChild("NoCollision")
-    zones = zones and zones:FindFirstChild("AiZones")
-    if not zones or #zones:GetChildren() == 0 then
-        if placesAnchorFolder and placesAnchorFolder.Parent then
-            placesAnchorFolder:Destroy()
-        end
-        placesAnchorFolder = nil
-        table.clear(placeAnchors)
+    if not isMapLoaded() then
+        clearAllPlaceAnchors()
         return
     end
     for _, data in ipairs(PLACE_DATA) do
-        local real = resolvePlace(data.Path)
-        local basePos = (real and getModelCenter(real)) or data.Pos
-        placeAnchors[data.Name] = makePlaceAnchor(data.Name, basePos)
+        placeAnchors[data.Name] = makePlaceAnchor(data.Name, data.Pos)
     end
 end
 
 local function getPlacesList()
-    local zones = workspace:FindFirstChild("NoCollision")
-    zones = zones and zones:FindFirstChild("AiZones")
-    if not zones or #zones:GetChildren() == 0 then
-        return {}
-    end
     local list = {}
     for _, p in pairs(placeAnchors) do
         if p and p.Parent then list[#list + 1] = p end
@@ -713,35 +735,46 @@ Scheduler:Every("PlacesRefresh", 2, initPlaces)
 local ESPTargets = {
     {Name="Players", Source="Players", IsPlayer=true, Humanoid=true, Getter=function() return Players:GetPlayers() end, Color=Color3.new(1,1,1), TextSize=20},
     {Name="AI", Source="AI", Humanoid=true, Getter=getAIList, Color=Color3.new(1,0,0), TextSize=20},
-    {Name="Containers", Source="Containers", Humanoid=false, NonHumanoid=true, Getter=function() return getFolderList("Containers") end, Color=Color3.new(0,1,1), TextSize=15},
-    {Name="Items", Source="Items", Humanoid=false, NonHumanoid=true, Getter=function() return getFolderList("DroppedItems") end, Color=Color3.new(0.5,0.5,0.5), TextSize=15},
-    {Name="QuestItems", Source="QuestItems", Humanoid=false, NonHumanoid=true, Getter=function() return getFolderList("QuestItems") end, Color=Color3.new(0,1,0), TextSize=15},
-    {Name="Exits", Source="Exits", Humanoid=false, NonHumanoid=true, Getter=function() return getFolderList("NoCollision","ExitLocations") end, Color=Color3.new(0,1,0), TextSize=20},
-    {Name="Places", Source="Places", Humanoid=false, NonHumanoid=true, Getter=getPlacesList, Color=Color3.new(1,1,0), TextSize=20},
+    {Name="Containers", Source="Containers", NonHumanoid=true, Getter=function() return getFolderList("Containers") end, Color=Color3.new(0,1,1), TextSize=15},
+    {Name="Items", Source="Items", NonHumanoid=true, Getter=function() return getFolderList("DroppedItems") end, Color=Color3.new(0.5,0.5,0.5), TextSize=15},
+    {Name="QuestItems", Source="QuestItems", NonHumanoid=true, Getter=function() return getFolderList("QuestItems") end, Color=Color3.new(0,1,0), TextSize=15},
+    {Name="Exits", Source="Exits", NonHumanoid=true, Getter=function() return getFolderList("NoCollision","ExitLocations") end, Color=Color3.new(0,1,0), TextSize=20},
+    {Name="Places", Source="Places", NonHumanoid=true, Getter=getPlacesList, Color=Color3.new(1,1,0), TextSize=20},
 }
 
 local ESPLeft = Tabs.ESP:AddLeftTabbox()
 local ESPRight = Tabs.ESP:AddRightGroupbox("ESP","eye")
 local esps = {}
+
 for _, t in ipairs(ESPTargets) do
     local tab = ESPLeft:AddTab(t.Name)
-    local isHumanoid = t.Humanoid == true
+    local isHumanoid = not t.NonHumanoid
+
     local settings = {
-        Enabled = false, TextESPEnabled = true,
-        BoxESPEnabled = isHumanoid, HealthESPEnabled = isHumanoid, SkeletonESPEnabled = isHumanoid,
-        TextColor = t.Color, TextSize = t.TextSize or 15, ShowHealth = isHumanoid,
+        TextColor = t.Color,
+        TextSize = t.TextSize or 15,
     }
+
+    local features, exclude
     if isHumanoid then
         settings.BoxColor = t.Color
         settings.SkeletonColor = t.Color
+        exclude = { "EnabledToggle" }
+    else
+        settings.BoxESPEnabled = false
+        settings.HealthESPEnabled = false
+        settings.SkeletonESPEnabled = false
+        settings.ShowHealth = false
+        features = { Box = false, Health = false, Skeleton = false }
+        exclude = { "EnabledToggle", "ShowHealth" }
     end
-    local exclude = {"EnabledToggle"}
-    if not isHumanoid then table.insert(exclude, "ShowHealth") end
+
     local esp = ESPUI.Create(tab, t.Source.."_", {
         Settings = settings,
-        Features = { Enabled = true, Text = true, Box = isHumanoid, Health = isHumanoid, Skeleton = isHumanoid, Performance = true },
+        Features = features,
         Exclude = exclude,
-    }, {{Name = t.Source, Getter = t.Getter, IsPlayer = t.IsPlayer or false, Enabled = true, NonHumanoid = t.NonHumanoid or false}})
+    }, {{Name = t.Source, Getter = t.Getter, IsPlayer = t.IsPlayer, NonHumanoid = t.NonHumanoid}})
+
     esps[t.Name] = esp
     ESPRight:AddToggle(t.Source.."ESPEnabled", {Text = t.Name.." ESP", Default = false, Callback = function(v) esp:SetEnabled(v) end})
 end
@@ -750,63 +783,87 @@ end
 local MainGroup = Tabs.Main:AddLeftGroupbox("Main","boxes")
 local origL = {b = Lighting.Brightness, a = Lighting.Ambient, o = Lighting.OutdoorAmbient, f = Lighting.FogEnd}
 local fbEnabled, fbValue = false, 10
+local fbConn = nil
+
 local function applyFB()
     Lighting.Brightness = fbValue
     Lighting.Ambient = Color3.new(1,1,1)
     Lighting.OutdoorAmbient = Color3.new(1,1,1)
     Lighting.FogEnd = 100000
 end
+
 local function restoreLighting()
     Lighting.Brightness = origL.b
     Lighting.Ambient = origL.a
     Lighting.OutdoorAmbient = origL.o
     Lighting.FogEnd = origL.f
 end
+
+local function startFB()
+    if fbConn then return end
+    applyFB()
+    fbConn = RunService.Heartbeat:Connect(function()
+        if fbEnabled then applyFB() end
+    end)
+end
+
+local function stopFB()
+    if fbConn then
+        fbConn:Disconnect()
+        fbConn = nil
+    end
+    restoreLighting()
+end
+
 MainGroup:AddToggle("FullBright", {Text = "FullBright", Default = false, Callback = function(v)
     fbEnabled = v
-    if v then applyFB() else restoreLighting() end
+    if v then startFB() else stopFB() end
 end})
+
 MainGroup:AddInput("FullBrightValue", {
     Text = "Brightness", Default = "10", Numeric = true, Finished = false,
     ClearTextOnFocus = false, Placeholder = "10",
     Callback = function(v)
         local n = tonumber(v)
-        if n then fbValue = n; if fbEnabled then applyFB() end end
+        if n then
+            fbValue = n
+            if fbEnabled then applyFB() end
+        end
     end,
 })
 
 -- ===== anti-mines ===== --
 local aClay, aLand = false, false
-local function hookClear(fn, flag)
+
+local function clearMines()
+    if not aClay and not aLand then return end
     local zone = workspace:FindFirstChild("AiZones")
     if not zone then return end
-    local folder = zone:FindFirstChild(fn)
-    if not folder then return end
-    folder.ChildAdded:Connect(function(child)
-        if (aClay and flag == "c") or (aLand and flag == "l") then
-            task.defer(function() if child.Parent then child:Destroy() end end)
+    for _, folder in ipairs(zone:GetChildren()) do
+        if folder:IsA("Folder") then
+            local nameLower = folder.Name:lower()
+            local isClay = nameLower:find("claymore", 1, true)
+            local isLand = nameLower:find("landmine", 1, true)
+            if (aClay and isClay) or (aLand and isLand) then
+                for _, desc in ipairs(folder:GetDescendants()) do
+                    if desc:IsA("Model") then
+                        pcall(function() desc:Destroy() end)
+                    end
+                end
+            end
         end
-    end)
+    end
 end
-Scheduler:Every("ZoneHook", 3, function()
-    hookClear("OutpostClaymores", "c")
-    hookClear("OutpostLandmines", "l")
-end)
+
+Scheduler:Every("MineClear", 0.5, clearMines)
+
 MainGroup:AddToggle("AntiClaymore", {Text = "Delete Claymores", Default = false, Callback = function(v)
     aClay = v
-    if v then
-        local zone = workspace:FindFirstChild("AiZones")
-        local c = zone and zone:FindFirstChild("OutpostClaymores")
-        if c then for _, m in ipairs(c:GetChildren()) do m:Destroy() end end
-    end
+    if v then clearMines() end
 end})
 MainGroup:AddToggle("AntiLandmine", {Text = "Delete Landmines", Default = false, Callback = function(v)
     aLand = v
-    if v then
-        local zone = workspace:FindFirstChild("AiZones")
-        local l = zone and zone:FindFirstChild("OutpostLandmines")
-        if l then for _, m in ipairs(l:GetChildren()) do m:Destroy() end end
-    end
+    if v then clearMines() end
 end})
 
 -- ===== foliage ===== --
@@ -884,36 +941,40 @@ local PlayerGroup = Tabs.BlatantTab:AddLeftGroupbox("Player", "skull")
 local walkSpeedValue = 18
 local walkSpeedApply = false
 local walkSpeedLoop = nil
-local originalWalkSpeed = nil
+local originalWalkSpeeds = {}
 
 PlayerGroup:AddSlider("WalkSpeed", {Text="WalkSpeed", Default=18, Min=0, Max=22, Callback=function(v) walkSpeedValue = v end})
-local walkSpeedToggle = PlayerGroup:AddToggle("ApplyWalkSpeed", {Text="Apply", Default=false, Callback=function(v)
+PlayerGroup:AddToggle("ApplyWalkSpeed", {Text="Apply", Default=false, Callback=function(v)
     walkSpeedApply = v
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChild("Humanoid")
-    if not hum then return end
     if v then
-        originalWalkSpeed = hum.WalkSpeed
-        if walkSpeedLoop then task.cancel(walkSpeedLoop) end
+        if walkSpeedLoop then
+            pcall(function() task.cancel(walkSpeedLoop) end)
+            walkSpeedLoop = nil
+        end
         walkSpeedLoop = task.spawn(function()
             while walkSpeedApply do
                 local c = LocalPlayer.Character
-                if c then
-                    local h = c:FindFirstChild("Humanoid")
-                    if h then h.WalkSpeed = walkSpeedValue end
+                local h = c and c:FindFirstChildOfClass("Humanoid")
+                if h then
+                    if originalWalkSpeeds[h] == nil then
+                        originalWalkSpeeds[h] = h.WalkSpeed
+                    end
+                    h.WalkSpeed = walkSpeedValue
                 end
                 task.wait(0.1)
             end
         end)
     else
-        if walkSpeedLoop then task.cancel(walkSpeedLoop); walkSpeedLoop = nil end
-        if originalWalkSpeed then
-            local c = LocalPlayer.Character
-            if c then
-                local h = c:FindFirstChild("Humanoid")
-                if h then h.WalkSpeed = originalWalkSpeed end
+        if walkSpeedLoop then
+            pcall(function() task.cancel(walkSpeedLoop) end)
+            walkSpeedLoop = nil
+        end
+        for h, ws in pairs(originalWalkSpeeds) do
+            if h and h.Parent then
+                pcall(function() h.WalkSpeed = ws end)
             end
         end
+        table.clear(originalWalkSpeeds)
     end
 end})
 
@@ -949,27 +1010,44 @@ end)
 -- ===== unload ===== --
 Library:OnUnload(function()
     table.clear(Scheduler.tasks)
+
+    if fbConn then pcall(function() fbConn:Disconnect() end) end
+
+    if walkSpeedLoop then pcall(function() task.cancel(walkSpeedLoop) end) end
+    for h, ws in pairs(originalWalkSpeeds or {}) do
+        if h and h.Parent then pcall(function() h.WalkSpeed = ws end) end
+    end
+    table.clear(originalWalkSpeeds or {})
+
     pcall(cleanupPlaces)
     if aim and aim.Destroy then pcall(function() aim:Destroy() end) end
     pcall(function() RunService:UnbindFromRenderStep("AimLock") end)
     for _, e in pairs(esps) do if e and e.Destroy then pcall(function() e:Destroy() end) end end
-    if oldCreateBullet and BulletModule then
-        pcall(function() hookfunction(BulletModule.CreateBullet, oldCreateBullet) end)
+
+    if SilentHook.Hooked and SilentHook.Table and SilentHook.Orig then
+        pcall(function() rawset(SilentHook.Table, "CreateBullet", SilentHook.Orig) end)
+        SilentHook.Hooked = false
     end
+
     pcall(RestoreAmmo)
+
     if foliageHook then pcall(function() foliageHook:Disconnect() end) end
     for part, orig in pairs(foliageCache) do
         if part.Parent then pcall(function() part.Transparency = orig end) end
     end
     table.clear(foliageCache)
+
     pcall(function() sethiddenproperty(workspace.Terrain, "Decoration", true) end)
+
     pcall(function()
         Lighting.Brightness = origL.b
         Lighting.Ambient = origL.a
         Lighting.OutdoorAmbient = origL.o
         Lighting.FogEnd = origL.f
     end)
+
     if cam and zoom.savedFov then pcall(function() cam.FieldOfView = zoom.savedFov end) end
+
     if cam then
         local sch = LocalPlayer.Character
         local sh = sch and sch:FindFirstChildOfClass("Humanoid")
@@ -980,6 +1058,7 @@ Library:OnUnload(function()
             if rs then cam.CameraSubject = rs end
         end)
     end
+
     pcall(function()
         LocalPlayer.CameraMode = origCamMode
         LocalPlayer.CameraMinZoomDistance = origMinZoom
