@@ -39,6 +39,14 @@ end)
 local AutoShoot, KillAll, NoCooldown = false, false, false
 local lastShot = 0
 
+-- ===== hidden characters filter ===== --
+local function isHiddenCharacter(char)
+    if not char or not char.Parent then return false end
+    local hidden = RS:FindFirstChild("HiddenCharacters")
+    if not hidden then return false end
+    return char:IsDescendantOf(hidden)
+end
+
 -- ===== cooldown ===== --
 local function getCooldown()
     local char = LP.Character
@@ -106,6 +114,7 @@ end
 
 local function isEnemy(model, char)
     if model == char then return false end
+    if isHiddenCharacter(model) then return false end
     local hum = model:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return false end
     local plr = Players:GetPlayerFromCharacter(model)
@@ -113,13 +122,12 @@ local function isEnemy(model, char)
     return true
 end
 
--- ===== active players (alive with loaded character) ===== --
 local function getActivePlayers()
     local list = {}
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LP then
             local char = plr.Character
-            if char and char.Parent then
+            if char and char.Parent and not isHiddenCharacter(char) then
                 local hum = char:FindFirstChildOfClass("Humanoid")
                 if hum and hum.Health > 0 then
                     list[#list + 1] = plr
