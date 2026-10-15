@@ -431,8 +431,8 @@ function Aimlock:GetScreenDistance(entity, camPos, fPos, maxScreenDist)
     end
 
     if self.LockAnywhere then
-        return 0, root
-    end
+    return (camPos - root.Position).Magnitude, root
+end
 
     local sp, onScreen = self.Camera:WorldToViewportPoint(root.Position)
     if not onScreen then return nil end
