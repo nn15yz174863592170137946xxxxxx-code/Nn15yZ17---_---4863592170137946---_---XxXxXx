@@ -49,7 +49,9 @@ local function buildSortedPlayerList(Players, LocalPlayer)
             names[#names + 1] = plr.Name
         end
     end
-    table.sort(names)
+    table.sort(names, function(a, b)
+        return a:lower() < b:lower()
+    end)
     return names
 end
 
